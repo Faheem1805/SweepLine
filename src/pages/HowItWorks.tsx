@@ -4,6 +4,7 @@ import { useSnap } from '../app/hooks';
 import { AngleDiagram } from '../components/charts/AngleDiagram';
 import { PlanSchematic } from '../components/charts/PlanSchematic';
 import { AlertPlanner } from '../components/panels/AlertPlanner';
+import { ComparisonPanel } from '../components/panels/Comparison';
 import { FailureModes } from '../components/panels/FailureModes';
 import { SideSchematic } from '../components/charts/SideSchematic';
 import { Icon } from '../components/ui/icons';
@@ -420,6 +421,8 @@ export function HowItWorks() {
         </Panel>
 
         <BuildAndRun skirt={c.skirtTarget} angle={p.anchorAngle} jetLevel={p.jetLevel} />
+
+        <ComparisonPanel />
 
         <WildlifePanel skirt={c.skirtTarget} angle={p.anchorAngle} />
 

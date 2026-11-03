@@ -490,6 +490,16 @@ How It Works has a *Build and run it* panel (`src/simulation/feasibility.ts`, `s
 
 Every price, its year and its source URL are in `src/config/costs.ts`.
 
+**Against today's response** (How It Works, `src/config/comparison.ts`) sets SweepLine beside boats
+and crews and beside bubble curtains, question by question: who is on the water, whether the intake
+stays clear, waves, what happens to the animals, running cost. Other approaches are described only
+from sources: Gravelines in September 2026, with seven boats working round the clock and units 3, 4
+and 6 still shut ([NEI Magazine](https://www.neimagazine.com/news/second-jellyfish-swarm-disrupts-gravelines/));
+bubble-curtain field and flume trials, where more waves and more air let more jellyfish through
+([Haberlin, McAllen & Doyle 2021](https://research.ucc.ie/en/publications/field-and-flume-tank-experiments-investigating-the-efficacy-of-a/));
+air harming medusae ([Raskoff et al. 2003](https://doi.org/10.2307/1543497)). SweepLine's column
+is read from the twin's own studies.
+
 ## Alive on the way
 
 No published study measures scyphozoan jellyfish through a pump or a long pipe, so the survival
