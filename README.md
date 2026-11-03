@@ -374,6 +374,18 @@ so a turned tide is an envelope violation and SafeOpen follows.
 line and counts intake contacts against the same-seed baseline: over the three hours after the
 turn the Twin-Line keeps about 99 % of them off the intake, while a single line keeps about 1 %.
 
+## From the early warning
+
+How It Works opens with a planner for ENEC's existing early warning (`src/components/panels/AlertPlanner.tsx`,
+`forecastArrival` in `src/simulation/drift.ts`): enter where the offshore detection programme has
+reported a bloom (distance offshore, along the shore, patch size) and when. The patch drifts on the
+recorded current and wind against the real coast with the release study's model, and the panel
+shows how much of it reaches the intake and when, which guide line will be on duty hour by hour, and
+a plain instruction: when to arm both lines, which one pops up, and how many tide turns hand over
+in the arrival window. A bloom reported 3–6 km offshore typically arrives 6–90 h later, if at all
+(often most of it strands elsewhere first), while a line takes 1.3 min to deploy. It is a hindcast on
+the recorded 2025 season; in operation the same model would run on the live Copernicus forecast.
+
 ## Where released jellyfish go
 
 The twin follows a released animal for under a minute; whether it comes back is decided over days.

@@ -177,6 +177,96 @@ export interface DriftOutcome {
 }
 
 const HOUR = 3600;
+
+let maskCache: LandMask | null = null;
+/** The land mask, built once (about 0.2 s). */
+export function landMask(): LandMask {
+  if (!maskCache) maskCache = buildLandMask();
+  return maskCache;
+}
+
+export interface ArrivalForecast {
+  /** Hours after the report at which each animal first reaches the intake's approach band (sorted), and how many were followed. */
+  arrivals: number[];
+  followed: number;
+  stranded: number;
+  /** Arrivals per hour of the horizon (share of the patch). */
+  perHour: number[];
+}
+
+/**
+ * Forecast a reported bloom patch: `n` animals spread over `radius` (m) around (x, z) in the site
+ * frame, drifting from `hour0` hours into the recorded season for `horizonH` hours under the same
+ * current, windage and spreading as the release study. Records when each first reaches the
+ * intake's approach band.
+ */
+export function forecastArrival(start: { x: number; z: number; radius: number }, hour0: number, horizonH: number, n = 300, seed = 11): ArrivalForecast {
+  const mask = landMask();
+  const T = TIDE_DATA;
+  const dt = D.step;
+  const steps = Math.round((horizonH * HOUR) / dt);
+  const sigma = Math.sqrt(2 * D.diffusivity * dt);
+  const xc = (SITE.intake.x0 + SITE.intake.x1) / 2;
+  const rng = new SeededRandom(seed);
+  const { x0, z0, cell, cols, rows, kind } = mask;
+  const at = (x: number, z: number) => {
+    const c = Math.floor((x - x0) / cell);
+    const r = Math.floor((z - z0) / cell);
+    return c < 0 || r < 0 || c >= cols || r >= rows ? -1 : r * cols + c;
+  };
+  const arrivals: number[] = [];
+  const perHour = new Array<number>(Math.ceil(horizonH)).fill(0);
+  let followed = 0;
+  let stranded = 0;
+  for (let p = 0; p < n; p++) {
+    // A start on land is drawn again.
+    let x = start.x;
+    let z = start.z;
+    for (let k = 0; k < 20; k++) {
+      const a = rng.next() * Math.PI * 2;
+      const r = start.radius * Math.sqrt(rng.next());
+      x = start.x + Math.cos(a) * r;
+      z = start.z + Math.sin(a) * r;
+      const j = at(x, z);
+      if (j >= 0 && kind[j] === 0) break;
+    }
+    followed++;
+    for (let s = 1; s <= steps; s++) {
+      const h = hour0 + (s * dt) / HOUR;
+      let ux = lerpSeries(T.u, h);
+      let uz = lerpSeries(T.v, h);
+      const i = at(x, z);
+      if (i >= 0 && mask.dist[i] < D.coastDamping) {
+        // Near land the current runs along the shore (as in the release study).
+        const gx = (mask.dist[Math.min(i + 1, mask.dist.length - 1)] - mask.dist[Math.max(i - 1, 0)]) / (2 * cell);
+        const gz = (mask.dist[Math.min(i + cols, mask.dist.length - 1)] - mask.dist[Math.max(i - cols, 0)]) / (2 * cell);
+        const g = Math.hypot(gx, gz) || 1;
+        const toLand = -(ux * gx + uz * gz) / g;
+        if (toLand > 0) {
+          const k = 1 - mask.dist[i] / D.coastDamping;
+          ux += (gx / g) * toLand * k;
+          uz += (gz / g) * toLand * k;
+        }
+      }
+      x += (ux + D.windage * lerpSeries(T.wind.x, h)) * dt + sigma * rng.normal();
+      z += (uz + D.windage * lerpSeries(T.wind.z, h)) * dt + sigma * rng.normal();
+      const j = at(x, z);
+      if (j < 0 || kind[j] === 2) break;
+      if (kind[j] === 1) {
+        stranded++;
+        break;
+      }
+      if (Math.abs(x - xc) <= D.returnHalfWidth && z <= D.returnMaxZ) {
+        const t = (s * dt) / HOUR;
+        arrivals.push(t);
+        perHour[Math.min(perHour.length - 1, Math.floor(t))] += 1 / n;
+        break;
+      }
+    }
+  }
+  arrivals.sort((a, b) => a - b);
+  return { arrivals, followed, stranded, perHour };
+}
 const lerpSeries = (s: number[], h: number) => {
   const i = Math.min(Math.max(Math.floor(h), 0), s.length - 2);
   const t = Math.min(Math.max(h - i, 0), 1);

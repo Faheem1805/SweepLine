@@ -3,6 +3,7 @@ import { useState, type ReactNode } from 'react';
 import { useSnap } from '../app/hooks';
 import { AngleDiagram } from '../components/charts/AngleDiagram';
 import { PlanSchematic } from '../components/charts/PlanSchematic';
+import { AlertPlanner } from '../components/panels/AlertPlanner';
 import { SideSchematic } from '../components/charts/SideSchematic';
 import { Icon } from '../components/ui/icons';
 import { FlowArrow, IconTile, Panel, type TileTone } from '../components/ui/Panel';
@@ -357,6 +358,8 @@ export function HowItWorks() {
             </li>
           ))}
         </ol>
+
+        <AlertPlanner />
 
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
           <Panel title="The site from above" subtitle="Schematic reference geometry from the simulation — not ENEC facility data" bodyClassName="flex flex-col justify-between gap-3">
