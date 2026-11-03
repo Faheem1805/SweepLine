@@ -6,6 +6,7 @@
  *   npm run test:tide                # until 3 h after the turn
  *   npm run test:tide -- hours=4
  */
+import { ASSUMPTIONS } from '../src/config/assumptions';
 import { getScenario } from '../src/simulation/scenarios';
 import { controller } from '../src/simulation/SimController';
 import { TIDE } from '../src/simulation/tide';
@@ -70,12 +71,13 @@ for (const twin of [true, false]) {
   console.log(
     `  after the turn (${after} h): intake contacts ${r.afterTurn.sweep} vs baseline ${r.afterTurn.base} (${cut(r.afterTurn)}) · diverted ${r.afterTurn.diverted} · released WSW/ENE outlets ${r.afterTurn.released.join('/')} · status ${r.status}`,
   );
-  // Animals already in the pipe at the turn still leave by the outlet they were sent to.
+  // Both lines share one release line, down-drift (WSW) in the design; a down-tide valve would release ENE after the turn.
   const [wsw, ene] = r.afterTurn.released;
-  if (twin) ok = r.afterTurn.base > 0 && r.afterTurn.sweep <= r.afterTurn.base * 0.1 && ene >= 0.9 * (wsw + ene);
+  const downTide = ASSUMPTIONS.release.design.side === 'down-tide';
+  if (twin) ok = r.afterTurn.base > 0 && r.afterTurn.sweep <= r.afterTurn.base * 0.1 && (downTide ? ene >= 0.9 * (wsw + ene) : ene === 0);
 }
 if (!ok) {
-  console.error('FAIL: the Twin-Line keeps under 90% of post-turn contacts off the intake, or releases mostly up-tide');
+  console.error('FAIL: the Twin-Line keeps under 90% of post-turn contacts off the intake, or releases from the wrong outlet');
   process.exit(1);
 }
 console.log('\nPASS');

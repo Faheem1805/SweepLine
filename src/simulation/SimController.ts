@@ -739,7 +739,8 @@ export class SimController {
     }
     const outlet = s.flowSide();
     if (outlet !== this.prevOutlet) {
-      if (tr.throatOpen && this.params.twinLine) this.log('info', `Release valve to the ${compassLabel(this.params.currentBearing)} outlet — released jellyfish go out down-tide`);
+      if (tr.throatOpen && this.params.twinLine && ASSUMPTIONS.release.design.side === 'down-tide')
+        this.log('info', `Release valve to the ${compassLabel(this.params.currentBearing)} outlet — released jellyfish go out down-tide`);
       this.prevOutlet = outlet;
     }
 
@@ -1136,7 +1137,7 @@ export class SimController {
         duty: s.duty,
         lines: s.lines.map((l) => ({ mode: l.mode, deployedPct: l.deployedFraction * 100 })),
         handover: s.handoverAt >= 0,
-        outlet: s.flowSide(),
+        outlet: ASSUMPTIONS.release.design.side === 'down-tide' ? s.flowSide() : 0,
       },
       tide: this.tideSnapshot(),
     };

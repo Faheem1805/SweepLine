@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { LoadingState, SimSnapshot } from '../simulation/SimController';
+import type { KioskCaption } from './kiosk';
 import type { EngineKind } from '../simulation/types';
 import type { CameraPreset } from '../three/cameras/CameraRig';
 
@@ -44,6 +45,8 @@ interface AppState {
   toast: Toast | null;
   /** The geographic opening sequence is on screen (it owns start-up loading feedback). */
   intro: boolean;
+  /** Booth kiosk caption while the self-running loop is on (`?kiosk=1`). */
+  kiosk: KioskCaption | null;
   setUI: (partial: Partial<UIState>) => void;
   setCamera: (camera: CameraPreset) => void;
   showToast: (message: string, tone?: Toast['tone']) => void;
@@ -104,6 +107,7 @@ export const useApp = create<AppState>((set) => ({
   },
   toast: null,
   intro: playIntro(),
+  kiosk: null,
   setUI: (partial) => set((s) => ({ ui: { ...s.ui, ...partial } })),
   setCamera: (camera) => set((s) => ({ ui: { ...s.ui, camera, cameraNonce: s.ui.cameraNonce + 1 } })),
   showToast: (message, tone = 'info') => set({ toast: { id: toastId++, message, tone } }),

@@ -1,4 +1,4 @@
-import { ChevronDown, Grid3x3, Recycle, ShieldAlert, ShieldCheck, Sprout, Turtle, Waves } from 'lucide-react';
+import { ChevronDown, Gauge, Grid3x3, Recycle, ShieldAlert, ShieldCheck, Sprout, Turtle, Waves } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { useSnap } from '../app/hooks';
 import { AngleDiagram } from '../components/charts/AngleDiagram';
@@ -7,11 +7,14 @@ import { SideSchematic } from '../components/charts/SideSchematic';
 import { Icon } from '../components/ui/icons';
 import { FlowArrow, IconTile, Panel, type TileTone } from '../components/ui/Panel';
 import { ASSUMPTIONS } from '../config/assumptions';
+import { AED_PER_USD, CAPEX_EXCLUDED, capexTotal, REFERENCE_EVENT, RUNNING, UNIT_DAY } from '../config/costs';
 import { OPERATING_ENVELOPE } from '../config/operatingEnvelope';
+import { AIR_EVIDENCE, DECISIVE_TEST, SURVIVAL, survivalRange } from '../config/survival';
 import { SITE, seabedDepth } from '../config/site';
 import { DRIFT_DATA } from '../data/drift.generated';
 import { WILDLIFE_DATA } from '../data/wildlife.generated';
 import { popUpDuration } from '../simulation/curtain';
+import { feasibility, SIZING_BLOOM } from '../simulation/feasibility';
 import { getCurtainLayout } from '../simulation/geometry';
 import type { ConstraintStatus } from '../simulation/safety';
 import type { AnchorAngle } from '../simulation/types';
@@ -39,7 +42,7 @@ const STEPS: Array<{ icon: ReactNode; title: string; body: string }> = [
   {
     icon: <Icon name="release" size={22} />,
     title: 'Release',
-    body: 'A low-shear line carries the jellyfish alive around the intake and releases them 2 km along the shore on the down-tide side, where the recorded current and wind do not bring them back.',
+    body: 'A low-shear line carries the jellyfish alive around the intake and releases them 2 km along the shore, down-drift, where the recorded current and wind do not bring them back.',
   },
 ];
 
@@ -65,6 +68,64 @@ const SAFETY: Array<{ tone: TileTone; icon: ReactNode; title: string; body: stri
 ];
 
 const STATUS_TEXT: Record<ConstraintStatus, string> = { ok: 'text-teal', near: 'text-amber', out: 'text-red', na: 'text-dim' };
+
+/** What it takes to build and run one line: throughput, power, people and approvals (from the twin and design assumptions). */
+function BuildAndRun({ skirt, angle, jetLevel }: { skirt: number; angle: AnchorAngle; jetLevel: number }) {
+  const f = feasibility(angle, skirt, jetLevel);
+  const popUpMin = popUpDuration(getCurtainLayout(angle)) / 60;
+  const T = ASSUMPTIONS.transfer;
+  const cap = capexTotal();
+  const tiles: Array<{ value: string; label: string; body: string; note: string }> = [
+    {
+      value: `${Math.round(f.capacity)} t/h`,
+      label: 'Throughput per line',
+      body: `A dense bloom on a spring tide brings ${f.bloomLoad[0].toFixed(0)}–${f.bloomLoad[1].toFixed(0)} t/h across the curtain (${SIZING_BLOOM.density[0]}–${SIZING_BLOOM.density[1]} per m³, ${SIZING_BLOOM.mass[0]}–${SIZING_BLOOM.mass[1]} kg each, ${f.current.toFixed(2)} m/s). The ${T.pipeBore} m transfer line carries about ${Math.round(f.capacity)} t/h at ${Math.round(T.maxJellyFraction * 100)}% jellyfish by volume.`,
+      note: `Spring current: the recorded season’s 95th percentile. Catchment ${f.catchmentWidth.toFixed(0)} m × ${skirt.toFixed(1)} m skirt.`,
+    },
+    {
+      value: `≈ ${Math.round(f.totalKW)} kW`,
+      label: 'Power while running',
+      body: `Transfer pump ${Math.round(f.pumpKW)} kW (${f.head.toFixed(1)} m head over the ${(f.lineLength / 1000).toFixed(1)} km release line) and jets ${Math.round(f.jetsKW)} kW. Nothing runs while the line is stowed. That is about ${((f.totalKW / 1.4e6) * 100).toFixed(3)}% of a 1.4 GW unit.`,
+      note: 'Darcy–Weisbach friction for a smooth HDPE line; jets scale with the cube of output.',
+    },
+    {
+      value: `${popUpMin.toFixed(1)} min`,
+      label: 'Deploy, no vessel',
+      body: 'One command from the control room after the early warning; the line inflates and rises from its seabed anchors. One operator watches it; a small crew inspects each line monthly in season.',
+      note: 'Pop-up timing from the twin; ascent speed to be confirmed in a flume.',
+    },
+    {
+      value: `US$${cap.low.toFixed(0)}–${cap.high.toFixed(0)}M`,
+      label: 'Hardware cost, both lines',
+      body: `Sourced public prices (AED ${Math.round(cap.low * AED_PER_USD)}–${Math.round(cap.high * AED_PER_USD)}M): curtains, anchors, jet and transfer pumps, and one shared 2.4 km release line, which is the largest item. Not included: ${CAPEX_EXCLUDED.join(', ')}.`,
+      note: 'Item-by-item ranges and sources in src/config/costs.ts and the README.',
+    },
+    {
+      value: `${Math.max(1, Math.round(cap.low / UNIT_DAY.high))}–${Math.round(cap.high / UNIT_DAY.low)} unit-days`,
+      label: 'Pays back after',
+      body: `One lost day of a 1.4 GW unit is worth about US$${UNIT_DAY.low.toFixed(1)}–${UNIT_DAY.high.toFixed(1)}M. ${REFERENCE_EVENT.label} cost ${REFERENCE_EVENT.unitDays[0]}–${REFERENCE_EVENT.unitDays[1]} unit-days. Running costs are about US$${RUNNING.low}–${RUNNING.high}k a season, against ~US$${RUNNING.manualPerYear}M a year for boats and crews at Gravelines.`,
+      note: UNIT_DAY.basis,
+    },
+    {
+      value: 'Outside the plant',
+      label: 'Approvals',
+      body: 'No change to the intake, screens or plant systems. It needs the operator’s review for works near the intake, an environmental permit for live release and seabed works, and a marine works permit.',
+      note: 'The existing screens stay the last line of defence.',
+    },
+  ];
+  return (
+    <Panel title="Build and run it" subtitle="What one guide line takes, from the twin’s geometry, the recorded tide and design assumptions" icon={<Gauge size={18} />} bodyClassName="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+      {tiles.map((t) => (
+        <div key={t.label} className="card-inner flex flex-col gap-2 p-4">
+          <div className="text-[12px] font-semibold tracking-[0.06em] text-muted uppercase">{t.label}</div>
+          <div className={cn('text-[26px] leading-none font-semibold tracking-tight text-white', /\d/.test(t.value) && 'num')}>{t.value}</div>
+          <p className="text-[13px] leading-snug text-pretty text-ink-2">{t.body}</p>
+          <p className="mt-auto text-[11.5px] leading-snug text-pretty text-muted">{t.note}</p>
+        </div>
+      ))}
+    </Panel>
+  );
+}
 
 /** Wildlife and side effects: what else lives at the site, and how the design answers it (live skirt gap from the twin). */
 function WildlifePanel({ skirt, angle }: { skirt: number; angle: AnchorAngle }) {
@@ -112,7 +173,7 @@ function WildlifePanel({ skirt, angle }: { skirt: number; angle: AnchorAngle }) 
     {
       icon: <Icon name="release" size={18} />,
       title: 'Where the jellyfish go',
-      body: `Released alive ${ASSUMPTIONS.release.design.along / 1000} km along the shore on the down-tide side, with no air or blades on the way. Only ${Math.round(design.backAtSite * 100)}% come back to the plant within ${DRIFT_DATA.horizonDays} days.`,
+      body: `Released alive ${ASSUMPTIONS.release.design.along / 1000} km along the shore, down-drift, with no air or blades on the way. Only ${Math.round(design.backAtSite * 100)}% come back to the plant within ${DRIFT_DATA.horizonDays} days.`,
       source: 'Drift study on the recorded current and wind: see Evidence.',
     },
   ];
@@ -130,7 +191,46 @@ function WildlifePanel({ skirt, angle }: { skirt: number; angle: AnchorAngle }) 
           <p className="mt-auto text-[11.5px] leading-snug text-pretty text-muted">{it.source}</p>
         </div>
       ))}
+      <SurvivalStrip />
     </Panel>
+  );
+}
+
+/** Survival from curtain to outlet, stage by stage (fish and invertebrate analogues: no jellyfish data exist yet). */
+function SurvivalStrip() {
+  const total = survivalRange();
+  const p = (v: number) => `${Math.round(v * 100)}%`;
+  return (
+    <div className="card-inner col-span-full flex flex-col gap-3 p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <span className="text-[14px] font-semibold text-white">Alive on the way: lift once, then gravity</span>
+        <span className="text-[12px] text-muted">
+          End to end <span className="num text-[15px] font-semibold text-teal">{p(total.low)}–{p(total.high)}</span> on fish and invertebrate analogues
+        </span>
+      </div>
+      <ol className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+        {SURVIVAL.map((st, i) => (
+          <li key={st.stage} className="flex flex-col gap-1 rounded-lg border border-line/70 px-3 py-2" title={`${st.basis} (${st.source})`}>
+            <span className="text-[11.5px] text-muted">
+              <span className="num mr-1 text-dim">{i + 1}</span>
+              {st.stage}
+            </span>
+            <span className="num text-[16px] font-semibold text-ink">
+              {p(st.low)}–{p(st.high)}
+            </span>
+            <span className="text-[11px] leading-snug text-dim">{st.source}</span>
+          </li>
+        ))}
+      </ol>
+      <p className="text-[12.5px] leading-snug text-pretty text-ink-2">
+        No published study measures jellyfish through a pump or a long pipe, so this follows the US fish-bypass rules: one slow screw lift into a head
+        tank, then gravity down a smooth line with wide bends, never below atmospheric pressure and with no air. {AIR_EVIDENCE}
+      </p>
+      <p className="text-[12px] leading-snug text-pretty text-muted">
+        <span className="font-semibold text-amber">Decisive test: </span>
+        {DECISIVE_TEST}
+      </p>
+    </div>
   );
 }
 
@@ -142,6 +242,7 @@ function TechnicalDetails() {
   const c = snap.curtain;
   const layout = getCurtainLayout(p.anchorAngle);
   const popUpMin = popUpDuration(layout) / 60;
+  const T = ASSUMPTIONS.transfer;
   const spec: Array<[string, string]> = [
     ['Anchor layouts', '15° / 20° / 25° pre-engineered'],
     ['Curtain length (20°)', `${getCurtainLayout(20).length.toFixed(0)} m in ${C.moduleLength} m modules`],
@@ -151,8 +252,8 @@ function TechnicalDetails() {
     ['Foot jets', `${J.footUplift} m/s upward at the hem`],
     ['Jet flow / power', `~${J.designFlowM3s} m³/s · ~${J.designPowerKW} kW at 100 %`],
     ['Throat mouth', `${(SITE.throat.halfWidth * 2).toFixed(1)} × ${(SITE.throat.halfHeight * 2).toFixed(1)} m bellmouth`],
-    ['Transfer candidates', 'Water-powered ejector · fish-friendly screw pump · passive bypass'],
-    ['Air bubbles / moving parts', 'None in the animals’ path'],
+    ['Transfer', `Screw lift into a head tank, then gravity: ${T.pipeBore} m bore at ${T.pipeVelocity} m/s, bends ≥ 5 bores`],
+    ['In the animals’ path', 'No air, no impellers, no blades; one slow fish-friendly screw'],
   ];
   return (
     <section className="card overflow-hidden">
@@ -310,6 +411,8 @@ export function HowItWorks() {
             </div>
           ))}
         </Panel>
+
+        <BuildAndRun skirt={c.skirtTarget} angle={p.anchorAngle} jetLevel={p.jetLevel} />
 
         <WildlifePanel skirt={c.skirtTarget} angle={p.anchorAngle} />
 

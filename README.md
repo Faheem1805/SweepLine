@@ -37,10 +37,10 @@ Deployment* scenarios.
 tide and reverses about 3.8 times a day (Copernicus record, see [Real tidal current](#real-tidal-current)),
 so any one-way barrier faces the wrong way about half the time. A second line, the mirror image of
 the first, lies stowed on the seabed on the other side of the intake. When the tide turns, it pops
-up for the new direction; the first line guides the traffic already on it to its throat and settles
-back onto the seabed; and a valve on the shared transfer manifold sends released animals out of the
-outlet that is down-tide. Run the *Tide Turn* scenario, and switch *Second line* off in Stress test to
-see a single curtain face the wrong way.
+up for the new direction, and the first line guides the traffic already on it to its throat and
+settles back onto the seabed. Both throats feed one manifold and one release line. Run the *Tide
+Turn* scenario, and switch *Second line* off in Stress test to see a single curtain face the wrong
+way.
 
 > Engineering design visualiser. Performance values are simulation estimates and are not
 > field-validated. Reference coastal intake geometry is schematic and does not represent
@@ -152,9 +152,9 @@ In `npm run dev`, `await __mapIntroAt(2500)` renders exactly that frame (in ms) 
 2. **Stress test → Transfer failure**, then *Fail the standby path too*: SafeOpen retracts the
    upstream end first and the steps appear on screen. Re-arm when it completes.
 3. **Scenario → Tide Turn** — the recorded tide slackens and reverses (time-lapse through slack
-   water): Line B pops up on the other side of the intake, Line A settles back, and the release
-   valve swings to the down-tide outlet. Then *Second line* off in Stress test: one curtain faces the
-   wrong way and SafeOpen hands the intake back to its screens.
+   water): Line B pops up on the other side of the intake and Line A settles back. Then *Second
+   line* off in Stress test: one curtain faces the wrong way and SafeOpen hands the intake back to
+   its screens.
 4. **Scenario → Slack Tide** — the current dies away; switch *Water jets* off in Stress test to see a
    passive curtain stall. **Scenario → Workboat Deployment** (or *Deployment → Workboat* in Stress
    test, which replays the run) shows the late-deployment leak.
@@ -364,15 +364,15 @@ run against the duty line at more than 0.015 m/s for 30 s, duty passes to the ot
 deploys (pop-up, or a workboat if selected). The previous line keeps its jets running and its throat
 open until at most one jellyfish is left guided on it and its throat is empty (not before 60 s, at
 the latest after 7 min), then vents back onto the seabed. Both throats feed one manifold on the
-intake centreline; the valve sends each animal entering the pipe to the outlet down-current at that
-moment. Line B's hoses and outlet lie stowed until it is in use. The operating envelope judges the
+intake centreline and one release line down-drift (see [Where released jellyfish go](#where-released-jellyfish-go));
+`ASSUMPTIONS.release.design.side = 'down-tide'` switches to the alternative, a valve sending each
+animal to the outlet down-current at that moment. Line B's hoses lie stowed until it is in use. The operating envelope judges the
 current against the line laid for its direction; with *Second line* off it judges the single line,
 so a turned tide is an envelope violation and SafeOpen follows.
 
 `npm run test:tide` replays the recorded turn (8 Oct 2025, 02:43 UTC) with and without the second
 line and counts intake contacts against the same-seed baseline: over the three hours after the
-turn the Twin-Line keeps about 99 % of them off the intake and releases down-tide, while a single
-line keeps about 1 %.
+turn the Twin-Line keeps about 99 % of them off the intake, while a single line keeps about 1 %.
 
 ## Where released jellyfish go
 
@@ -390,15 +390,60 @@ One release an hour across Oct–Nov 2025, 20 animals each:
 | --- | --- | --- |
 | Near the intake (~110 m along, 70 m out) | 16 % | 9–26 % |
 | Straight out, 2 km offshore | 14 % | 13–18 % |
-| **2 km along the shore, down-tide side (design)** | **2 %** | **1–2 %** |
+| Two lines, valve to the down-tide side, 2 km along | 2 % | — |
+| **One line, 2 km down-drift (WSW) along the shore (design)** | **1 %** | **1–3 %** |
 
 Sending animals offshore does not help: the season's mean drift is onshore (1.2 cm/s) and so is the
-wind. Along the shore they stay away, and the manifold valve already picks the down-tide side, so
-the design outlets are 2 km along the shore, 300 m out (`ASSUMPTIONS.release.design`). The twin
-still draws them close to the site. Almost everything at the surface reaches the shore within a
-week in this season: 98 % of the released animals, and 90 % of a natural bloom nearby with no
+wind. Along the shore they stay away. One release line 2 km down-drift (toward the WSW, with the
+season's residual drift and wind) brings back as few as two lines with a valve choosing the
+down-tide side, with half the pipe, and still only 4 % if the drift ran the other way. So the design
+is one release line shared by both guide lines, 2 km along the shore, 300 m out
+(`ASSUMPTIONS.release.design`). The twin still draws the outlet close to the site. Almost everything
+at the surface reaches the shore within a week in this season: 99 % of the released animals, and
+90 % of a natural bloom nearby with no
 SweepLine. The Evidence page shows the comparison with sample tracks. Kinematic drift model with the
 current taken as uniform over the area; to be checked with drifters at sea.
+
+## Build and run it
+
+How It Works has a *Build and run it* panel (`src/simulation/feasibility.ts`, `src/config/costs.ts`):
+
+- **Throughput.** A dense bloom on a spring tide (0.1–0.3 animals per m³, 0.33–3 kg each, the
+  season's 95th-percentile current 0.13 m/s through the 44 m × 3.5 m band the curtain spans) brings
+  about 2–64 t/h across a line. The transfer line (1.0 m bore, at least twice the largest bell, at
+  1.5 m/s, ~4,200 m³/h) carries about 217 t/h at 5 % jellyfish by volume. A boat clears about 1 t/h.
+- **Power while running** ≈ 87 kW: transfer pump 66 kW (3.4 m head over the 2.2 km release line,
+  Darcy–Weisbach) and jets 21 kW. Nothing runs while stowed.
+- **Hardware cost, both lines: US$2–12M (AED 7–44M)**, from public prices only: inflatable offshore
+  boom (UK coastguard) up to an installed fabric intake barrier (US EPA), moorings, fish-friendly
+  pumps (New Zealand and Canadian tenders, US Fish and Wildlife), and PE100 pipe up to an installed
+  power-plant fish-return line (US EPA). The shared release line is the largest item. Not included:
+  inflation system and manifold, controls and sensors, engineering, permits and contingency.
+- **Payback after 1–9 avoided unit-days**, at US$1.3–3.7M per day of a 1.4 GW unit (Torness up to an
+  analyst's Barakah generation cost); Hanul 2021 cost 14–26 unit-days. Running costs are about
+  US$20–45k a season, against about US$0.6M a year for EDF's boats and crews at Gravelines.
+
+Every price, its year and its source URL are in `src/config/costs.ts`.
+
+## Alive on the way
+
+No published study measures scyphozoan jellyfish through a pump or a long pipe, so the survival
+budget on How It Works (`src/config/survival.ts`) uses fish and invertebrate analogues, as
+published: guidance 90–100 % (fish on rotating return screens, EPRI 2010), one Archimedes screw lift
+94–100 % (McNabb et al. 2003; Borthwick & Liston 2003), the 2.2 km gravity line 70–100 % (power-plant
+return lines, EPRI 2010) and the diffuser 99–100 % (Johnson et al. 2003): **59–100 % end to end**.
+The transfer follows the US NMFS fish-bypass rules: lift the animals once into a head tank, then
+gravity down a smooth line with bends of at least five bores, never below atmospheric pressure, and
+no air at all (air harms medusae, Raskoff et al. 2003). The decisive test: live 30–45 cm Blue
+Blubber through the screw and a 25-minute recirculating pipe loop at 1.5 m/s against paired
+controls, scored over 96 h.
+
+## Booth kiosk
+
+`?kiosk=1` runs a self-running loop for a stand (`src/app/kiosk.ts`): the reference run (pop-up,
+sweep, release point), the recorded tide turn (Line B taking over), then the Evidence page, with one
+caption at a time. Captions follow the simulation's state, so they match the scene. Any touch, key
+or scroll hands control back. In `npm run dev`, `__sl.startKiosk()` and `__sl.stopKiosk()` drive it.
 
 ## Wildlife and side effects
 

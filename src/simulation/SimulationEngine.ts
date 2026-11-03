@@ -1000,8 +1000,8 @@ export class SimulationEngine {
     p.state[i] = S_TRANSFERRED;
     p.stateTime[i] = 0;
     p.queueIndex[i] = -1;
-    // The manifold valve sends it to the outlet down-current now.
-    p.lane[i] = this.flowSide();
+    // The release line goes down-drift; with a down-tide valve instead, to the outlet down-current now.
+    p.lane[i] = ASSUMPTIONS.release.design.side === 'down-tide' ? this.flowSide() : 0;
     const T = ASSUMPTIONS.transfer;
     p.timer[i] = (this.params.releaseDistance / T.pipeVelocity) * (0.95 + 0.1 * hash01(p.id[i], 23));
     this.counters.transferred++;

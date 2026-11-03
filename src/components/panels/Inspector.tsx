@@ -131,7 +131,7 @@ export function Inspector() {
       title = 'Safe Release';
       body = (
         <>
-          <Row k="Design location" v={`${ASSUMPTIONS.release.design.along / 1000} km along the shore, down-tide`} />
+          <Row k="Design location" v={`${ASSUMPTIONS.release.design.along / 1000} km along the shore, down-drift`} />
           <Row k="Back at the plant" v={`${pct(DRIFT_DESIGN.backAtSite)} within ${DRIFT_DATA.horizonDays} days (drift study)`} tone="text-teal" />
           <Row k="Transfer line" v={`${snap.params.releaseDistance} m (assumption)`} />
           <Row k="Released (total)" v={s.released} tone="text-teal" />

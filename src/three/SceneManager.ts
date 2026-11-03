@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { useApp, type UIState, type SelectionKind } from '../app/store';
+import { ASSUMPTIONS } from '../config/assumptions';
 import { SITE, mirrorX } from '../config/site';
 import { S_APPROACHING, S_TRANSFERRED } from '../simulation/Agent';
 import { pointAtArc } from '../simulation/geometry';
@@ -584,7 +585,8 @@ export class SceneManager {
     // release valve and both outlets.
     const twin = params.twinLine;
     const flowFraction = tr.availability() * Math.min(1, 0.35 + tr.processedEMA / Math.max(tr.capacityRate(), 1e-3));
-    const outlet = sw.flowSide();
+    // The outlet the release line is sending to (down-drift, or the down-tide valve's choice).
+    const outlet = ASSUMPTIONS.release.design.side === 'down-tide' ? sw.flowSide() : 0;
     for (const side of SIDES) {
       const line = sw.lines[side];
       const show = side === 0 || twin;

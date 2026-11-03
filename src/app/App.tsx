@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from 'react';
 import { MapIntro } from '../components/intro/MapIntro';
+import { KioskCaption } from '../components/layout/KioskCaption';
 import { TopBar } from '../components/layout/TopBar';
 import { Toast } from '../components/layout/Toast';
 import { LoadingOverlay } from '../components/viewport/Hud';
@@ -45,6 +46,7 @@ export function App() {
       </main>
       <LoadingOverlay />
       <Toast />
+      <KioskCaption />
       {intro && <MapIntro />}
     </div>
   );

@@ -17,7 +17,7 @@ const Z1 = 2800;
 const TONE: Record<string, { stroke: string; text: string; bar: string; label: string }> = {
   'as-built': { stroke: '#f5b94c', text: 'text-amber', bar: 'bg-amber', label: 'Near the intake' },
   'offshore-2000': { stroke: '#93a9b6', text: 'text-ink-2', bar: 'bg-ink-2', label: 'Straight out, 2 km offshore' },
-  design: { stroke: '#2dd4bf', text: 'text-teal', bar: 'bg-teal', label: `${ASSUMPTIONS.release.design.along / 1000} km along the shore, down-tide` },
+  design: { stroke: '#2dd4bf', text: 'text-teal', bar: 'bg-teal', label: `One line, ${ASSUMPTIONS.release.design.along / 1000} km down-drift (WSW)` },
 };
 
 /** SVG path for the real coastline inside the map window (even-odd fill). */
@@ -81,8 +81,8 @@ export function ReleaseDriftPanel() {
                 />
               )),
             )}
-            {/* Release points: near outlets, and the design outlets either side. */}
-            {[-1, 1].map((s) => (
+            {/* Release points: the design outlet(s), and the offshore option. */}
+            {(R.side === 'down-tide' ? [-1, 1] : [1]).map((s) => (
               <circle key={`d${s}`} cx={xc + s * R.along} cy={R.offshore} r={80} fill="#2dd4bf" stroke="#04131a" strokeWidth={20} />
             ))}
             <circle cx={xc} cy={2000} r={70} fill="#93a9b6" stroke="#04131a" strokeWidth={20} />
@@ -140,8 +140,9 @@ export function ReleaseDriftPanel() {
           })}
           <p className="text-[12.5px] leading-relaxed text-pretty text-ink-2">
             Released next to the intake, about one in six animals is back at the plant within hours. Sending them offshore does not help: the season&rsquo;s
-            onshore drift ({(Math.abs(TIDE.stats.offshoreMean) * 100).toFixed(1)} cm/s) and wind carry them back. {R.along / 1000} km along the shore on the
-            down-tide side, which the manifold valve already picks, only {pct(design.backAtSite)} come back.
+            onshore drift ({(Math.abs(TIDE.stats.offshoreMean) * 100).toFixed(1)} cm/s) and wind carry them back. Along the shore they stay away: from one
+            release line {R.along / 1000} km down-drift, shared by both guide lines, only {pct(design.backAtSite)} come back, as few as from two lines with a valve
+            choosing the down-tide side ({pct(byId['downtide-2000']?.backAtSite ?? 0)}), with half the pipe.
           </p>
           <p className="text-[12px] leading-relaxed text-pretty text-muted">
             In this season almost everything near the surface reaches the shore within a week: {pct(design.stranded)} of the released animals, and{' '}

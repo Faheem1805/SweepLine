@@ -191,8 +191,18 @@ export const ASSUMPTIONS = {
      * runs at roughly 55–75 % utilisation, leaving headroom for rate surges.
      */
     designRatePerThousand: 0.85,
-    /** Nominal transfer water flow at 100 % capacity (m³/h). */
-    designFlowM3h: 640,
+    /**
+     * Bore of the transfer line (m): at least twice the largest bell, so animals never touch both
+     * walls. With `pipeVelocity` it sets the transfer water flow.
+     */
+    pipeBore: 1.0,
+    /** Nominal transfer water flow at 100 % capacity (m³/h): the bore's cross-section at `pipeVelocity` (1.5 m/s). */
+    designFlowM3h: Math.round((Math.PI / 4) * 1.0 * 1.0 * 1.5 * 3600),
+    /** Largest share of the transfer water (by volume) taken up by jellyfish, for gentle handling. Assumption, to be set by bell-damage tests. */
+    maxJellyFraction: 0.05,
+    /** Transfer pump wire-to-water efficiency, and the line's minor-loss coefficient (entrance, bends, valve, diffuser). */
+    pumpEfficiency: 0.6,
+    minorLossK: 5,
     /** Time for the standby path to reach full capacity after a primary fault (s). */
     standbyActivationTime: 8,
     /**
@@ -206,11 +216,14 @@ export const ASSUMPTIONS = {
 
   release: {
     /**
-     * Design release point, chosen with the drift study (scripts/drift-study.ts): the valve sends
-     * animals to the down-tide side, this far along the shore from the intake (m) and this far
-     * offshore (site z, m). The twin draws its outlet schematically, close to the site.
+     * Design release point, chosen with the drift study (scripts/drift-study.ts): both throats feed
+     * one release line running this far along the shore (m) to the down-drift side (+x, WSW: the
+     * Oct–Nov residual drift and wind), and this far offshore (site z, m). It brings as few animals
+     * back as a valve choosing the down-tide side each time, with half the pipe. `side: 'down-tide'`
+     * selects that alternative (two release lines, one each side). The twin draws its outlets
+     * schematically, close to the site.
      */
-    design: { along: 2000, offshore: 300 },
+    design: { side: 'down-drift' as 'down-drift' | 'down-tide', along: 2000, offshore: 300 },
     /** Assumed transfer-line length to the safe release zone (m) — simulation assumption. */
     distanceOptions: [250, 500, 750] as const,
     jetSpeed: 0.35,

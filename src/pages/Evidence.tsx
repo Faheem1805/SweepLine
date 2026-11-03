@@ -4,6 +4,8 @@ import { useHistory, useSnap } from '../app/hooks';
 import { useApp } from '../app/store';
 import { downsample, Legend, SERIES, TimeChart, type SeriesDef } from '../components/charts/TimeChart';
 import { ReleaseDriftPanel } from '../components/panels/ReleaseDrift';
+import { SEEDS_DATA } from '../data/seeds.generated';
+import type { SeedStat } from '../data/seedsTypes';
 import { Icon } from '../components/ui/icons';
 import { FlowArrow, IconTile, Panel, type TileTone } from '../components/ui/Panel';
 import { controller } from '../simulation/SimController';
@@ -29,12 +31,51 @@ function Metric({ icon, tone, value, label, detail, valueTone }: { icon: ReactNo
   );
 }
 
+const ci = (s: SeedStat) => `${pct(s.lo, 1)}–${pct(s.hi, 1)}`;
+
+/** The headline results across many blooms (multi-seed study), not just the run on screen. */
+function AcrossBlooms() {
+  const R = SEEDS_DATA.reference;
+  const T = SEEDS_DATA.tideTurn;
+  const items: Array<{ label: string; value: string; detail: string; tone: string }> = [
+    {
+      label: `Fewer intake contacts · ${R.reduction.n} blooms`,
+      value: pct(R.reduction.mean, 1),
+      detail: `95% CI ${ci(R.reduction)} · worst bloom ${pct(R.reduction.min, 1)} · ${R.minutes} min from the bloom approach`,
+      tone: 'text-teal',
+    },
+    {
+      label: 'Diversion · under-skirt',
+      value: `${pct(R.diversion.mean, 1)} · ${pct(R.underSkirt.mean, 1)}`,
+      detail: `95% CI ${ci(R.diversion)} and ${ci(R.underSkirt)}`,
+      tone: 'text-cyan',
+    },
+    {
+      label: `After the recorded tide turn · ${T.twin.n} blooms`,
+      value: `${pct(T.twin.mean, 0)} vs ${pct(T.single.mean, 0)}`,
+      detail: `Fewer intake contacts in the ${T.hoursAfter} h after the turn: Twin-Line (95% CI ${ci(T.twin)}) against a single line`,
+      tone: 'text-teal',
+    },
+  ];
+  return (
+    <section className="card grid grid-cols-1 gap-4 p-5 md:grid-cols-3">
+      {items.map((it) => (
+        <div key={it.label} className="flex min-w-0 flex-col gap-1">
+          <span className="text-[12px] font-semibold tracking-[0.06em] text-muted uppercase">{it.label}</span>
+          <span className={cn('num text-[24px] leading-none font-semibold', it.tone)}>{it.value}</span>
+          <span className="text-[12px] leading-snug text-pretty text-muted">{it.detail}</span>
+        </div>
+      ))}
+    </section>
+  );
+}
+
 /** Validation roadmap, in order: what exists today, then what comes next. */
 const STAGES: Array<{ done: boolean; title: string; detail: string }> = [
   { done: true, title: 'Simulation visualiser', detail: '3D digital twin of a reference coastal intake' },
   { done: true, title: 'Agent model', detail: 'Seeded agent-based model with a same-seed baseline' },
   { done: false, title: 'Flume calibration', detail: 'Scaled curtain and jets: guidance, skirt depth, under-skirt rate' },
-  { done: false, title: 'Biological testing', detail: 'Live Blue Blubber: transfer handling and bell condition' },
+  { done: false, title: 'Biological testing', detail: 'Live Blue Blubber through the screw lift and a 25-min pipe loop, paired controls, 96 h hold' },
   { done: false, title: 'Coastal pilot', detail: 'One curtain arm: pop-up timing and SafeOpen in real conditions' },
 ];
 
@@ -56,8 +97,17 @@ export function Evidence() {
           <div className="min-w-0 max-w-[900px]">
             <div className="page-eyebrow">Evidence</div>
             <h1 className="mt-1.5 text-[clamp(30px,2.6vw,42px)] leading-[1.08] font-bold tracking-tight text-balance text-white">
-              <span className="text-teal">{reduction === null ? '—' : pct(reduction)}</span> fewer intake contacts
-              <span className="text-ink-2"> in the same-seed simulation</span>
+              {reduction === null ? (
+                <>
+                  <span className="text-teal">{pct(SEEDS_DATA.reference.reduction.mean, 1)}</span> fewer intake contacts
+                  <span className="text-ink-2"> across {SEEDS_DATA.reference.reduction.n} simulated blooms</span>
+                </>
+              ) : (
+                <>
+                  <span className="text-teal">{pct(reduction)}</span> fewer intake contacts
+                  <span className="text-ink-2"> in the same-seed simulation</span>
+                </>
+              )}
             </h1>
             <p className="mt-2.5 text-[15px] leading-relaxed text-pretty text-ink-2">
               The same bloom — identical seed, timing, positions and depths — runs with and without SweepLine.
@@ -130,6 +180,8 @@ export function Evidence() {
             detail="Of the jellyfish that meet the curtain, the share that slip underneath it."
           />
         </div>
+
+        <AcrossBlooms />
 
         <Panel title="Jellyfish reaching the intake" subtitle="Cumulative contacts with the intake screens — same bloom, with and without SweepLine" actions={<Legend series={BOTH} />}>
           <TimeChart data={rows} series={BOTH} digits={0} height={280} yLabel="Intake contacts (cumulative)" />

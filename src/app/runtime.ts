@@ -1,5 +1,6 @@
 import { controller } from '../simulation/SimController';
 import { SceneManager } from '../three/SceneManager';
+import { kioskRequested, startKiosk, stopKiosk } from './kiosk';
 import { useApp } from './store';
 
 let scene: SceneManager | null = null;
@@ -35,6 +36,7 @@ export function startRuntime(): void {
   requestAnimationFrame(loop);
   // The run opens on the bloom approach, so the early warning and the pop-up deployment play out on screen.
   void controller.restart('sequence', null);
+  if (kioskRequested()) startKiosk();
 
   if (import.meta.env.DEV) installDevHooks(sm);
 }
@@ -123,6 +125,8 @@ function installDevHooks(sm: SceneManager): void {
 
   (window as unknown as Record<string, unknown>).__sl = {
     controller,
+    startKiosk,
+    stopKiosk,
     scene: sm,
     store: useApp,
     /** Save the 3D canvas only. */
