@@ -1,10 +1,12 @@
-import { SITE } from '../../config/site';
+import { ASSUMPTIONS } from '../../config/assumptions';
+import { SITE, bearingToWorld, mirrorX } from '../../config/site';
 import { getCurtainLayout, pointAtArc } from '../../simulation/geometry';
 import { ANCHOR_ANGLES, type AnchorAngle } from '../../simulation/types';
 import { ICON_PATHS, type DomainIcon } from '../ui/icons';
 
+// Symmetric about the intake centreline, so both Twin-Line sides fit.
 const X0 = -215;
-const X1 = 175;
+const X1 = mirrorX(X0);
 const Z0 = -96;
 const Z1 = 95;
 const W = 780;
@@ -45,9 +47,17 @@ export function PlanSchematic({ selected, reefFraction = 0, jets = false }: { se
   const I = SITE.intake;
   const sel = getCurtainLayout(selected);
   const th = sel.throat;
-  const pipe = [[th.mx + 11, th.mz], ...SITE.pipeRoute.slice(1), [SITE.release.x, SITE.release.z]] as Array<readonly [number, number]>;
+  // The release line runs on along the shore, out of the frame, to the design outlet.
+  const pipe = [[th.mx + 11, th.mz], ...SITE.pipeRoute.slice(1), [SITE.release.x, SITE.release.z], [X1 - 6, SITE.release.z]] as Array<readonly [number, number]>;
+  // Line B: the mirror image, stowed until the tide turns; its feeder joins the shared manifold.
+  const lineB = getCurtainLayout(selected, 1);
+  const thB = lineB.throat;
+  const valve = SITE.manifold;
+  const toValve = SITE.pipeRoute.slice(1, SITE.pipeRoute.findIndex(([x, z]) => x === valve.x && z === valve.z) + 1);
+  const feederB: Array<readonly [number, number]> = [[thB.mx - 11, thB.mz], ...toValve.map(([x, z]) => [mirrorX(x), z] as const)];
   const capR = 30;
-  const north = { x: -0.375, y: 0.927 };
+  const n0 = bearingToWorld(0);
+  const north = { x: n0.x, y: n0.z };
   const bloom: Array<[number, number, number]> = [];
   for (let i = 0; i < 70; i++) {
     const a = Math.sin(i * 12.9898) * 43758.5453;
@@ -58,7 +68,7 @@ export function PlanSchematic({ selected, reefFraction = 0, jets = false }: { se
   }
   const mid = Math.floor(sel.n * 0.45);
   return (
-    <svg viewBox={`0 0 ${W} ${H.toFixed(0)}`} className="h-auto w-full" role="img" aria-label="Plan view of the reference site: curtain layouts, recovery throat, transfer line, intake and release zone">
+    <svg viewBox={`0 0 ${W} ${H.toFixed(0)}`} className="h-auto w-full" role="img" aria-label="Plan view of the reference site: curtain layouts, recovery throat, transfer line, intake and release line">
       <defs>
         <pattern id="rev" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
           <line x1="0" y1="0" x2="0" y2="6" stroke="#4E6472" strokeWidth="1.2" />
@@ -123,6 +133,21 @@ export function PlanSchematic({ selected, reefFraction = 0, jets = false }: { se
           </g>
         );
       })}
+      {/* Line B, stowed on the seabed for the turned tide */}
+      <polyline
+        points={Array.from({ length: Math.ceil(lineB.n / 2) }, (_, j) => Math.min(lineB.n - 1, j * 2))
+          .map((i) => `${sx(lineB.px[i]).toFixed(1)},${sy(lineB.pz[i]).toFixed(1)}`)
+          .join(' ')}
+        fill="none"
+        stroke="#B48A3A"
+        strokeWidth="2.2"
+        strokeDasharray="7 5"
+        opacity="0.75"
+        strokeLinecap="round"
+      />
+      <rect x={sx(thB.mx - thB.length) - 2} y={sy(thB.mz - thB.halfWidth)} width={(thB.length + 2) * S} height={thB.halfWidth * 2 * S} rx="4" fill="#2f4a51" stroke="#4f7c86" strokeWidth="1" />
+      <polyline points={feederB.map(([x, z]) => `${sx(x).toFixed(1)},${sy(z).toFixed(1)}`).join(' ')} fill="none" stroke="#4f7c86" strokeWidth="1.6" strokeDasharray="4 4" />
+      <circle cx={sx(valve.x)} cy={sy(valve.z)} r="4" fill="#0b151f" stroke="#22D3EE" strokeWidth="1.5" />
       {/* Conveyor jets: flow along the bloom face toward the throat */}
       {jets &&
         Array.from({ length: Math.max(0, Math.floor((sel.length - 16) / 22)) }, (_, i) => {
@@ -151,13 +176,14 @@ export function PlanSchematic({ selected, reefFraction = 0, jets = false }: { se
       {/* Throat and transfer line */}
       <rect x={sx(th.mx) - 2} y={sy(th.mz - th.halfWidth)} width={(th.length + 2) * S} height={th.halfWidth * 2 * S} rx="4" fill="#4f7c86" stroke="#22D3EE" strokeWidth="1.2" />
       <polyline points={pipe.map(([x, z]) => `${sx(x).toFixed(1)},${sy(z).toFixed(1)}`).join(' ')} fill="none" stroke="#22D3EE" strokeWidth="2" strokeDasharray="6 4" />
-      <circle cx={sx(SITE.release.x)} cy={sy(SITE.release.z)} r={12 * S + 6} fill="rgba(45,212,191,0.14)" stroke="#2DD4BF" strokeDasharray="3 3" />
+      <path d={`M${W - 12},${sy(SITE.release.z) - 6} L${W - 2},${sy(SITE.release.z)} L${W - 12},${sy(SITE.release.z) + 6}`} fill="none" stroke="#2DD4BF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
       {/* Callouts */}
       <SvgCallout x={sx(-208)} y={sy(36)} icon="jellyfish" text="Bloom approaching" color="#cfe3ff" />
       <SvgCallout x={sx(sel.px[mid]) - 30} y={sy(sel.pz[mid]) + 34} icon="curtain" text={jets ? `Active curtain · ${selected}°` : `Guide curtain · ${selected}°`} color="#F5B94C" anchor="end" />
       <SvgCallout x={sx(th.mx)} y={sy(th.mz) + 30} icon="throat" text="Recovery throat" color="#22D3EE" anchor="end" />
       <SvgCallout x={sx(83)} y={sy(46)} icon="transfer" text="Low-shear transfer line" color="#22D3EE" anchor="end" />
-      <SvgCallout x={sx(SITE.release.x) - 26} y={sy(SITE.release.z)} icon="release" text="Safe release (down-current)" color="#2DD4BF" anchor="end" />
+      <SvgCallout x={W - 8} y={sy(SITE.release.z) - 22} icon="release" text={`To release, ${ASSUMPTIONS.release.design.along / 1000} km down-drift`} color="#2DD4BF" anchor="end" />
+      <SvgCallout x={W - 8} y={sy(I.mouthZ) + 80} icon="curtain" text="Line B · stowed until the tide turns" color="#C9A15A" anchor="end" />
       <SvgCallout x={W - 8} y={sy(I.mouthZ) + 46} icon="intake" text="Capture zone (modelled)" color="#f87171" anchor="end" />
       {/* Scale bar and north arrow */}
       <g transform={`translate(18, ${H - 18})`}>

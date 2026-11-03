@@ -1,7 +1,7 @@
 import { OUTLETS, SITE, bearingToWorld } from '../config/site';
 import { ASSUMPTIONS } from '../config/assumptions';
 import { nearestSegment, SegmentHit, type CurtainLayout, type ThroatGeometry } from './geometry';
-import type { LineSide } from './types';
+import { DEFAULT_PARAMS, type LineSide } from './types';
 
 /**
  * Natural current field for the reference site.
@@ -22,7 +22,7 @@ const smoothstep = (e0: number, e1: number, x: number) => {
 };
 
 export class FlowField {
-  speed = 0.32;
+  speed = DEFAULT_PARAMS.currentSpeed;
   dirX = 1;
   dirZ = 0;
   /** Recovery throats of the Twin-Line guide lines (by side), and the transfer flow fraction drawing water into each (0..1). */

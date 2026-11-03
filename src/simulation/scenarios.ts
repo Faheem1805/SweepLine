@@ -32,7 +32,7 @@ export interface Scenario {
 
 const NORMAL: Partial<SimParams> = {
   bloomDensity: 0.55,
-  currentSpeed: 0.28,
+  currentSpeed: 0.2,
   currentBearing: 242,
   bloomMeanDepth: 1.7,
   bloomDepthSD: 0.6,

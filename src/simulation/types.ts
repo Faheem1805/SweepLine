@@ -61,7 +61,7 @@ export const DEFAULT_PARAMS: SimParams = {
   bloomDensity: 0.72,
   bloomMeanDepth: 1.8,
   bloomDepthSD: 0.8,
-  currentSpeed: 0.32,
+  currentSpeed: 0.2,
   currentBearing: 242,
   waveHeight: 0.8,
   // Below the bloom's P90 depth with margin: the reference run keeps shore-side leaks to a few (npm run test:demo).
