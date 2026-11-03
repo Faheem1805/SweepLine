@@ -1,4 +1,4 @@
-import { ChevronDown, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { ChevronDown, Grid3x3, Recycle, ShieldAlert, ShieldCheck, Sprout, Turtle, Waves } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { useSnap } from '../app/hooks';
 import { AngleDiagram } from '../components/charts/AngleDiagram';
@@ -8,10 +8,13 @@ import { Icon } from '../components/ui/icons';
 import { FlowArrow, IconTile, Panel, type TileTone } from '../components/ui/Panel';
 import { ASSUMPTIONS } from '../config/assumptions';
 import { OPERATING_ENVELOPE } from '../config/operatingEnvelope';
-import { SITE } from '../config/site';
+import { SITE, seabedDepth } from '../config/site';
+import { DRIFT_DATA } from '../data/drift.generated';
+import { WILDLIFE_DATA } from '../data/wildlife.generated';
 import { popUpDuration } from '../simulation/curtain';
 import { getCurtainLayout } from '../simulation/geometry';
 import type { ConstraintStatus } from '../simulation/safety';
+import type { AnchorAngle } from '../simulation/types';
 import { cn } from '../utils/format';
 
 const C = ASSUMPTIONS.curtain;
@@ -62,6 +65,74 @@ const SAFETY: Array<{ tone: TileTone; icon: ReactNode; title: string; body: stri
 ];
 
 const STATUS_TEXT: Record<ConstraintStatus, string> = { ok: 'text-teal', near: 'text-amber', out: 'text-red', na: 'text-dim' };
+
+/** Wildlife and side effects: what else lives at the site, and how the design answers it (live skirt gap from the twin). */
+function WildlifePanel({ skirt, angle }: { skirt: number; angle: AnchorAngle }) {
+  const W = WILDLIFE_DATA;
+  const layout = getCurtainLayout(angle);
+  let lo = Infinity;
+  let hi = 0;
+  for (let k = 0; k < layout.segCount; k++) {
+    const gap = seabedDepth(layout.midX[k], layout.midZ[k]) - skirt;
+    lo = Math.min(lo, gap);
+    hi = Math.max(hi, gap);
+  }
+  const design = DRIFT_DATA.outcomes.find((o) => o.id === DRIFT_DATA.design)!;
+  const items: Array<{ icon: ReactNode; title: string; body: string; source: string }> = [
+    {
+      icon: <Turtle size={18} />,
+      title: 'Turtles and dugongs at the curtain',
+      body: `A solid skirt with no mesh to tangle in, hanging from the surface. It leaves ${lo.toFixed(1)}–${hi.toFixed(1)} m of open water above the seabed (never under ${C.seabedClearance} m), so air-breathers dive under it. Taut moorings, no loose lines.`,
+      source: `${W.turtles.within10km} tracked green-turtle positions within 10 km of the site, the closest ${(W.turtles.nearestKm ?? 0) * 1000} m away (${W.turtles.source.replace('OBIS · ', '')}).`,
+    },
+    {
+      icon: <Grid3x3 size={18} />,
+      title: 'At the recovery throat',
+      body: `Smooth bars ${Math.round(ASSUMPTIONS.throat.excluderBarSpacing * 100)} cm apart let the 30–45 cm bells through and keep adult turtles and dugongs out. The mouth is open to the air, and a camera at the transfer inlet holds the pump while an air-breather is inside.`,
+      source: 'Abu Dhabi waters hold the world’s second-largest dugong population (EAD).',
+    },
+    {
+      icon: <Waves size={18} />,
+      title: 'Jets, noise and light',
+      body: `Water only, at walking pace (≤ ${J.conveyorSpeed} m/s along the face): no blades, no air bubbles, no acoustic deterrents. Navigation marks only at night, so nothing is drawn in.`,
+      source: 'Jellyfish have no hearing; acoustic deterrents disturb dugongs and turtles.',
+    },
+    {
+      icon: <Sprout size={18} />,
+      title: 'Seabed and seagrass',
+      body: `Stowed, each line lies on a strip about 1 m wide along its anchor line (${layout.length.toFixed(0)} m). Anchor lines are routed over bare sand after a seabed survey, away from the seagrass dugongs graze. Only the anchor blocks stay permanently.`,
+      source: 'Footprint from the twin’s pre-engineered layouts.',
+    },
+    {
+      icon: <Recycle size={18} />,
+      title: 'Fouling and polyps',
+      body: 'A biocide-free foul-release skin, monthly inspection in season, and the curtain is lifted and stored dry outside the bloom season, so it never becomes a nursery for jellyfish polyps on the seabed.',
+      source: 'Fouling load is monitored; past its limit SweepLine retracts (Stress test → Curtain overload).',
+    },
+    {
+      icon: <Icon name="release" size={18} />,
+      title: 'Where the jellyfish go',
+      body: `Released alive ${ASSUMPTIONS.release.design.along / 1000} km along the shore on the down-tide side, with no air or blades on the way. Only ${Math.round(design.backAtSite * 100)}% come back to the plant within ${DRIFT_DATA.horizonDays} days.`,
+      source: 'Drift study on the recorded current and wind: see Evidence.',
+    },
+  ];
+  return (
+    <Panel title="Wildlife and side effects" subtitle="What else lives here, and how the design keeps it safe" icon={<Turtle size={18} />} bodyClassName="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+      {items.map((it) => (
+        <div key={it.title} className="card-inner flex flex-col gap-2 p-4">
+          <div className="flex items-center gap-2.5">
+            <IconTile size={32} tone="teal">
+              {it.icon}
+            </IconTile>
+            <span className="text-[14px] font-semibold text-white">{it.title}</span>
+          </div>
+          <p className="text-[13px] leading-snug text-pretty text-ink-2">{it.body}</p>
+          <p className="mt-auto text-[11.5px] leading-snug text-pretty text-muted">{it.source}</p>
+        </div>
+      ))}
+    </Panel>
+  );
+}
 
 function TechnicalDetails() {
   const snap = useSnap();
@@ -239,6 +310,8 @@ export function HowItWorks() {
             </div>
           ))}
         </Panel>
+
+        <WildlifePanel skirt={c.skirtTarget} angle={p.anchorAngle} />
 
         <TechnicalDetails />
       </div>

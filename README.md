@@ -400,6 +400,19 @@ week in this season: 98 % of the released animals, and 90 % of a natural bloom n
 SweepLine. The Evidence page shows the comparison with sample tracks. Kinematic drift model with the
 current taken as uniform over the area; to be checked with drifters at sea.
 
+## Wildlife and side effects
+
+How It Works has a *Wildlife and side effects* card, built from data and the twin's own geometry:
+`npm run build:wildlife` counts open records near the site (OBIS: the Gulf Green Turtle Project's
+2016–2019 satellite fixes, 54 of them within 10 km and the closest 300 m away; GBIF: dugongs, none
+within 90 km in the open data, though Abu Dhabi holds the world's second-largest population). The
+solid skirt hangs from the surface and leaves 1.5–4.2 m of open water above the seabed at the
+reference 3.5 m skirt (never under the 1 m clearance limit), so air-breathers dive under it. The
+recovery throat has an excluder grid (`ASSUMPTIONS.throat.excluderBarSpacing`, 55 cm between smooth
+bars: the 30–45 cm bells pass, adult turtles and dugongs do not) and is open to the air. The card
+also covers jets and noise, the stowed curtain's seabed footprint, fouling and polyps, and where the
+released jellyfish go.
+
 ## Creating a new scenario
 
 Add an entry to `SCENARIOS` in **`src/simulation/scenarios.ts`**:
@@ -458,6 +471,7 @@ npm run test:tide                                # recorded tide turn: Twin-Line
 npm run build:map-intro                          # regenerate the opening intro's map data
 npm run build:tide                               # regenerate the tidal-current and wind data (Copernicus, ERA5 via Open-Meteo)
 npm run study:drift                              # released-animal drift study; rewrites src/data/drift.generated.ts
+npm run build:wildlife                           # turtle and dugong records near the site (OBIS, GBIF)
 ```
 
 In `npm run dev`, `window.__sl` exposes the controller and scene; `await __sl.shot('name')` and

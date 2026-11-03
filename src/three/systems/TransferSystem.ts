@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { ASSUMPTIONS } from '../../config/assumptions';
 import { SEABED_DEPTH_GLSL, SITE, mirrorX, seabedDepth } from '../../config/site';
 import { buildThroatGeometry, throatHalfHeightAt, throatHalfWidthAt, type ThroatGeometry } from '../../simulation/geometry';
 import type { LineSide, ModuleStatus } from '../../simulation/types';
@@ -206,7 +207,19 @@ export class TransferSystem {
     frame.castShadow = true;
     this.occBeacon = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.18, th.halfWidth * 1.6), new THREE.MeshBasicMaterial({ color: OCC_GREEN }));
     this.occBeacon.position.set(fx, 2.82, th.mz);
-    this.throatGroup.add(shell, lipTube, frame, this.occBeacon);
+    // Excluder grid across the mouth: smooth vertical bars the bells pass between, too close for a
+    // turtle or dugong; the mouth stays open to the air above the water.
+    const gap = ASSUMPTIONS.throat.excluderBarSpacing;
+    const barGeos: THREE.BufferGeometry[] = [];
+    const yBot = -th.centerDepth - th.halfHeight * 0.92;
+    const yTop = 0.35;
+    for (let l = -th.halfWidth + gap; l < th.halfWidth - 0.1; l += gap + 0.06) {
+      barGeos.push(new THREE.CylinderGeometry(0.03, 0.03, yTop - yBot, 6).translate(th.mx - 0.15, (yTop + yBot) / 2, th.mz + l));
+    }
+    barGeos.push(new THREE.BoxGeometry(0.08, 0.08, th.halfWidth * 2).translate(th.mx - 0.15, yTop, th.mz));
+    const bars = new THREE.Mesh(mergeGeometries(barGeos)!, mediumMaterial({ color: 0xb9c3c8, roughness: 0.3, metalness: 0.75 }));
+    bars.castShadow = true;
+    this.throatGroup.add(shell, lipTube, frame, this.occBeacon, bars);
     this.throatGroup.traverse((o) => (o.userData.pick = 'throat'));
 
     // ---------------------------------------------------- pontoon

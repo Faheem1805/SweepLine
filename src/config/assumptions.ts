@@ -172,6 +172,11 @@ export const ASSUMPTIONS = {
   },
 
   throat: {
+    /**
+     * Clear gap between the smooth round bars of the excluder grid across the throat mouth (m):
+     * passes the 0.30–0.45 m bells, stops adult turtles and dugongs. Design assumption.
+     */
+    excluderBarSpacing: 0.55,
     /** Bellmouth holding capacity per 1000 simulated agents. */
     holdCapacityPerThousand: 20,
     /** Advection speed through the bellmouth (m/s) = base + flow * transferFlowFraction. */
