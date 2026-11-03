@@ -96,7 +96,11 @@ export const SITE = {
   ] as ReadonlyArray<readonly [number, number]>,
 
   release: {
-    /** Schematic position of the safe-release outlet (down-current, outside the intake capture area). */
+    /**
+     * Schematic position of the safe-release outlet (down-current, outside the intake capture area).
+     * In the design the outlets are further along the shore (`ASSUMPTIONS.release.design`, chosen
+     * with the drift study); the twin draws them here so they stay in the scene.
+     */
     x: 150,
     z: 70,
     dirX: 0.9,

@@ -15,7 +15,8 @@
     "test:lifecycle": "tsx scripts/lifecycle-test.ts",
     "test:demo": "tsx scripts/demo-leak-test.ts",
     "build:tide": "tsx scripts/build-tide-data.ts",
-    "test:tide": "tsx scripts/tide-test.ts"
+    "test:tide": "tsx scripts/tide-test.ts",
+    "study:drift": "tsx scripts/drift-study.ts"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.3.0",

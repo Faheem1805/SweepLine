@@ -3,6 +3,7 @@ import { useMemo, type ReactNode } from 'react';
 import { useHistory, useSnap } from '../app/hooks';
 import { useApp } from '../app/store';
 import { downsample, Legend, SERIES, TimeChart, type SeriesDef } from '../components/charts/TimeChart';
+import { ReleaseDriftPanel } from '../components/panels/ReleaseDrift';
 import { Icon } from '../components/ui/icons';
 import { FlowArrow, IconTile, Panel, type TileTone } from '../components/ui/Panel';
 import { controller } from '../simulation/SimController';
@@ -133,6 +134,8 @@ export function Evidence() {
         <Panel title="Jellyfish reaching the intake" subtitle="Cumulative contacts with the intake screens — same bloom, with and without SweepLine" actions={<Legend series={BOTH} />}>
           <TimeChart data={rows} series={BOTH} digits={0} height={280} yLabel="Intake contacts (cumulative)" />
         </Panel>
+
+        <ReleaseDriftPanel />
 
         <Panel title="Validation roadmap" subtitle="What exists today and what comes next" icon={<FlaskRound size={18} />}>
           <ol className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">

@@ -4,8 +4,12 @@ import { useSnap } from '../../app/hooks';
 import { useApp } from '../../app/store';
 import { ASSUMPTIONS } from '../../config/assumptions';
 import { SITE } from '../../config/site';
+import { DRIFT_DATA } from '../../data/drift.generated';
 import { controller } from '../../simulation/SimController';
 import { cn, mmss, num, pct } from '../../utils/format';
+
+/** The design release point's drift-study outcome. */
+const DRIFT_DESIGN = DRIFT_DATA.outcomes.find((o) => o.id === DRIFT_DATA.design)!;
 
 function Row({ k, v, tone }: { k: string; v: ReactNode; tone?: string }) {
   return (
@@ -127,11 +131,12 @@ export function Inspector() {
       title = 'Safe Release';
       body = (
         <>
-          <Row k="Location" v="Down-current, outside capture area" />
+          <Row k="Design location" v={`${ASSUMPTIONS.release.design.along / 1000} km along the shore, down-tide`} />
+          <Row k="Back at the plant" v={`${pct(DRIFT_DESIGN.backAtSite)} within ${DRIFT_DATA.horizonDays} days (drift study)`} tone="text-teal" />
           <Row k="Transfer line" v={`${snap.params.releaseDistance} m (assumption)`} />
           <Row k="Released (total)" v={s.released} tone="text-teal" />
           <Row k="In transit" v={s.inTransit} />
-          <div className="mt-1 text-[10px] text-dim">Release position shown schematically.</div>
+          <div className="mt-1 text-[10px] text-dim">Release position shown schematically, close to the site. See Evidence for the drift study.</div>
         </>
       );
       break;

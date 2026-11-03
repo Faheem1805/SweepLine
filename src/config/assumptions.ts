@@ -200,12 +200,39 @@ export const ASSUMPTIONS = {
   },
 
   release: {
+    /**
+     * Design release point, chosen with the drift study (scripts/drift-study.ts): the valve sends
+     * animals to the down-tide side, this far along the shore from the intake (m) and this far
+     * offshore (site z, m). The twin draws its outlet schematically, close to the site.
+     */
+    design: { along: 2000, offshore: 300 },
     /** Assumed transfer-line length to the safe release zone (m) — simulation assumption. */
     distanceOptions: [250, 500, 750] as const,
     jetSpeed: 0.35,
     /** Released jellyfish are tracked while they clear the outlet plume (s), then fade out over fadeTime and leave the simulation. */
     trackTime: 40,
     fadeTime: 10,
+  },
+
+  /**
+   * Far-field drift of released jellyfish over days (src/simulation/drift.ts), on the recorded
+   * current and wind and the real coastline. Assumptions, to be checked with drifters at sea.
+   */
+  drift: {
+    /** Integration step (s) and how long each released animal is followed (s). */
+    step: 300,
+    horizon: 7 * 86400,
+    /** Share of the 10 m wind speed that moves a near-surface jellyfish (windage). */
+    windage: 0.01,
+    /** Horizontal eddy diffusivity (m²/s), with the animals' own random swimming folded in. */
+    diffusivity: 1.0,
+    /** Within this distance of land (m) the current's onshore component fades out (it runs along the shore). */
+    coastDamping: 100,
+    /** "Back at the site": within this along-shore distance (m) of the intake and this far offshore (site z, m)… */
+    returnHalfWidth: 300,
+    returnMaxZ: 150,
+    /** …at least this long (s) after release, so the release plume itself does not count. */
+    returnGrace: 7200,
   },
 
   intake: {

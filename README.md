@@ -374,6 +374,32 @@ line and counts intake contacts against the same-seed baseline: over the three h
 turn the Twin-Line keeps about 99 % of them off the intake and releases down-tide, while a single
 line keeps about 1 %.
 
+## Where released jellyfish go
+
+The twin follows a released animal for under a minute; whether it comes back is decided over days.
+`npm run study:drift` follows released animals for 7 days (`src/simulation/drift.ts`): they drift
+with both components of the recorded current (the build also fits the cross-shore component), 1 % of
+the recorded ERA5 10 m wind (windage) and a 1 m²/s random walk, against the real coastline decoded
+from the map intro's OpenStreetMap data. Near land the current's onshore part fades out, so it runs
+along the shore. An animal counts as back at the plant once it re-enters the intake's approach band
+(±300 m along the shore, within 150 m of the origin offshore) at least 2 h after release.
+
+One release an hour across Oct–Nov 2025, 20 animals each:
+
+| Release | Back at the plant in 7 days | Across windage 0–2 %, spreading 0.3–3 m²/s |
+| --- | --- | --- |
+| Near the intake (~110 m along, 70 m out) | 16 % | 9–26 % |
+| Straight out, 2 km offshore | 14 % | 13–18 % |
+| **2 km along the shore, down-tide side (design)** | **2 %** | **1–2 %** |
+
+Sending animals offshore does not help: the season's mean drift is onshore (1.2 cm/s) and so is the
+wind. Along the shore they stay away, and the manifold valve already picks the down-tide side, so
+the design outlets are 2 km along the shore, 300 m out (`ASSUMPTIONS.release.design`). The twin
+still draws them close to the site. Almost everything at the surface reaches the shore within a
+week in this season: 98 % of the released animals, and 90 % of a natural bloom nearby with no
+SweepLine. The Evidence page shows the comparison with sample tracks. Kinematic drift model with the
+current taken as uniform over the area; to be checked with drifters at sea.
+
 ## Creating a new scenario
 
 Add an entry to `SCENARIOS` in **`src/simulation/scenarios.ts`**:
@@ -430,7 +456,8 @@ npm run test:lifecycle                           # SafeOpen → stow → redeplo
 npm run test:demo                                # reference run: ≤ 5 jellyfish on the shore side at any time
 npm run test:tide                                # recorded tide turn: Twin-Line vs single line vs baseline
 npm run build:map-intro                          # regenerate the opening intro's map data
-npm run build:tide                               # regenerate the tidal-current data (Copernicus via Open-Meteo)
+npm run build:tide                               # regenerate the tidal-current and wind data (Copernicus, ERA5 via Open-Meteo)
+npm run study:drift                              # released-animal drift study; rewrites src/data/drift.generated.ts
 ```
 
 In `npm run dev`, `window.__sl` exposes the controller and scene; `await __sl.shot('name')` and

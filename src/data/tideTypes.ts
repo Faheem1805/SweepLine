@@ -18,6 +18,8 @@ export interface TideData {
   stepHours: number;
   /** Along-shore current toward +x (m/s): the fitted tide plus the 25 h low-passed residual. */
   u: number[];
+  /** Offshore current toward +z (m/s), the same way (negative = onshore). */
+  v: number[];
   fit: {
     period: string;
     samples: number;
@@ -25,9 +27,13 @@ export interface TideData {
     r2: number;
     r2WithResidual: number;
     constituents: TideConstituent[];
+    /** The same for the offshore component, and its mean over the whole record (m/s). */
+    offshore: { r2: number; r2WithResidual: number; mean: number };
   };
-  /** Statistics of the series above (m/s), and how often the current changes direction. */
-  stats: { p5: number; p50: number; p95: number; reversalsPerDay: number };
+  /** Statistics of the along-shore series (m/s), how often it changes direction, and the season's mean offshore current. */
+  stats: { p5: number; p50: number; p95: number; reversalsPerDay: number; offshoreMean: number };
+  /** Hourly 10 m wind over the same window, blowing toward +x / +z (m/s). */
+  wind: { source: string; x: number[]; z: number[]; meanX: number; meanZ: number };
   /** Hours into `u` at which the reference tide turn crosses zero (+x → −x). */
   referenceTurn: number;
 }

@@ -36,7 +36,7 @@ const STEPS: Array<{ icon: ReactNode; title: string; body: string }> = [
   {
     icon: <Icon name="release" size={22} />,
     title: 'Release',
-    body: 'A low-shear line carries the jellyfish alive around the intake and releases them down-current.',
+    body: 'A low-shear line carries the jellyfish alive around the intake and releases them 2 km along the shore on the down-tide side, where the recorded current and wind do not bring them back.',
   },
 ];
 
