@@ -4,6 +4,8 @@
  * curtain and the revetment, through to the intake. Outcomes are computed by the
  * agent model as usual; this guards the reference parameters. Both starts are checked:
  * from the bloom approach (how the app opens, and Replay) and after the steady pre-roll.
+ * Every two simulated seconds it also checks the mass balance of both worlds: each jellyfish
+ * that entered is at the screens, in a throat, past the site or still in the water.
  *
  *   npm run test:demo              # 60 simulated minutes each
  *   npm run test:demo -- minutes=120
@@ -43,6 +45,7 @@ async function check(start: 'sequence' | 'steady'): Promise<boolean> {
   let max = 0;
   let sum = 0;
   let samples = 0;
+  let unbalanced = 0;
   const p = engine.pool;
   for (let t = 0; t < minutes * 60; t += 2) {
     for (let k = 0; k < 4; k++) controller.frame(0.1); // 2 s simulated at 5x
@@ -52,21 +55,26 @@ async function check(start: 'sequence' | 'steady'): Promise<boolean> {
       if (st === S_INACTIVE || st === S_TRANSFERRED || st === S_TRANSFER_QUEUE || st === S_GUIDED) continue;
       if (onShoreSide(p.px[i], p.pz[i])) n++;
     }
+    if (!engine.balance().closes || !controller.baseline.balance().closes) unbalanced++;
     max = Math.max(max, n);
     sum += n;
     samples++;
   }
   const c = engine.counters;
   const status = controller.computeStatus().code;
+  const bal = engine.balance();
   console.log(
     `${start}, ${minutes} min: shore-side jellyfish mean ${(sum / samples).toFixed(1)}, max ${max} (limit ${DEMO_MAX_LEAKED}) · under-skirt ${c.underSkirt}/${c.encountered} · intake contacts ${c.intakeContacts} vs baseline ${controller.baseline.counters.intakeContacts} · status ${status}`,
   );
-  return max <= DEMO_MAX_LEAKED && status === 'NOMINAL';
+  console.log(
+    `  mass balance: ${bal.entered} entered = ${bal.contact} screens + ${bal.diverted} throat + ${bal.passed} passed + ${bal.inWater} in the water · ${unbalanced === 0 ? 'closes at every check' : `FAILS at ${unbalanced} checks`}`,
+  );
+  return max <= DEMO_MAX_LEAKED && status === 'NOMINAL' && unbalanced === 0;
 }
 
 const ok = [await check('sequence'), await check('steady')];
 if (ok.includes(false)) {
-  console.error('FAIL: the reference demo run exceeds the shore-side leak limit or is not nominal');
+  console.error('FAIL: the reference demo run exceeds the shore-side leak limit, is not nominal, or loses track of jellyfish');
   process.exit(1);
 }
 console.log('PASS');

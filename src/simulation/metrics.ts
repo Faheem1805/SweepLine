@@ -1,6 +1,6 @@
 import { ASSUMPTIONS } from '../config/assumptions';
 import { S_TRANSFERRED } from './Agent';
-import type { SimulationEngine } from './SimulationEngine';
+import type { Balance, SimulationEngine } from './SimulationEngine';
 import type { EngineKind } from './types';
 
 export type ScreenLoad = 'LOW' | 'MEDIUM' | 'HIGH';
@@ -44,6 +44,8 @@ export interface EngineMetrics {
   transferFlowM3h: number;
   curtainLoad: number;
   curtainLoadLabel: LoadLabel;
+  /** Mass balance: every jellyfish that entered is accounted for. */
+  balance: Balance;
 }
 
 export function screenLoadFor(ratePerMin: number, budget: number): ScreenLoad {
@@ -100,5 +102,6 @@ export function computeEngineMetrics(e: SimulationEngine): EngineMetrics {
     transferFlowM3h: tr ? tr.flowM3h() : 0,
     curtainLoad: e.curtainLoad,
     curtainLoadLabel: loadLabel(e.curtainLoad, curtainActive),
+    balance: e.balance(),
   };
 }

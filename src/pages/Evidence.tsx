@@ -1,15 +1,17 @@
-import { CheckCircle2, CircleDashed, Download, FlaskRound, Info, Waves } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, CircleDashed, Download, FlaskRound, Info, Waves } from 'lucide-react';
 import { useMemo, type ReactNode } from 'react';
 import { useHistory, useSnap } from '../app/hooks';
 import { useApp } from '../app/store';
 import { downsample, Legend, SERIES, TimeChart, type SeriesDef } from '../components/charts/TimeChart';
 import { ReleaseDriftPanel } from '../components/panels/ReleaseDrift';
+import { SensitivityPanel } from '../components/panels/Sensitivity';
 import { SEEDS_DATA } from '../data/seeds.generated';
 import type { SeedStat } from '../data/seedsTypes';
 import { Icon } from '../components/ui/icons';
 import { FlowArrow, IconTile, Panel, type TileTone } from '../components/ui/Panel';
+import type { Balance } from '../simulation/SimulationEngine';
 import { controller } from '../simulation/SimController';
-import { cn, downloadText, mmss, pct } from '../utils/format';
+import { cn, downloadText, int, mmss, pct } from '../utils/format';
 
 const BOTH: SeriesDef[] = [
   { key: 'b', name: 'Without SweepLine', color: SERIES.baseline },
@@ -70,11 +72,33 @@ function AcrossBlooms() {
   );
 }
 
+/** Mass balance of both worlds on screen: every jellyfish that entered the site is accounted for. */
+function Accounted({ b, s }: { b: Balance; s: Balance }) {
+  const ok = b.closes && s.closes;
+  const row = (name: string, x: Balance) => (
+    <span>
+      {name} <span className="num text-ink-2">{int(x.entered)}</span> entered = <span className="num text-ink-2">{int(x.contact)}</span> at the screens +{' '}
+      <span className="num text-ink-2">{int(x.diverted)}</span> to the throat + <span className="num text-ink-2">{int(x.passed)}</span> passed +{' '}
+      <span className="num text-ink-2">{int(x.inWater)}</span> still in the water
+    </span>
+  );
+  return (
+    <p className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-[12px] text-muted">
+      <span className={cn('inline-flex items-center gap-1.5 font-semibold', ok ? 'text-teal' : 'text-red')}>
+        {ok ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
+        {ok ? 'Every jellyfish accounted for' : 'Mass balance does not close'}
+      </span>
+      {row('With SweepLine:', s)}
+      {row('Without:', b)}
+    </p>
+  );
+}
+
 /** Validation roadmap, in order: what exists today, then what comes next. */
 const STAGES: Array<{ done: boolean; title: string; detail: string }> = [
   { done: true, title: 'Simulation visualiser', detail: '3D digital twin of a reference coastal intake' },
   { done: true, title: 'Agent model', detail: 'Seeded agent-based model with a same-seed baseline' },
-  { done: false, title: 'Flume calibration', detail: 'Scaled curtain and jets: guidance, skirt depth, under-skirt rate' },
+  { done: false, title: 'Flume calibration', detail: 'Scaled curtain: the conveyor jets first (the largest swing), then guidance, skirt depth and under-skirt rate' },
   { done: false, title: 'Biological testing', detail: 'Live Blue Blubber through the screw lift and a 25-min pipe loop, paired controls, 96 h hold' },
   { done: false, title: 'Coastal pilot', detail: 'One curtain arm: pop-up timing and SafeOpen in real conditions' },
 ];
@@ -185,9 +209,12 @@ export function Evidence() {
 
         <Panel title="Jellyfish reaching the intake" subtitle="Cumulative contacts with the intake screens — same bloom, with and without SweepLine" actions={<Legend series={BOTH} />}>
           <TimeChart data={rows} series={BOTH} digits={0} height={280} yLabel="Intake contacts (cumulative)" />
+          <Accounted b={b.balance} s={s.balance} />
         </Panel>
 
         <ReleaseDriftPanel />
+
+        <SensitivityPanel />
 
         <Panel title="Validation roadmap" subtitle="What exists today and what comes next" icon={<FlaskRound size={18} />}>
           <ol className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">

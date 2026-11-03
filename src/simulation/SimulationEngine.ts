@@ -60,6 +60,17 @@ export interface Counters {
   contactTimeN: number;
 }
 
+/** Where every jellyfish that entered the site is (see `SimulationEngine.balance`). */
+export interface Balance {
+  entered: number;
+  contact: number;
+  diverted: number;
+  passed: number;
+  inWater: number;
+  /** The four add up to `entered`. */
+  closes: boolean;
+}
+
 export type MarkerKind = 'under' | 'overtop' | 'intake' | 'release';
 
 export interface Marker {
@@ -1104,6 +1115,19 @@ export class SimulationEngine {
   intakeRatePerMin(): number {
     const w = Math.min(ASSUMPTIONS.metrics.rateWindow, Math.max(this.time, 1));
     return (this.intakeTimes.length / w) * 60;
+  }
+
+  /**
+   * Mass balance: every jellyfish that entered the site has exactly one fate so far — reached the
+   * screens, guided into a throat, passed the site — or is still in the water with none yet.
+   */
+  balance(): Balance {
+    const c = this.counters;
+    const p = this.pool;
+    let inWater = 0;
+    for (let i = 0; i < p.capacity; i++) if (p.state[i] !== S_INACTIVE && !(p.flags[i] & F_RESOLVED)) inWater++;
+    const entered = c.spawned - c.dropped;
+    return { entered, contact: c.intakeContacts, diverted: c.diverted, passed: c.exited, inWater, closes: entered === c.intakeContacts + c.diverted + c.exited + inWater };
   }
 
   /** Count agents currently in a given state. */

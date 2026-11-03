@@ -58,7 +58,7 @@ const SAFETY: Array<{ tone: TileTone; icon: ReactNode; title: string; body: stri
     tone: 'amber',
     icon: <ShieldAlert size={17} />,
     title: 'SafeOpen and standby path',
-    body: 'A standby transfer path takes over on a fault. Outside the operating envelope the curtain retracts, upstream end first.',
+    body: `A standby transfer path takes over on a fault. Outside the operating envelope the curtain retracts, upstream end first. If air or power is lost it sinks onto its seabed anchors (every ${C.intermediateAnchorSpacing} m), never toward the intake.`,
   },
   {
     tone: 'teal',
@@ -110,8 +110,8 @@ function BuildAndRun({ skirt, angle, jetLevel }: { skirt: number; angle: AnchorA
     {
       value: 'Outside the plant',
       label: 'Approvals',
-      body: 'No change to the intake, screens or plant systems. It needs the operator’s review for works near the intake, an environmental permit for live release and seabed works, and a marine works permit.',
-      note: 'The existing screens stay the last line of defence.',
+      body: 'Nothing in the intake, screens or plant systems changes. It goes through the operator’s modification programme as non-safety equipment in open water, plus two permits: Abu Dhabi Maritime’s NOC for a floating structure and its marker buoys, and an addition to the plant’s EAD operational environmental permit for seabed works and live release.',
+      note: 'Precedent: buoyed silt curtains go in under Abu Dhabi Maritime notices (ADM/LMN/2026/30). Sources in the README.',
     },
   ];
   return (

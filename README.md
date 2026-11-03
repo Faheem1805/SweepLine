@@ -338,9 +338,26 @@ from, and the curtain's upstream end is tied into the revetment toe. With the re
 (3.5 m skirt, transfer sized for ~55–75 % utilisation) no more than 5 jellyfish are ever on the
 protected shore side of the curtain at once; `npm run test:demo` checks this over 60 simulated
 minutes from the bloom approach (how the app opens, and Replay) and after the steady pre-roll, and
-fails if either run exceeds it or is not nominal.
+fails if either run exceeds it or is not nominal. Every two simulated seconds it also checks the
+mass balance of both worlds: each jellyfish that entered is at the screens, in a throat, past the site
+or still in the water. The Evidence page shows the same balance live under the contacts chart.
 
 ---
+
+## How much to trust the numbers
+
+- **Across blooms** (`npm run study:seeds`). The reference sequence, 60 simulated minutes from the
+  bloom approach at the recorded spring current of 0.2 m/s, on 20 bloom seeds: 99.4 % fewer intake
+  contacts (95 % CI 99.3–99.5, worst bloom 98.8 %). In the 3 h after the recorded tide turn the
+  Twin-Line avoids 98.4 % of contacts against 1.2 % for a single line (5 seeds).
+- **What the result depends on** (`npm run study:sensitivity`, `src/config/sensitivity.ts`). Each
+  assumption at the low and the high end of its plausible range, one at a time, on the same three
+  blooms. With any one of them at either end SweepLine still avoids 98.4–99.7 %. The largest swing
+  is the conveyor jets (98.4 % with them off, 99.6 % at full output), then bloom depth (99.0 % at a
+  2.6 m mean) and current speed (0.08–0.4 m/s, 99.2–99.3 %). Wave height, how bells slide along the
+  net and skirt blow-back did not change how many reached the screens over their ranges. Each factor
+  names the test or data that settles it (ADCP, echo-sounder, tank or flume), so the validation
+  budget goes first to the jets.
 
 ## Real tidal current
 
@@ -434,6 +451,22 @@ How It Works has a *Build and run it* panel (`src/simulation/feasibility.ts`, `s
 - **Payback after 1–9 avoided unit-days**, at US$1.3–3.7M per day of a 1.4 GW unit (Torness up to an
   analyst's Barakah generation cost); Hanul 2021 cost 14–26 unit-days. Running costs are about
   US$20–45k a season, against about US$0.6M a year for EDF's boats and crews at Gravelines.
+- **Approvals.** Nothing in the intake, screens or plant systems changes, so SweepLine enters through
+  the operator's modification programme as non-safety equipment in open water (IAEA SSR-2/2 Rev. 1,
+  Requirement 11, management of modifications), plus two permits:
+  - Abu Dhabi Maritime's no-objection certificate, compulsory for maritime infrastructure including
+    floating structures ([ADM/CIR/2021/10](https://www.admaritime.ae/wp-content/uploads/2025/12/ADM-CIR-2021-10-NOC-FOR-MARITIME-INFRA-PROJECTS-ABUDHABI.pdf)),
+    and approval for the marker buoys (circular ADM/CIR/2023/1; the
+    [2025 maritime safety bylaw](https://www.admaritime.ae/wp-content/uploads/2025/07/Administrative-Decision-No.-69-of-2025-Regulatory-Bylaw-for-Maritime-Safety-in-Abu-Dhabi-Waterways.pdf)
+    bars installing navigation aids without it).
+    Buoyed silt curtains are deployed under the same regime
+    ([ADM/LMN/2026/30](https://www.admaritime.ae/wp-content/uploads/sites/5/2026/05/ADM-LMN-2026-30-DEPLOYMENT-TEMPORARY-ATONS-AND-SILT-CURTAIN.pdf)).
+  - An addition to the plant's [EAD operational environmental permit](https://enec.ae/our-subsidiaries/enec-operations/environment-permit/)
+    (first issued 2018, renewed yearly) for the seabed works and live release, with the turtle and
+    dugong measures on the Wildlife card.
+- **Fails safe.** If air or power is lost the curtain sinks onto its seabed anchors (every 30 m)
+  instead of drifting toward the intake; the existing screens stay the last line of defence. Its
+  controls stand alone, with no connection to the plant's safety or control systems.
 
 Every price, its year and its source URL are in `src/config/costs.ts`.
 
@@ -529,6 +562,8 @@ npm run build:map-intro                          # regenerate the opening intro'
 npm run build:tide                               # regenerate the tidal-current and wind data (Copernicus, ERA5 via Open-Meteo)
 npm run study:drift                              # released-animal drift study; rewrites src/data/drift.generated.ts
 npm run build:wildlife                           # turtle and dugong records near the site (OBIS, GBIF)
+npm run study:seeds                              # headline results across 20 blooms; rewrites src/data/seeds.generated.ts
+npm run study:sensitivity                        # each assumption at both ends of its range; rewrites src/data/sensitivity.generated.ts
 ```
 
 In `npm run dev`, `window.__sl` exposes the controller and scene; `await __sl.shot('name')` and
