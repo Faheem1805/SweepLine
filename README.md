@@ -98,7 +98,7 @@ rectangle), then the camera swings into the normal perspective view.
   from Natural Earth and OpenStreetMap. The reference site sits on a natural stretch of beach
   south-west of Jebel Dhanna, kept clear of the Shuweihat and Ruwais facilities, and the geography
   fades into the schematic frame before the zoom reaches facility scale. The intake, curtain and
-  transfer route are the `src/config/site.ts` geometry — not ENEC/Barakah or any other real plant.
+  transfer route are the `src/config/site.ts` geometry — not ENEC's or any other real plant.
 - **Names are never translated by us.** English and Arabic labels are read from source tags
   (`name:en` / `name:ar`, Natural Earth `NAME_EN` / `NAME_AR`; "Arabian Gulf" is Natural Earth's
   `namealt`). Each label carries its source in the generated data.
@@ -466,10 +466,10 @@ How It Works has a *Build and run it* panel (`src/simulation/feasibility.ts`, `s
   power-plant fish-return line (US EPA). The shared release line is the largest item. Not included:
   inflation system and manifold, controls and sensors, engineering, permits and contingency.
 - **Payback after 1–9 avoided unit-days**, at US$1.3–3.7M per day of a 1.4 GW unit (Torness up to an
-  analyst's Barakah generation cost); Hanul 2021 cost 14–26 unit-days. Running costs are about
+  analyst's estimate of the plant's generation cost); Hanul 2021 cost 14–26 unit-days. Running costs are about
   US$20–45k a season, against about US$0.6M a year for EDF's boats and crews at Gravelines.
 - **CO₂.** While running, a line uses about 2.1 MWh a day of the plant's own low-carbon power. Each
-  avoided unit-day keeps about 15,300 t of CO₂ out of the air: ENEC puts Barakah's four units at
+  avoided unit-day keeps about 15,300 t of CO₂ out of the air: ENEC puts the plant's four units at
   [22.4 Mt a year avoided](https://www.enec.gov.ae/news/latest-news/barakah-plant-tackling-climate-change-today/).
 - **Approvals.** Nothing in the intake, screens or plant systems changes, so SweepLine enters through
   the operator's modification programme as non-safety equipment in open water (IAEA SSR-2/2 Rev. 1,

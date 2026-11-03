@@ -58,11 +58,11 @@ export const CAPEX: CostItem[] = [
 /** Not in the total: no public price found, or depends on the site. */
 export const CAPEX_EXCLUDED = ['inflation system and manifold', 'controls and sensors', 'engineering, permits and contingency'];
 
-/** Value of one lost unit-day at a 1.4 GW unit (US$ million): a published plant figure up to an analyst's Barakah generation cost. */
+/** Value of one lost unit-day at a 1.4 GW unit (US$ million): a published plant figure up to an analyst's estimate of the plant's generation cost. */
 export const UNIT_DAY = {
   low: 1.32,
   high: 3.7,
-  basis: 'Torness, £1M a day (2014), up to 33.6 GWh at 11 US¢/kWh (analyst estimate of Barakah’s cost, 2018).',
+  basis: 'Torness, £1M a day (2014), up to 33.6 GWh at 11 US¢/kWh (analyst estimate of the plant’s generation cost, 2018).',
   sources: ['https://nzherald.co.nz/world/new-system-to-warn-of-jellyfish-swarms/RCLE3LOTJWZAH53G4ABCDOJTRQ', 'https://spectrum.ieee.org/the-united-arab-emirates-nuclear-power-gambit'],
 };
 
@@ -77,7 +77,7 @@ export const RUNNING = {
 
 /** A real event for scale: Hanul (Korea) 2021, two units out for 7–13 days. */
 /**
- * CO₂ kept out of the air by one avoided unit-day: ENEC puts Barakah's four units at 22.4 Mt a year
+ * CO₂ kept out of the air by one avoided unit-day: ENEC puts the plant's four units at 22.4 Mt a year
  * avoided against the generation they replace, so a unit lost for a day hands about this much back.
  */
 export const CO2_PER_UNIT_DAY = {
