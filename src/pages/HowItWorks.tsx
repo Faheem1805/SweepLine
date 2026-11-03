@@ -9,7 +9,7 @@ import { SideSchematic } from '../components/charts/SideSchematic';
 import { Icon } from '../components/ui/icons';
 import { FlowArrow, IconTile, Panel, type TileTone } from '../components/ui/Panel';
 import { ASSUMPTIONS } from '../config/assumptions';
-import { AED_PER_USD, CAPEX_EXCLUDED, capexTotal, REFERENCE_EVENT, RUNNING, UNIT_DAY } from '../config/costs';
+import { AED_PER_USD, CAPEX_EXCLUDED, capexTotal, CO2_PER_UNIT_DAY, REFERENCE_EVENT, RUNNING, UNIT_DAY } from '../config/costs';
 import { OPERATING_ENVELOPE } from '../config/operatingEnvelope';
 import { AIR_EVIDENCE, DECISIVE_TEST, SURVIVAL, survivalRange } from '../config/survival';
 import { SITE, seabedDepth } from '../config/site';
@@ -87,7 +87,7 @@ function BuildAndRun({ skirt, angle, jetLevel }: { skirt: number; angle: AnchorA
     {
       value: `≈ ${Math.round(f.totalKW)} kW`,
       label: 'Power while running',
-      body: `Transfer pump ${Math.round(f.pumpKW)} kW (${f.head.toFixed(1)} m head over the ${(f.lineLength / 1000).toFixed(1)} km release line) and jets ${Math.round(f.jetsKW)} kW. Nothing runs while the line is stowed. That is about ${((f.totalKW / 1.4e6) * 100).toFixed(3)}% of a 1.4 GW unit.`,
+      body: `Transfer pump ${Math.round(f.pumpKW)} kW (${f.head.toFixed(1)} m head over the ${(f.lineLength / 1000).toFixed(1)} km release line) and jets ${Math.round(f.jetsKW)} kW. Nothing runs while the line is stowed. That is about ${((f.totalKW * 24) / 1000).toFixed(1)} MWh a day from the plant’s own low-carbon power, ${((f.totalKW / 1.4e6) * 100).toFixed(3)}% of a 1.4 GW unit.`,
       note: 'Darcy–Weisbach friction for a smooth HDPE line; jets scale with the cube of output.',
     },
     {
@@ -105,8 +105,8 @@ function BuildAndRun({ skirt, angle, jetLevel }: { skirt: number; angle: AnchorA
     {
       value: `${Math.max(1, Math.round(cap.low / UNIT_DAY.high))}–${Math.round(cap.high / UNIT_DAY.low)} unit-days`,
       label: 'Pays back after',
-      body: `One lost day of a 1.4 GW unit is worth about US$${UNIT_DAY.low.toFixed(1)}–${UNIT_DAY.high.toFixed(1)}M. ${REFERENCE_EVENT.label} cost ${REFERENCE_EVENT.unitDays[0]}–${REFERENCE_EVENT.unitDays[1]} unit-days. Running costs are about US$${RUNNING.low}–${RUNNING.high}k a season, against ~US$${RUNNING.manualPerYear}M a year for boats and crews at Gravelines.`,
-      note: UNIT_DAY.basis,
+      body: `One lost day of a 1.4 GW unit is worth about US$${UNIT_DAY.low.toFixed(1)}–${UNIT_DAY.high.toFixed(1)}M. ${REFERENCE_EVENT.label} cost ${REFERENCE_EVENT.unitDays[0]}–${REFERENCE_EVENT.unitDays[1]} unit-days. Running costs are about US$${RUNNING.low}–${RUNNING.high}k a season, against ~US$${RUNNING.manualPerYear}M a year for boats and crews at Gravelines. Each unit-day saved also keeps about ${CO2_PER_UNIT_DAY.tonnes.toLocaleString('en-GB')} t of CO₂ out of the air.`,
+      note: `${UNIT_DAY.basis} CO₂: ENEC, 22.4 Mt a year avoided by four units.`,
     },
     {
       value: 'Outside the plant',

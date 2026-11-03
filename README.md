@@ -359,6 +359,13 @@ or still in the water. The Evidence page shows the same balance live under the c
   net and skirt blow-back did not change how many reached the screens over their ranges. Each factor
   names the test or data that settles it (ADCP, echo-sounder, tank or flume), so the validation
   budget goes first to the jets.
+- **Could it have been deployed?** (`npm run study:hindcast`). Every hour of four recorded bloom
+  seasons (Oct–Nov 2022–2025, 5,856 h) against the operating envelope's wave and current limits,
+  from the Copernicus wave and current records at the model cell 12 km offshore: waves peaked at
+  1.18 m (limit 1.5 m) and the current at 0.25 m/s (limit 0.6 m/s), so SweepLine would never have
+  had to stand down. Over all of 2022–2025 waves passed 1.5 m for 26 hours, the longest stretch 9 h.
+  Current direction is not judged: next to the revetment the shore sets it, which the ADCP on the
+  curtain line settles.
 - **When something fails** (`npm run study:failures`, `src/config/failureModes.ts`). Each fault or
   out-of-envelope condition, injected into steady operation or run as its stress-test scenario, on
   the same three blooms with and without SweepLine for 30 simulated minutes. In none of the nine
@@ -461,6 +468,9 @@ How It Works has a *Build and run it* panel (`src/simulation/feasibility.ts`, `s
 - **Payback after 1–9 avoided unit-days**, at US$1.3–3.7M per day of a 1.4 GW unit (Torness up to an
   analyst's Barakah generation cost); Hanul 2021 cost 14–26 unit-days. Running costs are about
   US$20–45k a season, against about US$0.6M a year for EDF's boats and crews at Gravelines.
+- **CO₂.** While running, a line uses about 2.1 MWh a day of the plant's own low-carbon power. Each
+  avoided unit-day keeps about 15,300 t of CO₂ out of the air: ENEC puts Barakah's four units at
+  [22.4 Mt a year avoided](https://www.enec.gov.ae/news/latest-news/barakah-plant-tackling-climate-change-today/).
 - **Approvals.** Nothing in the intake, screens or plant systems changes, so SweepLine enters through
   the operator's modification programme as non-safety equipment in open water (IAEA SSR-2/2 Rev. 1,
   Requirement 11, management of modifications), plus two permits:
@@ -575,6 +585,7 @@ npm run build:wildlife                           # turtle and dugong records nea
 npm run study:seeds                              # headline results across 20 blooms; rewrites src/data/seeds.generated.ts
 npm run study:sensitivity                        # each assumption at both ends of its range; rewrites src/data/sensitivity.generated.ts
 npm run study:failures                           # each failure with and without SweepLine; rewrites src/data/failures.generated.ts
+npm run study:hindcast                           # four recorded seasons against the wave and current limits; rewrites src/data/hindcast.generated.ts
 ```
 
 In `npm run dev`, `window.__sl` exposes the controller and scene; `await __sl.shot('name')` and

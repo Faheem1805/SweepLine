@@ -76,6 +76,15 @@ export const RUNNING = {
 };
 
 /** A real event for scale: Hanul (Korea) 2021, two units out for 7–13 days. */
+/**
+ * CO₂ kept out of the air by one avoided unit-day: ENEC puts Barakah's four units at 22.4 Mt a year
+ * avoided against the generation they replace, so a unit lost for a day hands about this much back.
+ */
+export const CO2_PER_UNIT_DAY = {
+  tonnes: Math.round(22.4e6 / 4 / 365 / 100) * 100,
+  source: 'https://www.enec.gov.ae/news/latest-news/barakah-plant-tackling-climate-change-today/',
+};
+
 export const REFERENCE_EVENT = { label: 'Hanul 2021', unitDays: [14, 26] as const, source: 'https://www.asiae.co.kr/en/article/2021041915325211316' };
 
 export const capexTotal = () => ({ low: CAPEX.reduce((s, c) => s + c.low, 0), high: CAPEX.reduce((s, c) => s + c.high, 0) });

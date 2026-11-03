@@ -5,6 +5,7 @@ import { useApp } from '../app/store';
 import { downsample, Legend, SERIES, TimeChart, type SeriesDef } from '../components/charts/TimeChart';
 import { ReleaseDriftPanel } from '../components/panels/ReleaseDrift';
 import { SensitivityPanel } from '../components/panels/Sensitivity';
+import { HINDCAST_DATA } from '../data/hindcast.generated';
 import { SEEDS_DATA } from '../data/seeds.generated';
 import type { SeedStat } from '../data/seedsTypes';
 import { Icon } from '../components/ui/icons';
@@ -39,6 +40,11 @@ const ci = (s: SeedStat) => `${pct(s.lo, 1)}–${pct(s.hi, 1)}`;
 function AcrossBlooms() {
   const R = SEEDS_DATA.reference;
   const T = SEEDS_DATA.tideTurn;
+  const H = HINDCAST_DATA;
+  const hours = H.seasons.reduce((n, p) => n + p.hours, 0);
+  const out = H.seasons.reduce((n, p) => n + Math.max(p.overWave, p.overCurrent), 0);
+  const maxWave = Math.max(...H.seasons.map((p) => p.maxWave));
+  const maxCurrent = Math.max(...H.seasons.map((p) => p.maxCurrent));
   const items: Array<{ label: string; value: string; detail: string; tone: string }> = [
     {
       label: `Fewer intake contacts · ${R.reduction.n} blooms`,
@@ -58,9 +64,15 @@ function AcrossBlooms() {
       detail: `Fewer intake contacts in the ${T.hoursAfter} h after the turn: Twin-Line (95% CI ${ci(T.twin)}) against a single line`,
       tone: 'text-teal',
     },
+    {
+      label: `Deployable · ${H.seasons.length} recorded seasons`,
+      value: pct(1 - out / hours, out ? 1 : 0),
+      detail: `Oct–Nov ${H.seasons[0].label.slice(-4)}–${H.seasons[H.seasons.length - 1].label.slice(-4)}, ${int(hours)} h: waves peaked at ${maxWave} m (limit ${H.limits.wave}), current at ${maxCurrent} m/s (limit ${H.limits.current}). All year: longest stand-down ${H.allYear.longestStandDown} h`,
+      tone: 'text-teal',
+    },
   ];
   return (
-    <section className="card grid grid-cols-1 gap-4 p-5 md:grid-cols-3">
+    <section className="card grid grid-cols-1 gap-4 p-5 md:grid-cols-2 xl:grid-cols-4">
       {items.map((it) => (
         <div key={it.label} className="flex min-w-0 flex-col gap-1">
           <span className="text-[12px] font-semibold tracking-[0.06em] text-muted uppercase">{it.label}</span>
