@@ -1,18 +1,28 @@
 import * as THREE from 'three';
-import { SITE } from '../../config/site';
+import { OUTLETS, SITE, mirrorX } from '../../config/site';
 import { waveElevation } from '../../simulation/waves';
+import type { LineSide } from '../../simulation/types';
 import { mediumMaterial, SHARED } from '../environment/shaderChunks';
 
-/** Safe-release outlet (down-current, outside the intake capture area), marker buoy, zone ring and plume. */
+/**
+ * Safe-release outlet (down-current, outside the intake capture area), marker buoy, zone ring and
+ * plume. Built in the side-0 frame; outlet 1 (for a current toward −x) is the same model mirrored.
+ */
 export class ReleaseSystem {
   readonly group = new THREE.Group();
+  readonly outlet: LineSide;
   private readonly buoy: THREE.Group;
   private readonly ringMat: THREE.ShaderMaterial;
   private readonly plumeMat: THREE.ShaderMaterial;
   private readonly lampMat: THREE.MeshBasicMaterial;
 
-  constructor() {
-    this.group.name = 'release';
+  constructor(outlet: LineSide = 0) {
+    this.group.name = outlet === 0 ? 'release' : 'release-b';
+    this.outlet = outlet;
+    if (outlet === 1) {
+      this.group.scale.x = -1;
+      this.group.position.x = SITE.twin.mirrorX;
+    }
     const r = SITE.release;
     const dir = new THREE.Vector3(r.dirX, 0, r.dirZ).normalize();
     const yaw = -Math.atan2(dir.z, dir.x);
@@ -119,7 +129,7 @@ export class ReleaseSystem {
 
   update(releaseRate: number, active: boolean, time: number, waveTime: number, waveHeight: number): void {
     const p = this.buoy.position;
-    p.y = waveElevation(p.x, p.z, waveTime, waveHeight) - 0.2;
+    p.y = waveElevation(this.outlet === 0 ? p.x : mirrorX(p.x), p.z, waveTime, waveHeight) - 0.2;
     this.buoy.rotation.z = Math.sin(time * 0.9) * 0.06;
     this.plumeMat.uniforms.uStrength.value = Math.min(1, releaseRate * 14);
     this.ringMat.uniforms.uOpacity.value = active ? 0.6 : 0.2;
@@ -127,6 +137,7 @@ export class ReleaseSystem {
   }
 
   anchor(): THREE.Vector3 {
-    return new THREE.Vector3(SITE.release.x + 6, 2.5, SITE.release.z + 3);
+    const r = OUTLETS[this.outlet];
+    return new THREE.Vector3(r.x + 6 * Math.sign(r.dirX), 2.5, r.z + 3);
   }
 }

@@ -137,6 +137,23 @@ export const ASSUMPTIONS = {
     designPowerKW: 50,
   },
 
+  /**
+   * SweepLine Twin-Line: a second line, the mirror image of the first, stowed on the seabed on the
+   * other side of the intake. When the tidal current has run the other way past `switchSpeed` for
+   * `switchDwell`, duty passes to that line: it pops up, while the previous line keeps guiding the
+   * traffic already on it to its throat and then settles back onto the seabed. Assumptions.
+   */
+  twin: {
+    /** Reversed along-shore current (m/s) and how long it must hold (s) before the handover. */
+    switchSpeed: 0.015,
+    switchDwell: 30,
+    /** The previous line stows once at most this many agents remain guided on it and its throat is empty… */
+    handoverClearThreshold: 1,
+    /** …but not before this long (s), and at the latest after this long (s). */
+    handoverMin: 60,
+    handoverMax: 420,
+  },
+
   deploy: {
     /** Pop-up: valve checks before the float line starts inflating (s). */
     popUpDelay: 15,

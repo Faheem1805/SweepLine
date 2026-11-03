@@ -38,6 +38,8 @@ export const F_DIVERTED = 8;
 export const F_REEF_RELEASED = 16;
 export const F_RESOLVED = 32;
 export const F_OVERTOPPING = 64;
+/** Arrived from the +x end of the site (on a current toward −x); passes the intake toward −x. */
+export const F_FROM_EAST = 128;
 
 export class AgentPool {
   readonly capacity: number;
@@ -73,6 +75,8 @@ export class AgentPool {
   readonly timer: Float32Array;
   /** Position in the throat queue, or −1. */
   readonly queueIndex: Int16Array;
+  /** Twin-Line guide line whose throat holds the agent, then the outlet it is released from. */
+  readonly lane: Int8Array;
   /** Visual fade-in 0..1. */
   readonly fade: Float32Array;
 
@@ -101,6 +105,7 @@ export class AgentPool {
     this.contactStart = new Float32Array(capacity);
     this.timer = new Float32Array(capacity);
     this.queueIndex = new Int16Array(capacity);
+    this.lane = new Int8Array(capacity);
     this.fade = new Float32Array(capacity);
     this.freeList = new Int32Array(capacity);
     this.freeTop = 0;

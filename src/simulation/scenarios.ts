@@ -1,3 +1,4 @@
+import { TIDE } from './tide';
 import type { FailureKey, SimParams } from './types';
 
 export type ScenarioAction =
@@ -23,12 +24,16 @@ export interface Scenario {
   start: 'sequence' | 'steady';
   script?: ScenarioStep[];
   tone: 'nominal' | 'stress' | 'failure';
+  /** Pre-roll for a steady start (s), when it differs from the default. */
+  preRoll?: number;
+  /** 'tide': time-lapse through slack water, normal speed for the handover and the new sweep. */
+  pace?: 'tide';
 }
 
 const NORMAL: Partial<SimParams> = {
   bloomDensity: 0.55,
   currentSpeed: 0.28,
-  currentBearing: 112,
+  currentBearing: 242,
   bloomMeanDepth: 1.7,
   bloomDepthSD: 0.6,
   skirtDepth: 2.5,
@@ -115,6 +120,21 @@ export const SCENARIOS: Scenario[] = [
       { at: 30, action: { kind: 'params', params: { currentSpeed: 0.15 }, message: 'Current slackening — 0.15 m/s' } },
       { at: 70, action: { kind: 'params', params: { currentSpeed: 0.06 }, message: 'Slack tide — current 0.06 m/s' } },
     ],
+    tone: 'stress',
+  },
+  {
+    id: 'tide-turn',
+    name: 'Tide Turn',
+    tagline: 'Recorded tide reverses mid-bloom: Line B takes over',
+    description:
+      'Replays a recorded spring-tide turn at the site (Copernicus current, 8 Oct 2025, 02:43 UTC): 0.2 m/s along the shore, slackening, then reversing. ' +
+      'Once it has turned, Line B pops up on the other side of the intake, Line A guides the traffic already on it to its throat and settles back onto the seabed, ' +
+      'and the release valve switches to the down-tide outlet. Time-lapse through slack water. Switch Second line off in Stress test to see one curtain face the wrong way.',
+    demonstrates: ['Real tidal current at the site', 'Twin-Line handover', 'Down-tide release'],
+    params: { ...NORMAL, bloomDensity: 0.7, tide: true, tideStart: TIDE.referenceTurn - 1.6 },
+    start: 'steady',
+    preRoll: 3000,
+    pace: 'tide',
     tone: 'stress',
   },
   {

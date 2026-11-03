@@ -51,16 +51,25 @@ function response(s: SimSnapshot): { text: string; tone: Tone } {
     return { text: c.mode === 'STOWED' ? 'Outside operating envelope — SweepLine stands down' : 'Outside operating envelope — SafeOpen recommended', tone: 'red' };
   if (c.mode === 'STOWED') return s.bloom.warningAt === null ? { text: 'SweepLine stowed — awaiting warning', tone: 'muted' } : { text: 'Warning received — preparing deployment', tone: 'amber' };
   if (c.mode === 'DEPLOYING') {
-    if (c.deployDelay > 0) return { text: c.deployMode === 'workboat' ? `Workboat mobilising — on station in ${mmss(c.deployDelay)}` : 'SweepLine inflating', tone: 'cyan' };
-    return { text: `SweepLine ${c.deployMode === 'popup' ? 'rising from the seabed' : 'being laid'} — ${Math.round(c.deployedPct)}%`, tone: 'cyan' };
+    // A deployment that follows a handover is the new line coming up for the turned tide.
+    const who = s.twin.handover ? `Tide turned — ${s.twin.duty === 0 ? 'Line A' : 'Line B'}` : 'SweepLine';
+    if (c.deployDelay > 0) return { text: c.deployMode === 'workboat' ? `Workboat mobilising — on station in ${mmss(c.deployDelay)}` : `${who} inflating`, tone: 'cyan' };
+    return { text: `${who} ${c.deployMode === 'popup' ? 'rising from the seabed' : 'being laid'} — ${Math.round(c.deployedPct)}%`, tone: 'cyan' };
   }
   if (c.mode === 'STOWING') return { text: 'Bloom passed — SweepLine stowing', tone: 'muted' };
   if (c.mode === 'UNREEFING') return { text: 'SweepLine re-arming', tone: 'cyan' };
+  // Twin-Line handover after the tide turned.
+  const tw = s.twin;
+  const duty = tw.duty === 0 ? 'Line A' : 'Line B';
+  if (tw.handover) return { text: `Tide turned — ${duty} guiding, ${tw.duty === 0 ? 'Line B' : 'Line A'} settling back`, tone: 'cyan' };
   if (s.transfer.primary === 'FAULT')
     return { text: s.transfer.standby === 'ONLINE' ? 'Transfer fault — standby path carrying the load' : 'Transfer fault — standby activating', tone: 'amber' };
   // The adaptive skirt is following a deep bloom down.
   if (c.skirtTarget > Math.min(s.params.skirtDepth, c.clearanceMax) + 0.05) return { text: `Deep bloom — skirt lowered to ${c.skirtTarget.toFixed(1)} m`, tone: 'cyan' };
-  return { text: `SweepLine deployed${s.params.activeFlow && c.jetOutput > 0.01 ? ' · water jets on' : ''}`, tone: 'cyan' };
+  const jets = s.params.activeFlow && c.jetOutput > 0.01 ? ' · water jets on' : '';
+  // On the recorded tide, name the line doing the work.
+  if (s.tide.on && tw.enabled) return { text: `${duty} guiding${jets}`, tone: 'cyan' };
+  return { text: `SweepLine deployed${jets}`, tone: 'cyan' };
 }
 
 function HeadlineMetric({ value, label, tone }: { value: string; label: string; tone: string }) {
@@ -143,8 +152,9 @@ export function CompactTimeline() {
       <button
         type="button"
         onClick={() => {
-          void controller.restart('sequence');
-          showToast('Replaying the sequence from bloom approach (same seed)', 'info');
+          // A tide run replays its recorded turn; otherwise the sequence replays from the bloom approach.
+          void (s.tide.on ? controller.replay() : controller.restart('sequence'));
+          showToast(s.tide.on ? 'Replaying the recorded tide turn (same seed)' : 'Replaying the sequence from bloom approach (same seed)', 'info');
         }}
         className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-cyan/40 bg-cyan/10 px-2.5 text-[12.5px] font-medium text-cyan transition-colors hover:bg-cyan/20"
         title="Replay the full sequence from bloom approach (same seed)"
@@ -356,7 +366,7 @@ export function StressTestMenu() {
                   if (v === s.params.deployMode) return;
                   // Deployment starts from the warning, so the comparison replays the run.
                   controller.setParams({ deployMode: v }, { silent: true });
-                  void controller.restart('sequence');
+                  void (s.tide.on ? controller.replay() : controller.restart('sequence'));
                   showToast(v === 'popup' ? 'Replaying with the pop-up curtain' : 'Replaying with workboat deployment (~15 min mobilisation)', 'info');
                 }}
                 options={[
@@ -365,7 +375,20 @@ export function StressTestMenu() {
                 ]}
               />
             </div>
-            <p className="mt-1 text-[11px] text-dim">Switching replays the run from the bloom approach (same seed).</p>
+            <div className="mt-2">
+              <Toggle
+                checked={s.params.twinLine}
+                onChange={(v) => {
+                  // Whether the second line exists is part of the installation, so the comparison replays the run.
+                  controller.setParams({ twinLine: v }, { silent: true });
+                  void controller.replay();
+                  showToast(v ? 'Replaying with the Twin-Line' : 'Replaying with a single line (no second line for a turned tide)', 'info');
+                }}
+                label="Second line"
+                hint="Off = one curtain, facing the wrong way once the tide turns"
+              />
+            </div>
+            <p className="mt-1 text-[11px] text-dim">Switching replays the run (same seed).</p>
           </div>
         </div>
       )}

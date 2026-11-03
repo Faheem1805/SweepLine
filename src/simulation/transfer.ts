@@ -29,11 +29,16 @@ export class TransferState {
   designRate = 0.3;
 
   tokens = 0;
-  /** FIFO of agent slots waiting in the bellmouth. */
-  queue: number[] = [];
+  /** FIFO of agent slots waiting in each guide line's bellmouth (Twin-Line side 0 and 1); both feed one transfer manifold. */
+  readonly queues: [number[], number[]] = [[], []];
   /** Exponential moving averages (agents/s). */
   processedEMA = 0;
   arrivalEMA = 0;
+
+  /** Agents waiting in both bellmouths. */
+  get queueLength(): number {
+    return this.queues[0].length + this.queues[1].length;
+  }
 
   get primaryStatus(): ModuleStatus {
     if (this.primaryFault) return 'FAULT';
@@ -92,7 +97,8 @@ export class TransferState {
     this.throatOpen = false;
     this.acceptingNew = true;
     this.tokens = 0;
-    this.queue.length = 0;
+    this.queues[0].length = 0;
+    this.queues[1].length = 0;
     this.processedEMA = 0;
     this.arrivalEMA = 0;
   }

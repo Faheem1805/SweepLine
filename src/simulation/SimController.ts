@@ -4,8 +4,10 @@ import { S_APPROACHING, S_GUIDED, S_TRANSFER_QUEUE } from './Agent';
 import { computeEngineMetrics, type EngineMetrics } from './metrics';
 import { bloomP90 } from './curtain';
 import { evaluateEnvelope, SafeOpenController, type EnvelopeResult } from './safety';
+import { compassLabel } from '../config/site';
 import { getScenario, type Scenario, type ScenarioStep } from './scenarios';
 import { SimulationEngine, type AgentInfo } from './SimulationEngine';
+import { hoursToNextTurn, tideCurrent, tideCurrentVector, tideDate } from './tide';
 import {
   DEFAULT_PARAMS,
   type DeployMode,
@@ -14,12 +16,24 @@ import {
   type EngineKind,
   type EventLevel,
   type FailureKey,
+  type LineSide,
   type ModuleStatus,
   type SafeOpenPhase,
   type SimEvent,
   type SimParams,
   type StatusCode,
 } from './types';
+
+/** Twin-Line names: line A guides a current toward +x, line B (its mirror) one toward −x. */
+export const LINE_NAMES = ['Line A', 'Line B'] as const;
+
+/** Time-lapse used to carry a tide scenario through slack water, and the speed to watch the action at. */
+const TIDE_TIMELAPSE = 60;
+const TIDE_WATCH = 5;
+const TIDE_SWEEP = 10;
+
+/** Tide-scenario pacing: through slack water to the handover, the pop-up, then to the bloom's arrival at the new line. */
+type TidePace = 'off' | 'toTurn' | 'popUp' | 'toArrival' | 'done';
 
 export type StageKey = 'bloom' | 'warning' | 'deploy' | 'sweep' | 'transfer' | 'release' | 'recovery';
 
@@ -112,6 +126,29 @@ export interface SimSnapshot {
   bloom: { p50: number; p90: number; active: boolean; arrivalsPerMin: number; warningAt: number | null };
   selectedAgent: (AgentInfo & { engine: EngineKind }) | null;
   underSkirtSeq: number;
+  /** SweepLine Twin-Line: which line is on duty, both lines' state, and the outlet the valve releases to. */
+  twin: {
+    enabled: boolean;
+    duty: LineSide;
+    lines: Array<{ mode: CurtainMode; deployedPct: number }>;
+    /** The previous duty line is still clearing its traffic after a handover. */
+    handover: boolean;
+    outlet: LineSide;
+  };
+  /** The real tidal current, when the run uses it. */
+  tide: {
+    on: boolean;
+    /** Along-shore current (m/s), positive toward +x. */
+    u: number;
+    /** Recorded date and time (UTC ms) the run is at. */
+    date: number;
+    /** Hours until the current next reverses, if within the record. */
+    turnIn: number | null;
+    /** Along-shore current from 6 h before to 6 h after now, every 15 min (m/s). */
+    trace: number[];
+    /** The run is time-lapsing through slack water. */
+    timeLapse: boolean;
+  };
 }
 
 export interface LoadingState {
@@ -213,6 +250,8 @@ export class SimController {
   private prevPrimary: ModuleStatus = 'STANDBY';
   private prevStandby: ModuleStatus = 'STANDBY';
   private prevCurtainMode: CurtainMode = 'STOWED';
+  private prevOffMode: CurtainMode = 'STOWED';
+  private prevOutlet: LineSide = 0;
   private savedParams: Partial<SimParams> = {};
   private script: ScenarioStep[] = [];
   private runStart = 0;
@@ -225,6 +264,11 @@ export class SimController {
   private standDown = false;
   /** Skirt depth the winches are holding below the operator setpoint for a deep bloom (0 = none). */
   private adaptiveSkirt = 0;
+  /** How long the current has run against the duty line (s). */
+  private reversedFor = 0;
+  /** Tide-scenario pacing: time-lapse through slack water, real-time-ish for the handover and the new sweep. */
+  private pace: TidePace = 'off';
+  private paceAt = 0;
 
   constructor() {
     this.baseline = new SimulationEngine('baseline', this.params);
@@ -274,18 +318,25 @@ export class SimController {
     this.prevPrimary = 'STANDBY';
     this.prevStandby = 'STANDBY';
     this.prevCurtainMode = 'STOWED';
+    this.prevOffMode = 'STOWED';
     this.selection = null;
     this.standDown = false;
     this.adaptiveSkirt = 0;
+    this.reversedFor = 0;
+    // A paced tide run hands the default speed back to the next run.
+    if (this.pace !== 'off') this.speed = TIDE_WATCH;
+    this.pace = scenario?.pace === 'tide' && this.params.tide ? 'toTurn' : 'off';
+    if (this.params.tide) this.params = { ...this.params, ...this.tideAt(0) };
     this.baseline.reset(this.params, 'approach');
     this.sweepline.reset(this.params, 'approach');
+    this.prevOutlet = this.sweepline.flowSide();
     this.timeline[0].at = 0;
     this.log('info', `Run started — ${scenario ? scenario.name : this.isReferenceRun() ? 'reference conditions' : 'custom conditions'} · seed ${this.params.seed}`);
     this.log('info', `Bloom approach — Blue Blubber (Catostylus mosaicus), density ${(this.params.bloomDensity * 100).toFixed(0)}%`);
 
     if (start === 'steady') {
       // A workboat deployment first has to mobilise before steady operation can begin.
-      const target = ASSUMPTIONS.sequence.steadyPreRoll + (this.params.deployMode === 'workboat' ? ASSUMPTIONS.deploy.workboatMobilisation : 0);
+      const target = (scenario?.preRoll ?? ASSUMPTIONS.sequence.steadyPreRoll) + (this.params.deployMode === 'workboat' ? ASSUMPTIONS.deploy.workboatMobilisation : 0);
       const h = ASSUMPTIONS.sequence.preRollStep;
       this.loadingPublisher?.({ active: true, progress: 0, label: 'Pre-rolling simulation to steady operation' });
       while (this.sweepline.time < target) {
@@ -306,9 +357,16 @@ export class SimController {
     this.clockStart = Date.now() - this.sweepline.time * 1000;
     this.runStart = this.sweepline.time;
     this.script = scenario?.script ? [...scenario.script].sort((a, b) => a.at - b.at) : [];
+    if (this.pace === 'toTurn') this.speed = TIDE_TIMELAPSE;
+    else if (scenario?.pace === 'tide') this.speed = TIDE_WATCH;
     this.ready = true;
     this.loadingPublisher?.({ active: false, progress: 1, label: '' });
     this.publish(true);
+  }
+
+  /** Restart the current run the way it started (a scenario's own start, otherwise from the bloom approach). */
+  async replay(): Promise<void> {
+    await this.restart(this.scenario?.start ?? 'sequence', this.scenario);
   }
 
   async runScenario(id: string): Promise<void> {
@@ -333,7 +391,30 @@ export class SimController {
 
   setSpeed(speed: number): void {
     this.speed = speed;
+    // The operator has taken over the pace of a tide scenario.
+    if (this.pace !== 'off') this.pace = 'done';
     this.publish(true);
+  }
+
+  /** Current speed and bearing from the tidal record at `t` seconds into the run. */
+  private tideAt(t: number): Pick<SimParams, 'currentSpeed' | 'currentBearing'> {
+    const v = tideCurrentVector(tideCurrent(this.params.tideStart + t / 3600));
+    // The extreme-current stress test still overrides the speed; the tide keeps the direction.
+    return { currentSpeed: this.failures.extremeCurrent ? 0.78 : v.speed, currentBearing: v.bearing };
+  }
+
+  private applyTide(t: number): void {
+    const v = this.tideAt(t);
+    this.params.currentSpeed = v.currentSpeed;
+    this.params.currentBearing = v.currentBearing;
+    this.baseline.setCurrent(v.currentSpeed, v.currentBearing);
+    this.sweepline.setCurrent(v.currentSpeed, v.currentBearing);
+  }
+
+  private setPace(pace: TidePace, speed?: number): void {
+    this.pace = pace;
+    this.paceAt = this.simTime;
+    if (speed !== undefined) this.speed = speed;
   }
 
   togglePause(): void {
@@ -641,11 +722,26 @@ export class SimController {
 
   private stepAll(dt: number): void {
     const s = this.sweepline;
+    if (this.params.tide) this.applyTide(s.time + dt);
     this.baseline.step(dt);
     s.step(dt);
     const t = s.time;
     const c = s.curtain!;
     const tr = s.transfer!;
+
+    // Twin-Line: the previous duty line clearing and settling back, and the release valve.
+    const off = s.lines[s.duty === 0 ? 1 : 0];
+    if (off.mode !== this.prevOffMode) {
+      const name = LINE_NAMES[off.layout.side];
+      if (off.mode === 'STOWING' && this.prevOffMode !== 'STOWED') this.log('info', `${name} clear of traffic — venting and settling back onto the seabed`);
+      else if (off.mode === 'STOWED' && this.prevOffMode === 'STOWING') this.log('ok', `${name} stowed on the seabed — ready for the next turn of the tide`);
+      this.prevOffMode = off.mode;
+    }
+    const outlet = s.flowSide();
+    if (outlet !== this.prevOutlet) {
+      if (tr.throatOpen && this.params.twinLine) this.log('info', `Release valve to the ${compassLabel(this.params.currentBearing)} outlet — released jellyfish go out down-tide`);
+      this.prevOutlet = outlet;
+    }
 
     if (this.warningAt === null && t >= ASSUMPTIONS.sequence.warningAt && s.bloomActive) {
       this.warningAt = t;
@@ -673,7 +769,9 @@ export class SimController {
     // Curtain mode transitions.
     if (c.mode !== this.prevCurtainMode) {
       if (c.mode === 'DEPLOYED' && this.prevCurtainMode === 'DEPLOYING') {
-        this.log('ok', `SweepLine active — curtain fully deployed, skirt ${c.skirtActual.toFixed(1)} m`);
+        if (s.handoverAt >= 0 || s.duty === 1)
+          this.log('ok', `${LINE_NAMES[s.duty]} up and guiding the ${compassLabel(this.params.currentBearing)}-going tide — skirt ${c.skirtActual.toFixed(1)} m`);
+        else this.log('ok', `SweepLine active — curtain fully deployed, skirt ${c.skirtActual.toFixed(1)} m`);
         if (this.stageAt('sweep') === null) this.stage('sweep');
       }
       if (c.mode === 'DEPLOYED' && this.prevCurtainMode === 'UNREEFING') this.log('ok', 'Curtain re-engaged — SweepLine active');
@@ -774,6 +872,9 @@ export class SimController {
       this.adaptiveSkirt = adaptive;
     }
 
+    this.updateTwin(dt, env);
+    if (this.pace !== 'off' && this.pace !== 'done') this.updatePace();
+
     // Auto-deployment after the early warning, only inside the envelope.
     if (c.mode === 'STOWED' && this.warningAt !== null && s.bloomActive && this.params.autoDeploy && !this.safeOpen.complete && !this.standDown) {
       if (env.deployPermitted) {
@@ -816,6 +917,59 @@ export class SimController {
           break;
         }
       }
+    }
+  }
+
+  /**
+   * Twin-Line: once the current has run against the duty line for `switchDwell`, duty passes to the
+   * line laid for the new direction. A stowed system just changes which line it will deploy.
+   */
+  private updateTwin(dt: number, env: EnvelopeResult): void {
+    const s = this.sweepline;
+    if (!this.params.twinLine) return;
+    const want = s.flowSide();
+    const c = s.curtain!;
+    if (want === s.duty || this.params.currentSpeed < ASSUMPTIONS.twin.switchSpeed) {
+      this.reversedFor = 0;
+      return;
+    }
+    if (c.mode === 'STOWED' && s.lines[want].mode === 'STOWED') {
+      s.duty = want;
+      this.reversedFor = 0;
+      return;
+    }
+    const up = c.mode === 'DEPLOYING' || c.mode === 'DEPLOYED' || c.mode === 'UNREEFING';
+    if (!up || this.safeOpen.active || this.safeOpen.complete) return;
+    this.reversedFor += dt;
+    if (this.reversedFor < ASSUMPTIONS.twin.switchDwell || !env.deployPermitted) return;
+    const from = s.duty;
+    if (!s.switchDuty(want)) return;
+    this.reversedFor = 0;
+    this.deployCount++;
+    this.prevOffMode = s.lines[from].mode;
+    const dir = compassLabel(this.params.currentBearing);
+    this.log('warn', `Tide turned — current now ${this.params.currentSpeed.toFixed(2)} m/s toward ${dir}`);
+    this.log(
+      'info',
+      this.params.deployMode === 'popup'
+        ? `${LINE_NAMES[want]} popping up on the other side of the intake (no vessel needed)`
+        : `${LINE_NAMES[want]} requested — workboat mobilising (~${Math.round(ASSUMPTIONS.deploy.workboatMobilisation / 60)} min, assumption)`,
+    );
+    this.log('info', `${LINE_NAMES[from]} keeps guiding the traffic already on it to its throat`);
+    if (this.pace === 'toTurn') this.setPace('popUp', TIDE_WATCH);
+  }
+
+  /** Tide scenario pacing: time-lapse through slack water and the bloom's approach, normal speed for the handover and the sweep. */
+  private updatePace(): void {
+    const s = this.sweepline;
+    const elapsed = this.simTime - this.paceAt;
+    if (this.pace === 'toTurn' && !this.params.twinLine && s.flowSide() !== s.duty) {
+      // A single line: slow down to watch it face the wrong way.
+      this.setPace('done', TIDE_SWEEP);
+    } else if (this.pace === 'popUp' && s.curtain!.mode === 'DEPLOYED' && elapsed > 20) {
+      this.setPace('toArrival', TIDE_TIMELAPSE);
+    } else if (this.pace === 'toArrival' && s.guidedByLine[s.duty] >= 3) {
+      this.setPace('done', TIDE_SWEEP);
     }
   }
 
@@ -935,7 +1089,7 @@ export class SimController {
         length: c.length,
         skirtActual: c.skirtActual,
         skirtTarget: c.skirtTarget,
-        attackAngle: s.flow.attackAngle(c.layout.angle, this.params.currentBearing),
+        attackAngle: s.flow.attackAngle(c.layout.angle, this.params.currentBearing, c.layout.side),
         liftAngle: c.liftAngleDeg,
         normalVelocity: c.normalVelocity,
         activeFraction: c.activeCount / c.layout.segCount,
@@ -955,7 +1109,7 @@ export class SimController {
         availability: tr.availability(),
         flowM3h: tr.flowM3h(),
         capacityPerMin: tr.capacityRate() * 60,
-        queue: tr.queue.length,
+        queue: tr.queueLength,
         holdCapacity: s.holdCapacity,
       },
       safeOpen: {
@@ -977,6 +1131,30 @@ export class SimController {
       },
       selectedAgent,
       underSkirtSeq: s.counters.underSkirt,
+      twin: {
+        enabled: this.params.twinLine,
+        duty: s.duty,
+        lines: s.lines.map((l) => ({ mode: l.mode, deployedPct: l.deployedFraction * 100 })),
+        handover: s.handoverAt >= 0,
+        outlet: s.flowSide(),
+      },
+      tide: this.tideSnapshot(),
+    };
+  }
+
+  private tideSnapshot(): SimSnapshot['tide'] {
+    const p = this.params;
+    if (!p.tide) return { on: false, u: 0, date: 0, turnIn: null, trace: [], timeLapse: false };
+    const h = p.tideStart + this.simTime / 3600;
+    const trace: number[] = [];
+    for (let k = -24; k <= 24; k++) trace.push(tideCurrent(h + k * 0.25));
+    return {
+      on: true,
+      u: tideCurrent(h),
+      date: tideDate(h).getTime(),
+      turnIn: hoursToNextTurn(h),
+      trace,
+      timeLapse: this.pace === 'toTurn' || this.pace === 'toArrival',
     };
   }
 

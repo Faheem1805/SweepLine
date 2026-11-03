@@ -89,8 +89,9 @@ export function computeEngineMetrics(e: SimulationEngine): EngineMetrics {
     reefReleased: c.reefReleased,
     guided: e.guidedCount + e.backedUpCount,
     avgContactTime: c.contactTimeN > 0 ? c.contactTimeSum / c.contactTimeN : null,
-    throatQueue: tr ? tr.queue.length : 0,
-    throatOccupancy: tr ? tr.queue.length / e.holdCapacity : 0,
+    throatQueue: tr ? tr.queueLength : 0,
+    // The fuller of the two bellmouths (Twin-Line).
+    throatOccupancy: tr ? Math.max(tr.queues[0].length, tr.queues[1].length) / e.holdCapacity : 0,
     transferred: c.transferred,
     inTransit: tr ? e.countState(S_TRANSFERRED) : 0,
     released: c.released,

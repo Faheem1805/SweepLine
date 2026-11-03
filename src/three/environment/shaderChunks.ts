@@ -3,9 +3,9 @@ import { bearingToWorld } from '../../config/site';
 import { WAVES_HESSIAN_GLSL } from '../../simulation/waves';
 import { makeWaterNormalMap } from './textures';
 
-/** Sun direction: morning sun from the east, ~38° elevation (reference daylight). */
+/** Sun direction: afternoon sun from the west-south-west, ~38° elevation (reference daylight). */
 function sunDirection(): THREE.Vector3 {
-  const h = bearingToWorld(100);
+  const h = bearingToWorld(254);
   const el = (38 * Math.PI) / 180;
   return new THREE.Vector3(h.x * Math.cos(el), Math.sin(el), h.z * Math.cos(el)).normalize();
 }

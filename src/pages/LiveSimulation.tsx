@@ -1,6 +1,6 @@
 import { Inspector } from '../components/panels/Inspector';
 import { CompactTimeline, EventLogMenu, LiveHeadline, SafeOpenPanel, StressTestMenu } from '../components/panels/LivePanels';
-import { FlowLegend, UnderwaterHud, ViewportToolbar } from '../components/viewport/Hud';
+import { FlowLegend, TideCard, UnderwaterHud, ViewportToolbar } from '../components/viewport/Hud';
 import { ViewportSlot } from '../components/viewport/ViewportSlot';
 
 /**
@@ -14,6 +14,7 @@ export function LiveSimulation() {
         <div data-live-hud className="pointer-events-none absolute inset-0 z-10">
           <div className="absolute top-4 left-4 flex flex-col items-start gap-3">
             <LiveHeadline />
+            <TideCard />
             <SafeOpenPanel />
           </div>
           <div className="absolute top-4 right-4">

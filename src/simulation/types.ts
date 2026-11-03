@@ -7,6 +7,9 @@ export const ANCHOR_ANGLES: readonly AnchorAngle[] = [15, 20, 25];
 /** Pop-up: stowed on the seabed and raised by inflating the float line. Workboat: laid by a vessel. */
 export type DeployMode = 'popup' | 'workboat';
 
+/** Twin-Line guide lines: 0 guides a current toward +x, 1 (its mirror image) a current toward −x. */
+export type LineSide = 0 | 1;
+
 export interface SimParams {
   seed: number;
   /** Simulated agent budget (performance setting; rates scale with it). */
@@ -41,6 +44,12 @@ export interface SimParams {
   jetLevel: number;
   /** How the curtain is deployed. */
   deployMode: DeployMode;
+  /** Twin-Line: a second, mirror-image line takes over when the tide turns (off = a single line). */
+  twinLine: boolean;
+  /** Drive the current from the real tidal record at the site instead of the fixed speed and bearing. */
+  tide: boolean;
+  /** Hours into the tidal record at which the run starts. */
+  tideStart: number;
   /** Reference conditions recorded with the run (not used by the agent model). */
   waterTemp: number;
   salinity: number;
@@ -53,7 +62,7 @@ export const DEFAULT_PARAMS: SimParams = {
   bloomMeanDepth: 1.8,
   bloomDepthSD: 0.8,
   currentSpeed: 0.32,
-  currentBearing: 112,
+  currentBearing: 242,
   waveHeight: 0.8,
   // Below the bloom's P90 depth with margin: the reference run keeps shore-side leaks to a few (npm run test:demo).
   skirtDepth: 3.5,
@@ -65,6 +74,9 @@ export const DEFAULT_PARAMS: SimParams = {
   activeFlow: true,
   jetLevel: 0.75,
   deployMode: 'popup',
+  twinLine: true,
+  tide: false,
+  tideStart: 0,
   waterTemp: 28.6,
   salinity: 41.2,
 };

@@ -2,9 +2,11 @@ import * as THREE from 'three';
 import { ASSUMPTIONS } from '../../config/assumptions';
 import { SITE } from '../../config/site';
 import { nearestSegment, SegmentHit } from '../../simulation/geometry';
+import type { CurtainState } from '../../simulation/curtain';
 import type { SimulationEngine } from '../../simulation/SimulationEngine';
 
-const REGION = { x0: -250, x1: 250, z0: -47, z1: 150 };
+/** Particle region, symmetric about the intake centreline so both Twin-Line sides are covered. */
+const REGION = { x0: -250, x1: SITE.twin.mirrorX + 250, z0: -47, z1: 150 };
 const MAX = 5200;
 
 /**
@@ -32,6 +34,8 @@ export class CurrentField {
   private arrowTimer = 0;
   private flowMode = false;
   private initialised = false;
+  /** Sign of the current along x, so new particles enter on the up-current side. */
+  private flowDirX = 1;
   private readonly arrowPos: Array<[number, number]> = [];
 
   constructor(name: string) {
@@ -88,7 +92,7 @@ export class CurrentField {
     shape.closePath();
     const arrowGeo = new THREE.ShapeGeometry(shape);
     arrowGeo.rotateX(-Math.PI / 2);
-    for (let x = -230; x <= 230; x += 13) {
+    for (let x = -230; x <= SITE.twin.mirrorX + 230; x += 13) {
       for (let z = -42; z <= 140; z += 13) {
         if (x > SITE.intake.x0 - 2 && x < SITE.intake.x1 + 2 && z < SITE.intake.mouthZ + 1) continue;
         this.arrowPos.push([x, z]);
@@ -110,7 +114,7 @@ export class CurrentField {
     let x: number;
     let z: number;
     for (let tries = 0; tries < 6; tries++) {
-      x = upstream ? r.x0 + Math.random() * 40 : r.x0 + Math.random() * (r.x1 - r.x0);
+      x = upstream ? (this.flowDirX >= 0 ? r.x0 + Math.random() * 40 : r.x1 - Math.random() * 40) : r.x0 + Math.random() * (r.x1 - r.x0);
       z = r.z0 + Math.pow(Math.random(), 1.25) * (r.z1 - r.z0);
       const insideIntake = x > SITE.intake.x0 - 1 && x < SITE.intake.x1 + 1 && z < SITE.intake.mouthZ + 1;
       if (!insideIntake) break;
@@ -133,14 +137,19 @@ export class CurrentField {
     this.initialised = true;
   }
 
+  /** The guiding line whose influence zone (x, z) is in, with its segment hit in `hit` (the lines lie well apart). */
+  private lineAt(lines: CurtainState[], x: number, z: number, hit: SegmentHit): CurtainState | null {
+    for (const c of lines) if (nearestSegment(c.layout, x, z, hit) && hit.within) return c;
+    return null;
+  }
+
   update(engine: SimulationEngine, dtSim: number, dtReal: number): void {
     if (!this.initialised) this.setFlowMode(false);
     const n = this.flowMode ? MAX : 900;
     const flow = engine.flow;
-    const curtain = engine.curtain && engine.curtain.activeCount > 0 ? engine.curtain : null;
-    const conveyor = curtain ? curtain.jetOutput * ASSUMPTIONS.jets.conveyorSpeed : 0;
+    this.flowDirX = flow.dirX;
+    const live = engine.lines.filter((c) => c.activeCount > 0);
     const band = ASSUMPTIONS.jets.conveyorBand;
-    const layout = engine.curtain?.layout ?? null;
     const tmp = this.tmp;
     const hit = this.hit;
     const dt = Math.min(dtSim, 2.5);
@@ -153,7 +162,10 @@ export class CurrentField {
       let z = this.pz[i];
       const depth = this.pd[i];
       flow.sample(x, z, depth, tmp);
-      if (curtain && layout && nearestSegment(layout, x, z, hit) && hit.within) {
+      const curtain = live.length > 0 ? this.lineAt(live, x, z, hit) : null;
+      if (curtain) {
+        const layout = curtain.layout;
+        const conveyor = curtain.jetOutput * ASSUMPTIONS.jets.conveyorSpeed;
         const k = hit.seg;
         if (curtain.segActive[k] && depth < curtain.segSkirt[k]) {
           const d = hit.d;
@@ -260,14 +272,15 @@ export class CurrentField {
 
   private updateArrows(engine: SimulationEngine): void {
     const flow = engine.flow;
-    const curtain = engine.curtain && engine.curtain.activeCount > 0 ? engine.curtain : null;
-    const conveyor = curtain ? curtain.jetOutput * ASSUMPTIONS.jets.conveyorSpeed : 0;
+    const live = engine.lines.filter((c) => c.activeCount > 0);
     const band = ASSUMPTIONS.jets.conveyorBand;
-    const layout = engine.curtain?.layout ?? null;
     for (let i = 0; i < this.arrowPos.length; i++) {
       const [x, z] = this.arrowPos[i];
       flow.sample(x, z, 0.5, this.tmp);
-      if (curtain && layout && nearestSegment(layout, x, z, this.hit) && this.hit.within) {
+      const curtain = live.length > 0 ? this.lineAt(live, x, z, this.hit) : null;
+      if (curtain) {
+        const layout = curtain.layout;
+        const conveyor = curtain.jetOutput * ASSUMPTIONS.jets.conveyorSpeed;
         const k = this.hit.seg;
         if (curtain.segActive[k]) {
           const d = this.hit.d;

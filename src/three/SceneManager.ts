@@ -1,12 +1,12 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { useApp, type UIState, type SelectionKind } from '../app/store';
-import { SITE } from '../config/site';
+import { SITE, mirrorX } from '../config/site';
 import { S_APPROACHING, S_TRANSFERRED } from '../simulation/Agent';
 import { pointAtArc } from '../simulation/geometry';
 import type { SimController, SimSnapshot } from '../simulation/SimController';
 import type { SimulationEngine } from '../simulation/SimulationEngine';
-import type { EngineKind } from '../simulation/types';
+import type { EngineKind, LineSide } from '../simulation/types';
 import { waveElevation } from '../simulation/waves';
 import { AssetLoader } from './assets/AssetLoader';
 import { adaptExternalJellyGeometry, buildJellyfishGeometry, FAR_LOD, NEAR_LOD } from './assets/procedural/jellyfishGeometry';
@@ -27,9 +27,10 @@ import { LabelSystem, type LabelViewport } from './systems/LabelSystem';
 import { PostPipeline, type ViewState } from './post/PostPipeline';
 import { iconSvg } from '../components/ui/icons';
 import { ReleaseSystem } from './systems/ReleaseSystem';
-import { TransferSystem } from './systems/TransferSystem';
+import { ReleaseValve, TransferSystem } from './systems/TransferSystem';
 
 const WORLDS: EngineKind[] = ['baseline', 'sweepline'];
+const SIDES: readonly LineSide[] = [0, 1];
 /** Time constant (real seconds) of the shown sea state following the simulated wave height. */
 const SEA_STATE_TAU = 1.6;
 
@@ -50,10 +51,14 @@ export class SceneManager {
   private readonly sky: SkyDome;
   private readonly water: Water;
   private readonly underwaterFx = new UnderwaterFx();
-  private readonly curtain: CurtainSystem;
-  private readonly jets = new JetSystem();
-  private readonly transfer: TransferSystem;
-  private readonly release: ReleaseSystem;
+  /** SweepLine Twin-Line installation, by side (line A, line B) and outlet. */
+  private readonly curtains: CurtainSystem[];
+  private readonly jets = [new JetSystem(), new JetSystem()];
+  private readonly transfers: TransferSystem[];
+  private readonly releases: ReleaseSystem[];
+  private readonly valve = new ReleaseValve();
+  /** Duty line the camera presets were last framed on. */
+  private framedDuty: LineSide = 0;
   private readonly annotations = new Annotations();
   private readonly workboat: THREE.Group;
   private readonly sweepGroup = new THREE.Group();
@@ -161,11 +166,18 @@ export class SceneManager {
 
     // ------------------------------------------------ SweepLine installation (SweepLine world only)
     this.sweepGroup.name = 'sweepline-installation';
-    this.curtain = new CurtainSystem(ctrl.params.anchorAngle);
-    this.transfer = new TransferSystem();
-    this.release = new ReleaseSystem();
+    this.curtains = SIDES.map((side) => new CurtainSystem(ctrl.params.anchorAngle, side));
+    this.transfers = SIDES.map((side) => new TransferSystem(side));
+    this.releases = SIDES.map((outlet) => new ReleaseSystem(outlet));
     this.workboat = buildWorkboat();
-    this.sweepGroup.add(this.curtain.group, this.jets.group, this.transfer.group, this.release.group, this.workboat);
+    this.sweepGroup.add(
+      ...this.curtains.map((c) => c.group),
+      ...this.jets.map((j) => j.group),
+      ...this.transfers.map((t) => t.group),
+      ...this.releases.map((r) => r.group),
+      this.valve.group,
+      this.workboat,
+    );
     this.scene.add(this.sweepGroup);
     this.scene.add(this.annotations.group);
 
@@ -179,7 +191,8 @@ export class SceneManager {
 
     this.setupLabels();
     this.rig.snap('aerial', ctrl.sweepline.curtain!.layout);
-    this.boatPos.set(this.transfer.throat.mx + 8, 0, this.transfer.throat.mz + 9);
+    const th0 = this.transfers[0].throat;
+    this.boatPos.set(th0.mx + 8, 0, th0.mz + 9);
 
     // ------------------------------------------------ post-processing
     this.post = new PostPipeline(this.renderer, this.scene, this.camera, this.sun);
@@ -254,19 +267,22 @@ export class SceneManager {
         const s = 1.0 / Math.max(size.x, 0.01);
         ex.geometry.scale(s, s, s);
         ex.geometry.center();
-        this.curtain.setFloatGeometry(ex.geometry);
+        for (const c of this.curtains) c.setFloatGeometry(ex.geometry);
       }
     }
+    // Both lines' installations use the same model (line B's is mirrored with its group).
     if (throat) {
-      this.transfer.throatGroup.children.forEach((c, i) => {
-        if (i === 0) c.visible = false;
-      });
       throat.scene.traverse((o) => (o.userData.pick = 'throat'));
-      this.transfer.throatGroup.add(throat.scene);
+      for (const t of this.transfers) {
+        t.throatGroup.children.forEach((c, i) => {
+          if (i === 0) c.visible = false;
+        });
+        t.throatGroup.add(t.side === 0 ? throat.scene : throat.scene.clone());
+      }
     }
     if (transfer) {
       transfer.scene.traverse((o) => (o.userData.pick = 'transfer'));
-      this.transfer.moduleGroup.add(transfer.scene);
+      for (const t of this.transfers) t.moduleGroup.add(t.side === 0 ? transfer.scene : transfer.scene.clone());
     }
     this.shadowFrames = 0;
   }
@@ -413,7 +429,7 @@ export class SceneManager {
       id: 'throat',
       title: 'Recovery Throat',
       icon: iconSvg('throat', 22),
-      anchor: () => this.transfer.anchors().throat,
+      anchor: () => this.transfers[this.ctrl.sweepline.duty].anchors().throat,
       viewports: ['single'],
       view: above,
       pick: 'throat',
@@ -499,7 +515,10 @@ export class SceneManager {
     jel.near.mesh.computeBoundingSphere();
     jel.far.mesh.computeBoundingSphere();
     targets.push(jel.near.mesh, jel.far.mesh);
-    if (world === 'sweepline') targets.push(...this.curtain.pickables(), this.transfer.group, this.release.group);
+    if (world === 'sweepline') {
+      for (const c of this.curtains) if (c.group.visible) targets.push(...c.pickables());
+      targets.push(...this.transfers.map((t) => t.group), ...this.releases.map((r) => r.group), this.valve.group);
+    }
     const hits = this.raycaster.intersectObjects(targets, true);
     for (const h of hits) {
       if (h.object === jel.near.mesh || h.object === jel.far.mesh) {
@@ -561,22 +580,56 @@ export class SceneManager {
     if (sw.markerSeq < this.lastMarkerSeq) this.annotations.reset();
     this.lastMarkerSeq = sw.markerSeq;
 
-    // SweepLine installation.
-    this.curtain.update(c, this.realTime, hs, this.ui.flowView, Math.min(1, sw.debrisLoad / 0.95));
-    this.jets.update(c, this.realTime, simDt, hs);
-    this.transfer.update({
-      occupancy: tr.queue.length / sw.holdCapacity,
-      primary: tr.primaryStatus,
-      standby: tr.standbyStatus,
-      path: tr.activePath,
-      flowFraction: tr.availability() * Math.min(1, 0.35 + tr.processedEMA / Math.max(tr.capacityRate(), 1e-3)),
-      throatOpen: tr.throatOpen,
-      time: this.realTime,
-      waveTime: this.realTime,
-      waveHeight: hs,
-    });
-    this.release.update(sw.releaseEMA, tr.throatOpen || sw.releaseEMA > 0.002, this.realTime, this.realTime, hs);
+    // SweepLine installation: both Twin-Line sides (line B only exists with the Twin-Line), the
+    // release valve and both outlets.
+    const twin = params.twinLine;
+    const flowFraction = tr.availability() * Math.min(1, 0.35 + tr.processedEMA / Math.max(tr.capacityRate(), 1e-3));
+    const outlet = sw.flowSide();
+    for (const side of SIDES) {
+      const line = sw.lines[side];
+      const show = side === 0 || twin;
+      // Line B's hoses and outlet lie stowed (the outlet hidden) until line B or its outlet is in use.
+      const lineUp = line.mode !== 'STOWED' || tr.queues[side].length > 0;
+      const branchUp = side === 0 || lineUp || (tr.throatOpen && outlet === side) || sw.outletEMA[side] > 0.002;
+      this.curtains[side].group.visible = show;
+      this.transfers[side].group.visible = show;
+      this.releases[side].group.visible = show && branchUp;
+      if (!show) {
+        this.jets[side].group.visible = false;
+        continue;
+      }
+      this.curtains[side].previewsEnabled = side === sw.duty;
+      this.curtains[side].update(line, this.realTime, hs, this.ui.flowView, Math.min(1, sw.debrisLoad / 0.95));
+      this.jets[side].update(line, this.realTime, simDt, hs);
+      // A throat is open while its line is in the water or still holds traffic.
+      const open = tr.throatOpen && (line.mode !== 'STOWED' || tr.queues[side].length > 0);
+      this.transfers[side].update({
+        occupancy: tr.queues[side].length / sw.holdCapacity,
+        primary: open ? tr.primaryStatus : 'STANDBY',
+        standby: open ? tr.standbyStatus : tr.standbyEnabled ? 'STANDBY' : 'DISABLED',
+        path: open ? tr.activePath : 'NONE',
+        flowFraction,
+        throatOpen: open,
+        branchFlow: Math.min(1, sw.outletEMA[side] * 14 + (tr.throatOpen && outlet === side ? 0.35 : 0)),
+        feederUp: side === 0 || lineUp,
+        branchUp,
+        dt,
+        time: this.realTime,
+        waveTime: this.realTime,
+        waveHeight: hs,
+      });
+      this.releases[side].update(sw.outletEMA[side], (tr.throatOpen && outlet === side) || sw.outletEMA[side] > 0.002, this.realTime, this.realTime, hs);
+    }
+    this.valve.group.visible = twin;
+    if (twin) this.valve.update(outlet, tr.throatOpen, dt, this.realTime, hs);
     this.updateWorkboat(dt);
+
+    // When the tide hands duty to the other line, the camera preset re-frames on it.
+    if (sw.duty !== this.framedDuty) {
+      this.framedDuty = sw.duty;
+      const ui = this.ui;
+      if (!ui.follow && ui.camera !== 'free') this.rig.goTo(ui.compare ? 'compare' : (ui.camera as Exclude<CameraPreset, 'free'>), c.layout, 2.6);
+    }
 
     // Worlds to draw this frame.
     const worlds: EngineKind[] = this.ui.compare ? ['baseline', 'sweepline'] : [this.ui.displayed];
@@ -626,7 +679,7 @@ export class SceneManager {
       this.shadowFrames++;
     } else if (this.shadowTimer <= 0) {
       refreshShadows = true;
-      const moving = c.mode === 'DEPLOYING' || c.mode === 'REEFING' || c.mode === 'UNREEFING' || c.mode === 'STOWING';
+      const moving = sw.lines.some((l) => l.mode === 'DEPLOYING' || l.mode === 'REEFING' || l.mode === 'UNREEFING' || l.mode === 'STOWING');
       this.shadowTimer = moving ? 0.15 : 1.0;
     }
     if (refreshShadows && !this.ui.compare) this.renderer.shadowMap.needsUpdate = true;
@@ -673,7 +726,7 @@ export class SceneManager {
       const t = this.controls.target;
       const dx = t.x - this.camera.position.x;
       const dz = t.z - this.camera.position.z;
-      const heading = (((112 + (Math.atan2(-dz, dx) * 180) / Math.PI) % 360) + 360) % 360;
+      const heading = (((SITE.bearingOfPlusX + (Math.atan2(dz, dx) * 180) / Math.PI) % 360) + 360) % 360;
       const ui = useApp.getState().ui;
       const depth = Math.max(0, -this.camera.position.y);
       if (ui.underwater !== underwater || Math.abs(ui.cameraDepth - depth) > 0.15 || Math.abs(ui.cameraHeading - heading) > 2) {
@@ -715,10 +768,12 @@ export class SceneManager {
     let sx = 0;
     let sz = 0;
     let n = 0;
+    // The bloom still upstream of the intake, on whichever side the current brings it from.
+    const fromEast = e.flowSide() === 1;
     for (let i = 0; i < p.capacity; i++) {
       if (p.state[i] !== S_APPROACHING) continue;
       const x = p.px[i];
-      if (x > -30) continue;
+      if (fromEast ? x < mirrorX(-30) : x > -30) continue;
       v.set(x, 0.5, p.pz[i]).project(this.camera);
       if (v.z > 1 || v.x < -0.78 || v.x > 0.55 || v.y < -0.72 || v.y > 0.45) continue;
       sx += x;
@@ -737,8 +792,8 @@ export class SceneManager {
   private updateWorkboat(dt: number): void {
     const c = this.ctrl.sweepline.curtain!;
     const L = c.layout;
-    const th = this.transfer.throat;
-    let tx = th.mx + 8;
+    const th = this.transfers[L.side].throat;
+    let tx = th.mx + (L.side === 0 ? 8 : -8);
     let tz = th.mz + 9;
     let yaw = 0;
     let s = -1;

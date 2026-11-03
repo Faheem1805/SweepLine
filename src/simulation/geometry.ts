@@ -1,6 +1,6 @@
-import { SITE, seabedDepth } from '../config/site';
+import { SITE, mirrorX, seabedDepth } from '../config/site';
 import { ASSUMPTIONS } from '../config/assumptions';
-import type { AnchorAngle } from './types';
+import type { AnchorAngle, LineSide } from './types';
 
 const DEG = Math.PI / 180;
 
@@ -34,9 +34,11 @@ export interface AnchorPoint {
  * The plan-view layout of one pre-engineered anchor configuration.
  * Arc length `s` runs from 0 at the upstream anchor to `length` at the throat rim.
  * Segment normals point to the upstream ("bloom") face of the curtain.
+ * Side 1 is the Twin-Line mirror image of side 0, for a current toward −x.
  */
 export interface CurtainLayout {
   angle: AnchorAngle;
+  side: LineSide;
   length: number;
   straightLength: number;
   arcLength: number;
@@ -87,15 +89,15 @@ export class SegmentHit {
   s = 0;
 }
 
-export function buildThroatGeometry(): ThroatGeometry {
+export function buildThroatGeometry(side: LineSide = 0): ThroatGeometry {
   const { endX, endZ } = SITE.curtain;
   const t = SITE.throat;
-  // End heading is +x (parallel to the nominal current); the bloom face normal is +z.
-  const ax = 1;
+  // End heading is along the current the line guides (+x, or −x on the mirror side); the bloom face normal is +z.
+  const ax = side === 0 ? 1 : -1;
   const az = 0;
   const lx = 0;
   const lz = 1;
-  const mx = endX + lx * t.halfWidth;
+  const mx = (side === 0 ? endX : mirrorX(endX)) + lx * t.halfWidth;
   const mz = endZ + lz * t.halfWidth;
   return {
     mx,
@@ -199,6 +201,7 @@ export function buildCurtainLayout(angle: AnchorAngle): CurtainLayout {
 
   const layout: CurtainLayout = {
     angle,
+    side: 0,
     length,
     straightLength,
     arcLength,
@@ -219,6 +222,37 @@ export function buildCurtainLayout(angle: AnchorAngle): CurtainLayout {
     end: { x: px[n - 1], z: pz[n - 1] },
     anchors,
     throat: buildThroatGeometry(),
+    minSeabedDepth: minSeabed,
+    grid: { cell: 5, x0: 0, z0: 0, cols: 0, rows: 0, cells: [] },
+  };
+  layout.grid = buildGrid(layout);
+  return layout;
+}
+
+/** The Twin-Line mirror image of a side-0 layout: same arc parameterisation, x mirrored, bloom face normals mirrored. */
+function mirrorLayout(L: CurtainLayout): CurtainLayout {
+  const px = L.px.map(mirrorX);
+  const midX = L.midX.map(mirrorX);
+  let minSeabed = Infinity;
+  for (let k = 0; k < L.segCount; k++) minSeabed = Math.min(minSeabed, seabedDepth(midX[k], L.midZ[k]));
+  const layout: CurtainLayout = {
+    ...L,
+    side: 1,
+    px,
+    pz: L.pz.slice(),
+    ps: L.ps.slice(),
+    tx: L.tx.map((v) => -v),
+    tz: L.tz.slice(),
+    nx: L.nx.map((v) => -v),
+    nz: L.nz.slice(),
+    len: L.len.slice(),
+    s0: L.s0.slice(),
+    midX,
+    midZ: L.midZ.slice(),
+    upstream: { x: mirrorX(L.upstream.x), z: L.upstream.z },
+    end: { x: mirrorX(L.end.x), z: L.end.z },
+    anchors: L.anchors.map((a) => ({ ...a, x: mirrorX(a.x) })),
+    throat: buildThroatGeometry(1),
     minSeabedDepth: minSeabed,
     grid: { cell: 5, x0: 0, z0: 0, cols: 0, rows: 0, cells: [] },
   };
@@ -299,7 +333,7 @@ export function nearestSegment(L: CurtainLayout, x: number, z: number, out: Segm
 }
 
 /** Point and frame on the curtain at arc position s (clamped). */
-export function pointAtArc(L: Pick<CurtainLayout, 'px' | 'pz' | 'ps' | 'n'>, s: number) {
+export function pointAtArc(L: Pick<CurtainLayout, 'px' | 'pz' | 'ps' | 'n'> & { side?: LineSide }, s: number) {
   const n = L.n;
   if (s <= 0) return frameAt(L, 0, 0);
   if (s >= L.ps[n - 1]) return frameAt(L, n - 2, 1);
@@ -325,21 +359,29 @@ export function curtainXAt(L: Pick<CurtainLayout, 'px' | 'pz' | 'n'>, z: number)
   return Math.abs(z - pz[0]) < Math.abs(z - pz[n - 1]) ? px[0] : px[n - 1];
 }
 
-function frameAt(L: Pick<CurtainLayout, 'px' | 'pz' | 'ps' | 'n'>, k: number, t: number) {
+function frameAt(L: Pick<CurtainLayout, 'px' | 'pz' | 'ps' | 'n'> & { side?: LineSide }, k: number, t: number) {
   const dx = L.px[k + 1] - L.px[k];
   const dz = L.pz[k + 1] - L.pz[k];
   const l = Math.hypot(dx, dz) || 1;
   const tx = dx / l;
   const tz = dz / l;
-  return { x: L.px[k] + dx * t, z: L.pz[k] + dz * t, tx, tz, nx: -tz, nz: tx };
+  // The mirror image turns the other way, so its bloom face lies on the other side of the tangent.
+  const sgn = L.side === 1 ? -1 : 1;
+  return { x: L.px[k] + dx * t, z: L.pz[k] + dz * t, tx, tz, nx: -tz * sgn, nz: tx * sgn };
 }
 
-const layoutCache = new Map<AnchorAngle, CurtainLayout>();
-export function getCurtainLayout(angle: AnchorAngle): CurtainLayout {
-  let l = layoutCache.get(angle);
+const layoutCache = new Map<string, CurtainLayout>();
+export function getCurtainLayout(angle: AnchorAngle, side: LineSide = 0): CurtainLayout {
+  const key = `${angle}:${side}`;
+  let l = layoutCache.get(key);
   if (!l) {
-    l = buildCurtainLayout(angle);
-    layoutCache.set(angle, l);
+    l = side === 0 ? buildCurtainLayout(angle) : mirrorLayout(getCurtainLayout(angle, 0));
+    layoutCache.set(key, l);
   }
   return l;
+}
+
+/** The line that guides a current flowing along `dirX` (sign of its +x component). */
+export function sideForCurrent(dirX: number): LineSide {
+  return dirX >= 0 ? 0 : 1;
 }

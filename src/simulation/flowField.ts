@@ -1,6 +1,7 @@
-import { SITE, bearingToWorld } from '../config/site';
+import { OUTLETS, SITE, bearingToWorld } from '../config/site';
 import { ASSUMPTIONS } from '../config/assumptions';
 import { nearestSegment, SegmentHit, type CurtainLayout, type ThroatGeometry } from './geometry';
+import type { LineSide } from './types';
 
 /**
  * Natural current field for the reference site.
@@ -24,11 +25,11 @@ export class FlowField {
   speed = 0.32;
   dirX = 1;
   dirZ = 0;
-  /** Transfer flow fraction drawing water into the throat (0..1). */
-  throatFlow = 0;
-  /** Release jet activity (0..1). */
-  releaseJet = 0;
-  throat: ThroatGeometry | null = null;
+  /** Recovery throats of the Twin-Line guide lines (by side), and the transfer flow fraction drawing water into each (0..1). */
+  throats: Array<ThroatGeometry | null> = [null, null];
+  throatFlow = [0, 0];
+  /** Release jet activity at each outlet (0..1). */
+  releaseJet = [0, 0];
 
   setCurrent(speed: number, bearingDeg: number): void {
     const d = bearingToWorld(bearingDeg);
@@ -37,9 +38,14 @@ export class FlowField {
     this.dirZ = d.z;
   }
 
-  /** Effective angle (degrees) between a curtain heading `angleDeg` and the current direction. */
-  attackAngle(angleDeg: number, bearingDeg: number): number {
-    return angleDeg + (bearingDeg - SITE.bearingOfPlusX);
+  /**
+   * Effective angle (degrees) between a curtain heading `angleDeg` and the current direction, for
+   * the line on `side` (side 1 is laid for a current toward −x).
+   */
+  attackAngle(angleDeg: number, bearingDeg: number, side: LineSide = 0): number {
+    const design = SITE.bearingOfPlusX + side * 180;
+    const rel = ((((bearingDeg - design) % 360) + 540) % 360) - 180;
+    return angleDeg + rel;
   }
 
   /** Ambient current at (x, z) and depth (m). */
@@ -51,9 +57,10 @@ export class FlowField {
     let ux = this.dirX * this.speed * f;
     let uz = this.dirZ * this.speed * f;
 
-    // Flow is turned offshore ahead of the intake structure's upstream wall.
-    if (x < intake.x0 + 1 && x > intake.x0 - 30 && z < intake.mouthZ + 10) {
-      const w = smoothstep(intake.x0 - 30, intake.x0 - 1, x) * (1 - smoothstep(intake.mouthZ - 2, intake.mouthZ + 10, z));
+    // Flow is turned offshore ahead of the intake structure's upstream wall (the west wall, or the east wall on a reversed tide).
+    const up = ux >= 0 ? x - intake.x0 : intake.x1 - x;
+    if (up < 1 && up > -30 && z < intake.mouthZ + 10) {
+      const w = smoothstep(-30, -1, up) * (1 - smoothstep(intake.mouthZ - 2, intake.mouthZ + 10, z));
       const turn = 0.85 * w;
       uz += Math.abs(ux) * turn;
       ux *= 1 - turn;
@@ -75,8 +82,10 @@ export class FlowField {
     }
 
     // Recovery throat draw (only while transfer flow runs).
-    const th = this.throat;
-    if (th && this.throatFlow > 0) {
+    for (let k = 0; k < 2; k++) {
+      const th = this.throats[k];
+      const flow = this.throatFlow[k];
+      if (!th || flow <= 0) continue;
       const dx = th.inletX - x;
       const dz = th.inletZ - z;
       const dmx = th.mx - x;
@@ -84,20 +93,22 @@ export class FlowField {
       const dm = Math.sqrt(dmx * dmx + dmz * dmz);
       if (dm < 10) {
         const d = Math.sqrt(dx * dx + dz * dz) || 1;
-        const v = 0.22 * this.throatFlow * (1 - dm / 10) * (1 - dm / 10);
+        const v = 0.22 * flow * (1 - dm / 10) * (1 - dm / 10);
         ux += (dx / d) * v;
         uz += (dz / d) * v;
       }
     }
 
-    // Release outlet jet.
-    if (this.releaseJet > 0) {
-      const r = SITE.release;
+    // Release outlet jets.
+    for (let k = 0; k < 2; k++) {
+      const jet = this.releaseJet[k];
+      if (jet <= 0) continue;
+      const r = OUTLETS[k];
       const dx = x - r.x;
       const dz = z - r.z;
       const d = Math.sqrt(dx * dx + dz * dz);
       if (d < 16) {
-        const v = ASSUMPTIONS.release.jetSpeed * this.releaseJet * (1 - d / 16) * (1 - d / 16);
+        const v = ASSUMPTIONS.release.jetSpeed * jet * (1 - d / 16) * (1 - d / 16);
         ux += r.dirX * v;
         uz += r.dirZ * v;
       }

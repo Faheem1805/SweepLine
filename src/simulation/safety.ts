@@ -77,7 +77,9 @@ export function evaluateEnvelope(
     kind: 'hard',
     scope: 'environment',
   });
-  const attack = engine.flow.attackAngle(params.anchorAngle, params.currentBearing);
+  // Twin-Line: judged for the line laid for the current's direction (it takes over when the tide turns);
+  // a single line is always judged as laid.
+  const attack = engine.flow.attackAngle(params.anchorAngle, params.currentBearing, params.twinLine ? engine.flowSide() : 0);
   const aE = E.attackAngle;
   list.push({
     key: 'attackAngle',
@@ -251,6 +253,8 @@ export class SafeOpenController {
     const c = engine.curtain;
     if (!c || this.active) return false;
     if (!c.beginReef()) return false;
+    // A line still clearing after a tide handover vents back to the seabed.
+    engine.stowOffDuty();
     this.state = { phase: 'INITIATED', reason, startedAt: engine.time, phaseStartedAt: engine.time, lastReefLog: 0 };
     log('alarm', `SafeOpen initiated — ${reason}`);
     log('warn', 'Stop accepting new bloom traffic');
@@ -284,7 +288,7 @@ export class SafeOpenController {
         if (c.reefFront >= S.upstreamFraction * L) {
           goto('CLEARING');
           log('info', `Upstream section reefed — new bloom traffic follows natural trajectory`);
-          log('info', `Existing SweepLine traffic clearing (${engine.guidedCount + engine.backedUpCount} on curtain, ${tr.queue.length} in throat)`);
+          log('info', `Existing SweepLine traffic clearing (${engine.guidedCount + engine.backedUpCount} on curtain, ${tr.queueLength} in throat)`);
         }
         break;
       case 'CLEARING': {
@@ -301,12 +305,12 @@ export class SafeOpenController {
         if (c.mode === 'REEFED') {
           tr.acceptingNew = false;
           goto('THROAT_CLEAR');
-          log('info', `Curtain 100% reefed — throat clearing (${tr.queue.length} remaining)`);
+          log('info', `Curtain 100% reefed — throat clearing (${tr.queueLength} remaining)`);
         }
         break;
       case 'THROAT_CLEAR':
-        if (tr.queue.length === 0 || pt >= S.throatClearTimeout) {
-          if (tr.queue.length > 0) {
+        if (tr.queueLength === 0 || pt >= S.throatClearTimeout) {
+          if (tr.queueLength > 0) {
             const n = engine.releaseQueue();
             log('warn', `${n} jellyfish released gently at throat (transfer capacity exhausted)`);
           }

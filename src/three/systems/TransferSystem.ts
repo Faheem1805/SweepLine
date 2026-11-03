@@ -1,13 +1,15 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { SITE } from '../../config/site';
+import { SEABED_DEPTH_GLSL, SITE, mirrorX, seabedDepth } from '../../config/site';
 import { buildThroatGeometry, throatHalfHeightAt, throatHalfWidthAt, type ThroatGeometry } from '../../simulation/geometry';
-import type { ModuleStatus } from '../../simulation/types';
+import type { LineSide, ModuleStatus } from '../../simulation/types';
 import { WAVES_GLSL, waveElevation } from '../../simulation/waves';
 import { applyMedium, mediumMaterial, SHARED } from '../environment/shaderChunks';
 import { makeGratingTexture } from '../environment/textures';
 
 const OCC_GREEN = new THREE.Color(0x34d399);
+/** Fraction of the feeder hose (its pontoon end) that stays put when the hose is stowed. */
+const FEEDER_FIXED = 0.12;
 const OCC_AMBER = new THREE.Color(0xf5b94c);
 const OCC_RED = new THREE.Color(0xf87171);
 
@@ -66,24 +68,45 @@ function bellmouthGeometry(th: ThroatGeometry): { surface: THREE.BufferGeometry;
   return { surface: g, lip };
 }
 
-/** HDPE pipe material that floats on the shared sea state and shows moving flow pulses. */
-function pipeMaterial(floating: boolean, colour: number): { mat: THREE.MeshStandardMaterial; flow: { value: number } } {
+/**
+ * HDPE pipe material that floats on the shared sea state and shows moving flow pulses. A floating
+ * hose can also lie stowed on the seabed (`rise` 0), from `sinkFrom` along its length (so its end
+ * on the pontoon stays put).
+ */
+function pipeMaterial(
+  floating: boolean,
+  colour: number,
+  sinkFrom = 0,
+): { mat: THREE.MeshStandardMaterial; flow: { value: number }; rise: { value: number } } {
   const flow = { value: 0 };
+  const rise = { value: 1 };
+  const sink = { value: sinkFrom };
   const mat = applyMedium(new THREE.MeshStandardMaterial({ color: colour, roughness: 0.42, metalness: 0.08 }), {
     caustics: true,
     key: floating ? 'pipe-float' : 'pipe-fixed',
     extra: (shader) => {
       shader.uniforms.uFlow = flow;
+      shader.uniforms.uRise = rise;
+      shader.uniforms.uSinkFrom = sink;
       shader.uniforms.uWaveAmp = SHARED.uWaveAmp;
       shader.uniforms.uWaveTime = SHARED.uWaveTime;
       shader.uniforms.uFlowTime = SHARED.uTime;
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', `#include <common>\n${floating ? WAVES_GLSL : ''}\nvarying float vAlong;`)
+        .replace('#include <common>', `#include <common>\n${floating ? `${WAVES_GLSL}\n${SEABED_DEPTH_GLSL}\nuniform float uRise;\nuniform float uSinkFrom;` : ''}\nvarying float vAlong;`)
         .replace(
           '#include <begin_vertex>',
           `#include <begin_vertex>
           vAlong = uv.x;
-          ${floating ? 'vec2 pSlope; transformed.y += waveElevation(transformed.xz, pSlope) * 0.85;' : ''}`,
+          ${
+            floating
+              ? `vec2 wxz = (modelMatrix * vec4(transformed, 1.0)).xz;
+          vec2 pSlope;
+          float eta = waveElevation(wxz, pSlope) * 0.85;
+          // Stowed: resting on the seabed.
+          float bed = 0.57 - seabedDepth(wxz);
+          transformed.y += mix(eta, bed, (1.0 - uRise) * smoothstep(uSinkFrom, uSinkFrom + 0.08, uv.x));`
+              : ''
+          }`,
         );
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', '#include <common>\nuniform float uFlow;\nuniform float uFlowTime;\nvarying float vAlong;')
@@ -95,7 +118,7 @@ function pipeMaterial(floating: boolean, colour: number): { mat: THREE.MeshStand
         );
     },
   });
-  return { mat, flow };
+  return { mat, flow, rise };
 }
 
 interface ModuleVisual {
@@ -107,37 +130,55 @@ interface ModuleVisual {
 
 /**
  * Recovery throat, pontoon, primary + standby transfer modules and the
- * floating transfer pipeline. Visual state follows the simulation's transfer
- * statuses and throat occupancy.
+ * floating transfer pipeline (a feeder to the release-valve manifold, then the
+ * branch to the outlet). Visual state follows the simulation's transfer
+ * statuses and throat occupancy. Built in the side-0 frame; the Twin-Line's
+ * mirror-image installation is the same model mirrored about the intake centreline.
  */
 export class TransferSystem {
   readonly group = new THREE.Group();
   readonly throatGroup = new THREE.Group();
   readonly moduleGroup = new THREE.Group();
   readonly pipeGroup = new THREE.Group();
+  readonly side: LineSide;
+  /** The recovery throat in world coordinates. */
   readonly throat: ThroatGeometry;
   private readonly lipMat: THREE.MeshStandardMaterial;
   private readonly occBeacon: THREE.Mesh;
   private readonly primary: ModuleVisual;
   private readonly standby: ModuleVisual;
-  private readonly mainFlow: { value: number };
+  private readonly feederFlow: { value: number };
+  private readonly branchFlow: { value: number };
+  /** Hose rise (0 stowed on the seabed, 1 floating) for the feeder and the branch. */
+  private readonly feederRise: { value: number };
+  private readonly branchRise: { value: number };
   private readonly riserFlow: { value: number };
   private readonly standbyFlow: { value: number };
   private readonly collars: THREE.InstancedMesh;
   private readonly collarPts: THREE.Vector3[] = [];
   private readonly collarQuats: THREE.Quaternion[] = [];
+  /** Which hose each collar is on (0 feeder, 1 branch) and how much of it sinks when stowed. */
+  private readonly collarHose: number[] = [];
+  private readonly collarSink: number[] = [];
   private readonly idleLip = new THREE.Color(0x24313a);
   private readonly tmpC = new THREE.Color();
+  /** Feeder (throat to manifold) and branch (manifold to outlet), in the side-0 frame. */
   readonly pipeCurve: THREE.CatmullRomCurve3;
+  readonly branchCurve: THREE.CatmullRomCurve3;
   private readonly m = new THREE.Matrix4();
   private readonly q = new THREE.Quaternion();
   private readonly s = new THREE.Vector3(1, 1, 1);
   private readonly p = new THREE.Vector3();
 
-  constructor() {
-    this.group.name = 'transfer-system';
-    const th = buildThroatGeometry();
-    this.throat = th;
+  constructor(side: LineSide = 0) {
+    this.group.name = side === 0 ? 'transfer-system' : 'transfer-system-b';
+    this.side = side;
+    this.throat = buildThroatGeometry(side);
+    const th = buildThroatGeometry(0);
+    if (side === 1) {
+      this.group.scale.x = -1;
+      this.group.position.x = SITE.twin.mirrorX;
+    }
 
     // ---------------------------------------------------- bellmouth
     const { surface, lip } = bellmouthGeometry(th);
@@ -234,34 +275,59 @@ export class TransferSystem {
     this.moduleGroup.add(riser, branch);
 
     // ---------------------------------------------------- floating transfer pipeline
-    const route = [
+    // Feeder to the release-valve manifold, then the branch to this side's outlet (the valve sends
+    // each animal down whichever branch is down-tide).
+    const valve = SITE.manifold;
+    const j = SITE.pipeRoute.findIndex(([x, z]) => x === valve.x && z === valve.z);
+    const feeder = [
       new THREE.Vector3(th.mx + 11.2, 1.75, th.mz - 1.6),
       new THREE.Vector3(th.mx + 13.4, 0.6, th.mz - 0.6),
       new THREE.Vector3(th.mx + 16.5, 0.05, th.mz + 0.5),
-      ...SITE.pipeRoute.slice(1).map(([x, z]) => new THREE.Vector3(x, 0.05, z)),
+      ...SITE.pipeRoute.slice(1, j + 1).map(([x, z]) => new THREE.Vector3(x, 0.05, z)),
+    ];
+    const branchRoute = [
+      ...SITE.pipeRoute.slice(j).map(([x, z]) => new THREE.Vector3(x, 0.05, z)),
       new THREE.Vector3(SITE.release.x - SITE.release.dirX * 2.5, 0.05, SITE.release.z - SITE.release.dirZ * 2.5),
     ];
-    this.pipeCurve = new THREE.CatmullRomCurve3(route, false, 'centripetal');
-    const mainP = pipeMaterial(true, 0x2a3135);
-    this.mainFlow = mainP.flow;
-    const main = new THREE.Mesh(new THREE.TubeGeometry(this.pipeCurve, 420, 0.62, 16, false), mainP.mat);
-    main.castShadow = false;
-    main.receiveShadow = true;
-    main.userData.pick = 'transfer';
+    this.pipeCurve = new THREE.CatmullRomCurve3(feeder, false, 'centripetal');
+    this.branchCurve = new THREE.CatmullRomCurve3(branchRoute, false, 'centripetal');
+    const feederP = pipeMaterial(true, 0x2a3135, FEEDER_FIXED);
+    const branchP = pipeMaterial(true, 0x2a3135);
+    this.feederFlow = feederP.flow;
+    this.branchFlow = branchP.flow;
+    this.feederRise = feederP.rise;
+    this.branchRise = branchP.rise;
+    const pipes = [
+      new THREE.Mesh(new THREE.TubeGeometry(this.pipeCurve, 160, 0.62, 16, false), feederP.mat),
+      new THREE.Mesh(new THREE.TubeGeometry(this.branchCurve, 260, 0.62, 16, false), branchP.mat),
+    ];
+    for (const pipe of pipes) {
+      pipe.castShadow = false;
+      pipe.receiveShadow = true;
+      pipe.userData.pick = 'transfer';
+    }
     const joinCurve = new THREE.CatmullRomCurve3([
       new THREE.Vector3(th.mx + 11.2, 1.75, th.mz + 1.9),
       new THREE.Vector3(th.mx + 13.0, 1.2, th.mz + 1.4),
       new THREE.Vector3(th.mx + 14.6, 0.6, th.mz + 0.2),
     ]);
     const join = new THREE.Mesh(new THREE.TubeGeometry(joinCurve, 20, 0.42, 14, false), standbyP.mat);
-    this.pipeGroup.add(main, join);
+    this.pipeGroup.add(...pipes, join);
 
     // Flotation collars along the floating line.
-    const total = this.pipeCurve.getLength();
     const zAxis = new THREE.Vector3(0, 0, 1);
-    for (let d = 22; d < total - 4; d += 7) {
-      this.collarPts.push(this.pipeCurve.getPointAt(d / total));
-      this.collarQuats.push(new THREE.Quaternion().setFromUnitVectors(zAxis, this.pipeCurve.getTangentAt(d / total)));
+    for (const [hose, curve, start] of [
+      [0, this.pipeCurve, 22],
+      [1, this.branchCurve, 4],
+    ] as const) {
+      const total = curve.getLength();
+      for (let d = start; d < total - 4; d += 7) {
+        const u = d / total;
+        this.collarPts.push(curve.getPointAt(u));
+        this.collarQuats.push(new THREE.Quaternion().setFromUnitVectors(zAxis, curve.getTangentAt(u)));
+        this.collarHose.push(hose);
+        this.collarSink.push(hose === 0 ? THREE.MathUtils.smoothstep(u, FEEDER_FIXED, FEEDER_FIXED + 0.08) : 1);
+      }
     }
     this.collars = new THREE.InstancedMesh(
       new THREE.TorusGeometry(0.78, 0.2, 8, 20),
@@ -333,6 +399,10 @@ export class TransferSystem {
     }
   }
 
+  /**
+   * `branchFlow`: flow (0..1) down the branch to this side's outlet, set by the release valve.
+   * `feederUp` / `branchUp`: whether each hose floats or lies stowed on the seabed (eased over `dt`).
+   */
   update(state: {
     occupancy: number;
     primary: ModuleStatus;
@@ -340,6 +410,10 @@ export class TransferSystem {
     path: string;
     flowFraction: number;
     throatOpen: boolean;
+    branchFlow: number;
+    feederUp: boolean;
+    branchUp: boolean;
+    dt: number;
     time: number;
     waveTime: number;
     waveHeight: number;
@@ -351,27 +425,87 @@ export class TransferSystem {
     this.styleModule(this.primary, state.primary, state.time);
     this.styleModule(this.standby, state.standby, state.time);
     const f = state.throatOpen ? Math.min(1, state.flowFraction) : 0;
-    this.mainFlow.value = f;
+    this.feederFlow.value = f;
+    this.branchFlow.value = Math.min(1, state.branchFlow);
     this.riserFlow.value = state.path === 'NONE' ? 0 : f;
     this.standbyFlow.value = state.path === 'STANDBY' ? f : 0;
+    const k = Math.min(1, state.dt / 1.6);
+    this.feederRise.value += ((state.feederUp ? 1 : 0) - this.feederRise.value) * k;
+    this.branchRise.value += ((state.branchUp ? 1 : 0) - this.branchRise.value) * k;
     for (let i = 0; i < this.collarPts.length; i++) {
       const c = this.collarPts[i];
+      // Collars sit in the side-0 frame; the sea state and seabed are sampled where they really are.
+      const wx = this.side === 0 ? c.x : mirrorX(c.x);
+      const sunk = (1 - (this.collarHose[i] === 0 ? this.feederRise.value : this.branchRise.value)) * this.collarSink[i];
+      const float = c.y + waveElevation(wx, c.z, state.waveTime, state.waveHeight) * 0.85;
       this.q.copy(this.collarQuats[i]);
-      this.p.set(c.x, c.y + waveElevation(c.x, c.z, state.waveTime, state.waveHeight) * 0.85, c.z);
+      this.p.set(c.x, float + (0.62 - seabedDepth(wx, c.z) - float) * sunk, c.z);
       this.m.compose(this.p, this.q, this.s);
       this.collars.setMatrixAt(i, this.m);
     }
     this.collars.instanceMatrix.needsUpdate = true;
   }
 
-  /** Label anchor points. */
+  /** Label anchor points (world coordinates). */
   anchors() {
     const th = this.throat;
+    const sx = this.side === 0 ? 1 : -1;
+    const pipe = this.pipeCurve.getPointAt(0.5);
     return {
       throat: new THREE.Vector3(th.mx, 1.4, th.mz),
-      transfer: new THREE.Vector3(th.mx + 8.6, 4.4, th.mz),
-      transferLow: new THREE.Vector3(th.mx + 11.5, 2.2, th.mz + 1.9),
-      pipe: this.pipeCurve.getPointAt(0.5).add(new THREE.Vector3(0, 1.2, 0)),
+      transfer: new THREE.Vector3(th.mx + 8.6 * sx, 4.4, th.mz),
+      transferLow: new THREE.Vector3(th.mx + 11.5 * sx, 2.2, th.mz + 1.9),
+      pipe: new THREE.Vector3(this.side === 0 ? pipe.x : mirrorX(pipe.x), pipe.y + 1.2, pipe.z),
     };
+  }
+}
+
+/**
+ * Release-valve manifold where both lines' transfer pipelines meet (Twin-Line): a floating
+ * valve body whose indicator points down the branch to the outlet the valve is set to.
+ */
+export class ReleaseValve {
+  readonly group = new THREE.Group();
+  private readonly pointer = new THREE.Group();
+  private readonly ringMat = new THREE.MeshBasicMaterial({ color: 0x34d399 });
+  private yaw = 0;
+
+  constructor() {
+    this.group.name = 'release-valve';
+    const v = SITE.manifold;
+    const steel = mediumMaterial({ color: 0x8d989f, roughness: 0.35, metalness: 0.7 }, false);
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.15, 0.9, 28), mediumMaterial({ color: 0x2c3a42, roughness: 0.5, metalness: 0.4 }, false));
+    body.position.y = 0.25;
+    const actuator = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.55, 0.7), steel);
+    actuator.position.y = 0.95;
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(1.2, 0.08, 8, 40).rotateX(Math.PI / 2), this.ringMat);
+    ring.position.y = 0.72;
+    // Indicator arrow on the actuator, turned toward the live branch.
+    const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.9, 12).rotateZ(-Math.PI / 2).translate(0.75, 0, 0), this.ringMat);
+    arrow.position.y = 1.3;
+    this.pointer.add(arrow);
+    this.group.add(body, actuator, ring, this.pointer);
+    this.group.position.set(v.x, 0, v.z);
+    this.group.traverse((o) => {
+      o.userData.pick = 'transfer';
+      o.castShadow = true;
+    });
+  }
+
+  /** `outlet`: the outlet the valve sends releases to; `active`: transfer running. */
+  update(outlet: LineSide, active: boolean, dt: number, waveTime: number, waveHeight: number): void {
+    const v = SITE.manifold;
+    const j = SITE.pipeRoute.findIndex(([x, z]) => x === v.x && z === v.z);
+    const [nx, nz] = SITE.pipeRoute[j + 1];
+    const dx = (outlet === 0 ? nx : mirrorX(nx)) - v.x;
+    const goal = -Math.atan2(nz - v.z, dx);
+    let d = goal - this.yaw;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    // The actuator swings over in a couple of seconds.
+    this.yaw += d * Math.min(1, dt * 2.5);
+    this.pointer.rotation.y = this.yaw;
+    this.ringMat.color.set(active ? 0x34d399 : 0x4b5a62);
+    this.group.position.y = waveElevation(v.x, v.z, waveTime, waveHeight) * 0.85 - 0.1;
   }
 }

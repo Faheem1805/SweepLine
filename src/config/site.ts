@@ -3,16 +3,20 @@
  *
  * World frame (used by both the simulation and the Three.js scene):
  *   - units are metres, y is up, still-water level is y = 0
- *   - +x runs along-shore in the nominal current direction (bearing 112°, ESE)
- *   - +z runs offshore (bearing 022°, NNE); the coastline lies toward −z
+ *   - +x runs along-shore (bearing 242°, WSW, as placed on the real coast by the map intro)
+ *   - +z runs offshore (bearing 332°, NNW); the coastline lies toward −z
  *
  * Everything the agent model treats as physical structure (shoreline, intake
  * mouth, recovery throat, release outlet) is defined here so that a replaced
  * GLB model never changes simulation behaviour.
+ *
+ * SweepLine Twin-Line: the second guide line is the mirror image of the first
+ * about the intake centreline (x = `twin.mirrorX / 2`), for a tide that runs
+ * toward −x. Its outlet is the mirror of the first outlet.
  */
 export const SITE = {
-  /** Compass bearing that the world +x axis points toward (degrees). */
-  bearingOfPlusX: 112,
+  /** Compass bearing that the world +x axis points toward (degrees); matches the map intro's hand-off. */
+  bearingOfPlusX: 242,
 
   shore: {
     /** Toe of the rock revetment — offshore limit of the armour slope. */
@@ -77,11 +81,15 @@ export const SITE = {
     outletRadius: 0.7,
   },
 
-  /** Floating transfer pipeline route (plan view, x/z pairs) from the transfer module to the outlet. */
+  /**
+   * Floating transfer pipeline route (plan view, x/z pairs) from the transfer module to the outlet.
+   * It passes the release-valve manifold on the intake centreline (`manifold`), where the mirror-image
+   * line's pipeline joins it.
+   */
   pipeRoute: [
     [-1.5, -4.6],
     [10, 1],
-    [40, 16],
+    [39, 16],
     [88, 38],
     [126, 58],
     [146, 68],
@@ -95,8 +103,13 @@ export const SITE = {
     dirZ: 0.44,
   },
 
-  /** Agents leaving these bounds are considered to have passed the site. */
-  domain: { xMin: -300, xMax: 300, zMin: -52, zMax: 200 },
+  /** Twin-Line mirror: x' = mirrorX − x maps the first line's side onto the second's (twice the intake centreline). */
+  twin: { mirrorX: 78 },
+  /** Release-valve manifold where both lines' transfer pipelines meet (a point on `pipeRoute`). */
+  manifold: { x: 39, z: 16 },
+
+  /** Agents leaving these bounds are considered to have passed the site (symmetric about the intake centreline). */
+  domain: { xMin: -300, xMax: 378, zMin: -52, zMax: 200 },
 
   spawn: {
     x: -240,
@@ -141,11 +154,26 @@ float seabedDepth(vec2 p) {
 }
 `;
 
-/** Convert a compass bearing (direction of travel) to a unit world-plane vector (x, z). */
+/** Convert a compass bearing (direction of travel) to a unit world-plane vector (x, z). Bearings turn clockwise from +x toward +z. */
 export function bearingToWorld(bearingDeg: number): { x: number; z: number } {
   const a = ((bearingDeg - SITE.bearingOfPlusX) * Math.PI) / 180;
-  return { x: Math.cos(a), z: -Math.sin(a) };
+  return { x: Math.cos(a), z: Math.sin(a) };
 }
+
+/** Mirror an x coordinate onto the Twin-Line's other side. */
+export function mirrorX(x: number): number {
+  return SITE.twin.mirrorX - x;
+}
+
+/**
+ * Safe-release outlets, one down-current of each guide line: index 0 for a current toward +x,
+ * index 1 (the mirror) for a current toward −x. A valve on the transfer manifold sends each
+ * released animal to the outlet down-tide at the time.
+ */
+export const OUTLETS: ReadonlyArray<{ x: number; z: number; dirX: number; dirZ: number }> = [
+  SITE.release,
+  { x: mirrorX(SITE.release.x), z: SITE.release.z, dirX: -SITE.release.dirX, dirZ: SITE.release.dirZ },
+];
 
 /** Compass point label (16-wind) for a bearing. */
 export function compassLabel(bearingDeg: number): string {

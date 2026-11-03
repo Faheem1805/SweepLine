@@ -38,6 +38,101 @@ export function CurrentCard() {
   );
 }
 
+/** Along-shore current trace (m/s) from −6 h to +6 h: toward WSW above the line, toward ENE below, now in the middle. */
+function TideTrace({ trace }: { trace: number[] }) {
+  const W = 220;
+  const H = 34;
+  const max = 0.22;
+  const n = trace.length - 1;
+  const x = (i: number) => (i / n) * W;
+  const y = (u: number) => H / 2 - (Math.max(-max, Math.min(max, u)) / max) * (H / 2 - 2);
+  const line = trace.map((u, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(u).toFixed(1)}`).join('');
+  const area = `${line}L${W},${H / 2}L0,${H / 2}Z`;
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="block h-[34px] w-full" preserveAspectRatio="none" aria-hidden>
+      <defs>
+        <clipPath id="tide-above">
+          <rect x="0" y="0" width={W} height={H / 2} />
+        </clipPath>
+        <clipPath id="tide-below">
+          <rect x="0" y={H / 2} width={W} height={H / 2} />
+        </clipPath>
+      </defs>
+      <path d={area} fill="rgba(34,211,238,0.22)" clipPath="url(#tide-above)" />
+      <path d={area} fill="rgba(245,185,76,0.22)" clipPath="url(#tide-below)" />
+      <line x1="0" x2={W} y1={H / 2} y2={H / 2} stroke="rgba(150,200,220,0.35)" strokeWidth="1" strokeDasharray="2 3" />
+      <path d={line} fill="none" stroke="#bfefff" strokeWidth="1.4" vectorEffect="non-scaling-stroke" />
+      <line x1={W / 2} x2={W / 2} y1="0" y2={H} stroke="#ffffff" strokeWidth="1.2" vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
+
+const LINE_STATE: Record<string, string> = {
+  STOWED: 'on the seabed',
+  DEPLOYING: 'rising',
+  DEPLOYED: 'guiding',
+  REEFING: 'reefing',
+  REEFED: 'reefed',
+  UNREEFING: 're-arming',
+  STOWING: 'settling',
+};
+
+/** The recorded tidal current driving a tide run, and which Twin-Line line is on duty. Shown only for tide runs. */
+export function TideCard() {
+  const s = useApp((st) => st.snap);
+  if (!s || !s.tide.on) return null;
+  const t = s.tide;
+  const toward = compassLabel(s.params.currentBearing);
+  const when = new Date(t.date);
+  const date = when.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+  const time = when.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC' });
+  const turn = t.turnIn === null ? null : t.turnIn < 1 ? `${Math.max(1, Math.round(t.turnIn * 60))} min` : `${Math.floor(t.turnIn)} h ${String(Math.round((t.turnIn % 1) * 60)).padStart(2, '0')} min`;
+  const tw = s.twin;
+  return (
+    <div data-hud className="glass pointer-events-auto w-[300px] max-w-full animate-fade-in !rounded-xl px-3.5 py-2.5" title="Copernicus SMOC surface current at the site, along the shore: fitted tide plus its slow residual (simulation input)">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10.5px] font-semibold tracking-[0.12em] text-cyan uppercase">Recorded tide</span>
+        <span className="num text-[10.5px] text-muted">
+          {date} · {time} UTC
+        </span>
+      </div>
+      <div className="mt-1 flex items-baseline gap-1.5">
+        <span className="num text-[18px] leading-none font-semibold text-white">{Math.abs(t.u).toFixed(2)}</span>
+        <span className="text-[11px] text-ink-2">m/s toward {toward}</span>
+        <span className="ml-auto text-[11px] text-muted">{turn ? `turns in ${turn}` : ''}</span>
+      </div>
+      <div className="relative mt-1.5">
+        <TideTrace trace={t.trace} />
+        <span className="absolute top-0 left-0.5 text-[9px] text-cyan/80">WSW</span>
+        <span className="absolute bottom-0 left-0.5 text-[9px] text-amber/80">ENE</span>
+      </div>
+      <div className="mt-1 flex items-center justify-between text-[9.5px] text-dim">
+        <span>−6 h</span>
+        <span>now</span>
+        <span>+6 h</span>
+      </div>
+      {tw.enabled ? (
+        <div className="mt-1.5 flex gap-1.5 border-t border-line pt-1.5">
+          {tw.lines.map((l, side) => {
+            const duty = side === tw.duty;
+            const live = l.mode !== 'STOWED';
+            return (
+              <span key={side} className={cn('flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px]', duty ? 'bg-cyan/10 text-white' : 'text-muted')}>
+                <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', live ? (l.mode === 'DEPLOYING' ? 'animate-pulse-soft bg-cyan' : duty ? 'bg-cyan' : 'bg-ink-2') : 'bg-dim')} />
+                <span className="shrink-0 whitespace-nowrap">Line {side === 0 ? 'A' : 'B'}</span>
+                <span className="min-w-0 truncate text-[10.5px] text-ink-2">{LINE_STATE[l.mode]}</span>
+              </span>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="mt-1.5 border-t border-line pt-1.5 text-[11px] text-amber">Single line — no second line for the turned tide</div>
+      )}
+      {t.timeLapse && <div className="mt-1.5 text-[10.5px] text-cyan">Time-lapse ×{s.speed} through slack water</div>}
+    </div>
+  );
+}
+
 const OVERVIEW_PRESETS: Array<{ key: CameraPreset; label: string }> = [
   { key: 'release', label: 'Release Point' },
   { key: 'top', label: 'Top View' },

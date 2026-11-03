@@ -3,7 +3,7 @@ import { ASSUMPTIONS } from '../../config/assumptions';
 import { SEABED_DEPTH_GLSL, seabedDepth } from '../../config/site';
 import { getCurtainLayout, pointAtArc, type CurtainLayout } from '../../simulation/geometry';
 import type { CurtainState } from '../../simulation/curtain';
-import { ANCHOR_ANGLES, type AnchorAngle } from '../../simulation/types';
+import { ANCHOR_ANGLES, type AnchorAngle, type LineSide } from '../../simulation/types';
 import { WAVES_GLSL, waveElevation } from '../../simulation/waves';
 import { CAUSTIC_GLSL, MEDIUM_GLSL, SHARED, mediumMaterial } from '../environment/shaderChunks';
 import { makeFoamSprite } from '../environment/textures';
@@ -194,10 +194,11 @@ interface FloatSlot {
  * pre-engineered anchor-layout previews. A pop-up curtain is drawn through its
  * whole cycle: stowed flat on the seabed, floats inflating as the front passes,
  * each section rising with its skirt peeling off the bottom, white water as it
- * surfaces, and its marker buoys coming up with it.
+ * surfaces, and its marker buoys coming up with it. One instance per Twin-Line side.
  */
 export class CurtainSystem {
   readonly group = new THREE.Group();
+  readonly side: LineSide;
   private layout: CurtainLayout;
   private skirt!: THREE.Mesh;
   private ballast!: THREE.Mesh;
@@ -239,10 +240,13 @@ export class CurtainSystem {
   /** Floats under debris and fouling. */
   private readonly fouled = new THREE.Color(0x5e5a2a);
   private customFloat: THREE.BufferGeometry | null = null;
+  /** Show the dashed anchor-layout previews while stowed. */
+  previewsEnabled = true;
 
-  constructor(initial: AnchorAngle) {
-    this.group.name = 'curtain';
-    this.layout = getCurtainLayout(initial);
+  constructor(initial: AnchorAngle, side: LineSide = 0) {
+    this.group.name = side === 0 ? 'curtain' : 'curtain-b';
+    this.side = side;
+    this.layout = getCurtainLayout(initial, side);
     this.buildAnchorBlocks();
     this.buildPreviews();
     this.group.add(this.buoys, this.anchorBlocks, this.previews);
@@ -316,11 +320,14 @@ export class CurtainSystem {
         aN[o * 2 + 1] = nz / nl;
       }
     }
+    // The mirror-image line keeps its front faces on the bloom side (the shader flips back-facing normals).
+    const flip = L.side === 1;
     const idx: number[] = [];
     for (let j = 0; j < rows - 1; j++) {
       for (let i = 0; i < cols - 1; i++) {
         const a = j * cols + i;
-        idx.push(a, a + 1, a + cols, a + 1, a + cols + 1, a + cols);
+        if (flip) idx.push(a, a + cols, a + 1, a + 1, a + cols, a + cols + 1);
+        else idx.push(a, a + 1, a + cols, a + 1, a + cols + 1, a + cols);
       }
     }
     const sg = new THREE.BufferGeometry();
@@ -375,7 +382,8 @@ export class CurtainSystem {
       for (let j = 0; j < sides; j++) {
         const a = i * sides + j;
         const b = i * sides + ((j + 1) % sides);
-        bidx.push(a, b, a + sides, b, b + sides, a + sides);
+        if (flip) bidx.push(a, a + sides, b, b, a + sides, b + sides);
+        else bidx.push(a, b, a + sides, b, b + sides, a + sides);
       }
     }
     const bg = new THREE.BufferGeometry();
@@ -451,7 +459,7 @@ export class CurtainSystem {
     const geo = new THREE.BoxGeometry(1.6, 0.8, 1.6);
     const mat = mediumMaterial({ color: 0x8c8a82, roughness: 0.9 });
     const all: Array<{ x: number; z: number }> = [];
-    for (const ang of ANCHOR_ANGLES) for (const a of getCurtainLayout(ang).anchors) all.push(a);
+    for (const ang of ANCHOR_ANGLES) for (const a of getCurtainLayout(ang, this.side).anchors) all.push(a);
     const mesh = new THREE.InstancedMesh(geo, mat, all.length);
     const m = new THREE.Matrix4();
     all.forEach((a, i) => {
@@ -465,7 +473,7 @@ export class CurtainSystem {
   /** Dashed plan-view previews of the three pre-engineered anchor layouts (shown while stowed). */
   private buildPreviews(): void {
     for (const ang of ANCHOR_ANGLES) {
-      const L = getCurtainLayout(ang);
+      const L = getCurtainLayout(ang, this.side);
       const pts: THREE.Vector3[] = [];
       for (let i = 0; i < L.n; i += 2) pts.push(new THREE.Vector3(L.px[i], 0.25, L.pz[i]));
       pts.push(new THREE.Vector3(L.px[L.n - 1], 0.25, L.pz[L.n - 1]));
@@ -589,8 +597,8 @@ export class CurtainSystem {
       b.visible = up > 0;
       b.position.y = waveElevation(a.x, a.z, waveTime, waveHeight) - 0.15 - (1 - up) * 1.6;
     }
-    // Layout previews while stowed.
-    this.previews.visible = stowed;
+    // Layout previews while stowed (only for the line that deploys next).
+    this.previews.visible = stowed && this.previewsEnabled;
     for (const line of this.previews.children as THREE.Line[]) {
       const sel = line.userData.angle === L.angle;
       const mat = line.material as THREE.LineDashedMaterial;

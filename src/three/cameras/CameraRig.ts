@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { SITE, seabedDepth } from '../../config/site';
-import { pointAtArc, type CurtainLayout } from '../../simulation/geometry';
+import { SITE, mirrorX, seabedDepth } from '../../config/site';
+import { getCurtainLayout, pointAtArc, type CurtainLayout } from '../../simulation/geometry';
 
 export type CameraPreset = 'aerial' | 'top' | 'underwater' | 'curtain' | 'throat' | 'intake' | 'release' | 'compare' | 'free';
 
@@ -70,8 +70,19 @@ function aerialPose(layout: CurtainLayout, aspect: number, fov: number): CameraP
   return { pos: target.clone().addScaledVector(AERIAL_OFFSET, best.scale), target };
 }
 
-/** Camera presets derived from the active anchor layout and the reference site (`aspect` and `fov` of the view). */
+/**
+ * Camera presets derived from the duty line's anchor layout and the reference site (`aspect` and
+ * `fov` of the view). For the Twin-Line's mirror-image line the pose is the mirror of its side-0 pose.
+ */
 export function presetPose(key: Exclude<CameraPreset, 'free'>, layout: CurtainLayout, aspect = 16 / 9, fov = 42): CameraPose {
+  if (layout.side === 0) return sidePose(key, layout, aspect, fov);
+  const p = sidePose(key, getCurtainLayout(layout.angle, 0), aspect, fov);
+  p.pos.x = mirrorX(p.pos.x);
+  p.target.x = mirrorX(p.target.x);
+  return p;
+}
+
+function sidePose(key: Exclude<CameraPreset, 'free'>, layout: CurtainLayout, aspect: number, fov: number): CameraPose {
   const th = layout.throat;
   switch (key) {
     case 'top':

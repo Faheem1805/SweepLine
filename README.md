@@ -33,6 +33,15 @@ wall-jet scaling, to be sized by CFD and flume tests. Compare the passive and ac
 same seed with the *Water jets* switch on the 3D Visualiser, and the *Slack Tide* and *Workboat
 Deployment* scenarios.
 
+**SweepLine Twin-Line** answers the tide. At the reference site the along-shore current is 79 %
+tide and reverses about 3.8 times a day (Copernicus record, see [Real tidal current](#real-tidal-current)),
+so any one-way barrier faces the wrong way about half the time. A second line, the mirror image of
+the first, lies stowed on the seabed on the other side of the intake. When the tide turns, it pops
+up for the new direction; the first line guides the traffic already on it to its throat and settles
+back onto the seabed; and a valve on the shared transfer manifold sends released animals out of the
+outlet that is down-tide. Run the *Tide Turn* scenario, and switch *Second line* off in Stress test to
+see a single curtain face the wrong way.
+
 > Engineering design visualiser. Performance values are simulation estimates and are not
 > field-validated. Reference coastal intake geometry is schematic and does not represent
 > confidential or exact ENEC facility design.
@@ -94,9 +103,8 @@ rectangle), then the camera swings into the normal perspective view.
   (`name:en` / `name:ar`, Natural Earth `NAME_EN` / `NAME_AR`; "Arabian Gulf" is Natural Earth's
   `namealt`). Each label carries its source in the generated data.
 - **Simulated current · alongshore.** On this north-facing coast the simulation's +x axis (the
-  nominal current) points along the shore toward the WSW, so the intro labels it *alongshore*
-  rather than with a compass point. `site.ts` documents +x as 112° and offshore as 022°, which
-  cannot both hold for the rendered scene (one of them is mirrored).
+  nominal current) points along the shore toward the WSW (242°) and +z offshore toward the NNW
+  (332°), as `site.ts` now records them, so compass readings in the twin match the real coast.
 - **One continuous zoom.** The zoom speed (in log scale) rises and falls once — a slow push-in on
   the UAE, the fastest zoom over the coast, then a long ease-out that lands on the site — and the
   site drifts to its final screen position in one direction, so there are no surges or reversals
@@ -143,10 +151,14 @@ In `npm run dev`, `await __mapIntroAt(2500)` renders exactly that frame (in ms) 
    outlet alive; **Replay** runs the sequence again.
 2. **Stress test → Transfer failure**, then *Fail the standby path too*: SafeOpen retracts the
    upstream end first and the steps appear on screen. Re-arm when it completes.
-3. **Scenario → Slack Tide** — the current dies away; switch *Water jets* off in Stress test to see a
+3. **Scenario → Tide Turn** — the recorded tide slackens and reverses (time-lapse through slack
+   water): Line B pops up on the other side of the intake, Line A settles back, and the release
+   valve swings to the down-tide outlet. Then *Second line* off in Stress test: one curtain faces the
+   wrong way and SafeOpen hands the intake back to its screens.
+4. **Scenario → Slack Tide** — the current dies away; switch *Water jets* off in Stress test to see a
    passive curtain stall. **Scenario → Workboat Deployment** (or *Deployment → Workboat* in Stress
    test, which replays the run) shows the late-deployment leak.
-4. **How It Works**, then **Evidence** for the same-seed numbers and what still needs testing.
+5. **How It Works**, then **Evidence** for the same-seed numbers and what still needs testing.
 
 **Stress test** — each option injects a condition and the system responds on its own:
 
@@ -258,7 +270,8 @@ src/
     SimulationEngine.ts   Agent-based engine (one per world)
     Agent.ts              Typed-array agent pool + states
     geometry.ts           Curtain layouts (15/20/25°), funnel curve, throat bellmouth, spatial grid
-    flowField.ts          Current field (shore slow-down, intake draw, throat draw, release jet)
+    flowField.ts          Current field (shore slow-down, intake draw, throat draws, release jets)
+    tide.ts               Recorded tidal current at the site (from src/data/tide.generated.ts)
     curtain.ts            Curtain deploy (pop-up rise per section) / reef / unreef / stow state and per-segment skirt depth
     transfer.ts           Primary / standby / passive transfer paths
     waves.ts              Shared sea-state model (also generates the water shader GLSL)
@@ -329,6 +342,38 @@ fails if either run exceeds it or is not nominal.
 
 ---
 
+## Real tidal current
+
+`npm run build:tide` downloads the Copernicus Marine global surface current (SMOC: total current,
+tides included) for 2022–2025 through the Open-Meteo Marine API, at the model cell nearest the
+reference site (12 km offshore), and projects it onto the site's along-shore axis. A harmonic fit of
+11 tidal constituents explains 79 % of the along-shore variance (88 % with the 25 h low-passed
+residual); M2 alone is 0.09 m/s. The bloom season (Oct–Nov 2025) is written to
+`src/data/tide.generated.ts` as the fitted tide plus that slow residual, which removes the 0.03 m/s
+quantisation of the published values. Spring flows reach about ±0.13–0.2 m/s and the current
+reverses about 3.8 times a day. The small cross-shore component is left out. Nothing is fetched at
+runtime.
+
+A run with `tide: true` (the *Tide Turn* scenario) drives the current speed and direction from that
+record (`src/simulation/tide.ts`), starting `tideStart` hours into it. The *Recorded tide* card under
+the headline shows the current, its trace six hours either side, the time to the next turn and
+which line is on duty; it appears only on tide runs.
+
+**Twin-Line handover** (`twin` in `src/config/assumptions.ts`, assumptions): once the current has
+run against the duty line at more than 0.015 m/s for 30 s, duty passes to the other line, which
+deploys (pop-up, or a workboat if selected). The previous line keeps its jets running and its throat
+open until at most one jellyfish is left guided on it and its throat is empty (not before 60 s, at
+the latest after 7 min), then vents back onto the seabed. Both throats feed one manifold on the
+intake centreline; the valve sends each animal entering the pipe to the outlet down-current at that
+moment. Line B's hoses and outlet lie stowed until it is in use. The operating envelope judges the
+current against the line laid for its direction; with *Second line* off it judges the single line,
+so a turned tide is an envelope violation and SafeOpen follows.
+
+`npm run test:tide` replays the recorded turn (8 Oct 2025, 02:43 UTC) with and without the second
+line and counts intake contacts against the same-seed baseline: over the three hours after the
+turn the Twin-Line keeps about 99 % of them off the intake and releases down-tide, while a single
+line keeps about 1 %.
+
 ## Creating a new scenario
 
 Add an entry to `SCENARIOS` in **`src/simulation/scenarios.ts`**:
@@ -383,7 +428,9 @@ npm run calibrate -- minutes=40 skirtDepth=2.5   # headless Baseline vs SweepLin
 npm run test:scenario -- safeopen 9             # headless event log for a scenario (id, minutes)
 npm run test:lifecycle                           # SafeOpen → stow → redeploy → anchor change
 npm run test:demo                                # reference run: ≤ 5 jellyfish on the shore side at any time
+npm run test:tide                                # recorded tide turn: Twin-Line vs single line vs baseline
 npm run build:map-intro                          # regenerate the opening intro's map data
+npm run build:tide                               # regenerate the tidal-current data (Copernicus via Open-Meteo)
 ```
 
 In `npm run dev`, `window.__sl` exposes the controller and scene; `await __sl.shot('name')` and
