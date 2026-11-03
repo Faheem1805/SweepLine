@@ -158,7 +158,8 @@ In `npm run dev`, `await __mapIntroAt(2500)` renders exactly that frame (in ms) 
 4. **Scenario → Slack Tide** — the current dies away; switch *Water jets* off in Stress test to see a
    passive curtain stall. **Scenario → Workboat Deployment** (or *Deployment → Workboat* in Stress
    test, which replays the run) shows the late-deployment leak.
-5. **How It Works**, then **Evidence** for the same-seed numbers and what still needs testing.
+5. **How It Works** (the failure table sits under the Safety story), then **Evidence** for the
+   numbers across blooms, what the result depends on, and what still needs testing.
 
 **Stress test** — each option injects a condition and the system responds on its own:
 
@@ -358,6 +359,15 @@ or still in the water. The Evidence page shows the same balance live under the c
   net and skirt blow-back did not change how many reached the screens over their ranges. Each factor
   names the test or data that settles it (ADCP, echo-sounder, tank or flume), so the validation
   budget goes first to the jets.
+- **When something fails** (`npm run study:failures`, `src/config/failureModes.ts`). Each fault or
+  out-of-envelope condition, injected into steady operation or run as its stress-test scenario, on
+  the same three blooms with and without SweepLine for 30 simulated minutes. In none of the nine
+  simulated failures does the intake see more jellyfish than without SweepLine on any bloom: a pump
+  failure leaves 8 contacts against 374 (the standby takes over), failed jets 7 against 389, a bloom
+  deeper than the skirt 8 against 359; where SafeOpen retracts the curtain (both transfer paths
+  lost, fouling, waves) the intake keeps the protection it had until then and returns to today's
+  state; above 0.6 m/s the curtain is not deployed (894 against 894). The table sits under the
+  Safety story on How It Works.
 
 ## Real tidal current
 
@@ -564,6 +574,7 @@ npm run study:drift                              # released-animal drift study; 
 npm run build:wildlife                           # turtle and dugong records near the site (OBIS, GBIF)
 npm run study:seeds                              # headline results across 20 blooms; rewrites src/data/seeds.generated.ts
 npm run study:sensitivity                        # each assumption at both ends of its range; rewrites src/data/sensitivity.generated.ts
+npm run study:failures                           # each failure with and without SweepLine; rewrites src/data/failures.generated.ts
 ```
 
 In `npm run dev`, `window.__sl` exposes the controller and scene; `await __sl.shot('name')` and

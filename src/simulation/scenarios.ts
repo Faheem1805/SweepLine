@@ -129,8 +129,8 @@ export const SCENARIOS: Scenario[] = [
     description:
       'Replays a recorded spring-tide turn at the site (Copernicus current, 8 Oct 2025, 02:43 UTC): 0.2 m/s along the shore, slackening, then reversing. ' +
       'Once it has turned, Line B pops up on the other side of the intake, Line A guides the traffic already on it to its throat and settles back onto the seabed, ' +
-      'and the release valve switches to the down-tide outlet. Time-lapse through slack water. Switch Second line off in Stress test to see one curtain face the wrong way.',
-    demonstrates: ['Real tidal current at the site', 'Twin-Line handover', 'Down-tide release'],
+      'and both feed the same release line 2 km down-drift. Time-lapse through slack water. Switch Second line off in Stress test to see one curtain face the wrong way.',
+    demonstrates: ['Real tidal current at the site', 'Twin-Line handover', 'One release line for both tides'],
     params: { ...NORMAL, bloomDensity: 0.7, tide: true, tideStart: TIDE.referenceTurn - 1.6 },
     start: 'steady',
     preRoll: 3000,

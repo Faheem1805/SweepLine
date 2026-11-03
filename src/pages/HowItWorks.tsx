@@ -4,6 +4,7 @@ import { useSnap } from '../app/hooks';
 import { AngleDiagram } from '../components/charts/AngleDiagram';
 import { PlanSchematic } from '../components/charts/PlanSchematic';
 import { AlertPlanner } from '../components/panels/AlertPlanner';
+import { FailureModes } from '../components/panels/FailureModes';
 import { SideSchematic } from '../components/charts/SideSchematic';
 import { Icon } from '../components/ui/icons';
 import { FlowArrow, IconTile, Panel, type TileTone } from '../components/ui/Panel';
@@ -398,21 +399,24 @@ export function HowItWorks() {
           </Panel>
         </div>
 
-        <Panel title="Safety story" subtitle="Three independent layers" icon={<ShieldCheck size={18} />} bodyClassName="grid grid-cols-1 gap-3 md:grid-cols-3">
-          {SAFETY.map((s, i) => (
-            <div key={s.title} className="card-inner flex items-start gap-3 p-4">
-              <IconTile size={36} tone={s.tone}>
-                {s.icon}
-              </IconTile>
-              <div className="min-w-0">
-                <div className="text-[14.5px] font-semibold text-white">
-                  <span className="num mr-1.5 text-dim">{i + 1}.</span>
-                  {s.title}
+        <Panel title="Safety story" subtitle="Three independent layers, and what happens when something fails" icon={<ShieldCheck size={18} />} bodyClassName="flex flex-col gap-4">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            {SAFETY.map((s, i) => (
+              <div key={s.title} className="card-inner flex items-start gap-3 p-4">
+                <IconTile size={36} tone={s.tone}>
+                  {s.icon}
+                </IconTile>
+                <div className="min-w-0">
+                  <div className="text-[14.5px] font-semibold text-white">
+                    <span className="num mr-1.5 text-dim">{i + 1}.</span>
+                    {s.title}
+                  </div>
+                  <p className="mt-1 text-[13px] leading-snug text-pretty text-muted">{s.body}</p>
                 </div>
-                <p className="mt-1 text-[13px] leading-snug text-pretty text-muted">{s.body}</p>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
+          <FailureModes />
         </Panel>
 
         <BuildAndRun skirt={c.skirtTarget} angle={p.anchorAngle} jetLevel={p.jetLevel} />
