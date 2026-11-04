@@ -27,8 +27,8 @@ export const SENSITIVITY_FACTORS: readonly SensitivityFactor[] = [
 
 /** What has to happen before anyone should trust the numbers, in order, cheapest first. */
 export const TEST_PLAN = [
-  { stage: 'Flume', time: '3 months', proves: 'Do live bells slide along mesh at 20° without pinning or tearing? Which mesh?', pass: 'Over 95 % guided at 0.11 m/s' },
+  { stage: 'Flume', time: '3 months', proves: 'Do live bells, 6 to 45 cm, slide along mesh at 20° without pinning or tearing? 30 or 50 mm mesh?', pass: 'Over 95 % guided at 0.11 m/s' },
   { stage: 'Survival', time: '2 months', proves: 'Do they survive the screw lift and 24 minutes in a line?', pass: 'Over 70 % alive and pulsing at 96 h, against controls' },
-  { stage: 'Panel at the site', time: '6 weeks', proves: 'How fast does the mesh foul in the channel, and what do load cells read?', pass: 'Head under 0.05 m at 4 weeks' },
+  { stage: 'Panel at the site', time: '6 weeks', proves: 'How fast does the mesh foul, what do load cells read, what bycatch and polyps settle?', pass: 'Head under 0.05 m at 4 weeks' },
   { stage: 'One-third net', time: '1 season', proves: 'A full-depth section on piles with a real collector, in a real bloom', pass: 'Screens load falls, plant untouched' },
 ] as const;

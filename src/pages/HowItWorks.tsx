@@ -109,7 +109,19 @@ const QUESTIONS: Array<{ q: string; a: string }> = [
   },
   {
     q: 'What about fish and turtles?',
-    a: 'The mesh runs at fish-screen speed, so a swimming animal can turn away, and taut 50 mm mesh is not a gill net. That is a design argument, not a test: bycatch is watched in the panel test at sea.',
+    a: 'The mesh runs at fish-screen speed, so a swimming animal can turn away, and taut mesh is not a gill net. A 20 cm bar rack keeps turtles and large debris out of the lifts. That is a design argument, not a test: bycatch is watched in the panel test at sea.',
+  },
+  {
+    q: 'Haven’t nets failed at other plants?',
+    a: 'Yes. A net set square to the flow takes the whole load and can tear. Ours stands at 20°, so the flow carries the bloom off it, and with the lifts down and three times the bloom the head stays near 16 mm. A second net stands behind it, and the float line dips before the load gets high.',
+  },
+  {
+    q: 'Won’t the piles grow more jellyfish?',
+    a: 'They could: hard surfaces give jellyfish polyps somewhere to settle. So panels come out off-season, piles are inspected and cleaned in the diver round, and a settlement check is part of the panel test at sea.',
+  },
+  {
+    q: 'Who approves it, and who runs it?',
+    a: 'It needs a nuclear safety review of any change at the intake (FANR), a permit for the marine works and for live release (EAD), and the plant’s own modification process. Once built, the control room watches load cells and sonar, and a small maintenance crew swaps panels.',
   },
   {
     q: 'Does it leave debris?',

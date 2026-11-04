@@ -87,6 +87,8 @@ export const SITE = {
     /** Half-width of the funnel mouth, and of the suction it narrows to (m). */
     mouthHalfWidth: 8,
     throatHalfWidth: 1.4,
+    /** Clear gap of the bar rack across the funnel mouth (m): passes Gulf bells, stops turtles and large debris. */
+    rackGap: 0.2,
     /** Pump platform position (on piles, against the wall) relative to the net's end. */
     platformHalfWidth: 7,
     deckY: 4.6,

@@ -35,9 +35,44 @@ const STATUS = [
     title: 'Missing',
     tone: 'text-red',
     icon: <FlaskRound size={16} />,
-    items: ['Any test on live jellyfish', 'The real channel: width, depth, flow', 'Survival through the lift and line', 'A contractor’s price', 'Environmental approval and a safety review of nets at an intake'],
+    items: ['Any test on live jellyfish', 'The real channel: width, depth, flow', 'Survival through the lift and line', 'A contractor’s price', 'Approvals: FANR safety review, EAD permits for the works and for live release'],
   },
 ];
+
+/** What failed along the way and what it changed. Each of these is a real entry from the build. */
+const LOG: Array<[string, string]> = [
+  ['A floating pop-up curtain leaked under its skirt, needed a second line for the tide, and was far too small for a plant’s flow', 'Dropped it. Fixed full-depth nets in the one-way intake channel'],
+  ['A sealed pump could cut the animals', 'Screw lift with no impeller, with survival still to be measured'],
+  ['At 2 million m³/h a 9 m channel broke the fish-screen limit at 20°', 'Reference channel taken to 12 m, and a rule for sizing the net in any channel'],
+  ['Our 67 kW left out the lift over the breakwater', 'Corrected to about 130 kW'],
+  ['We claimed a bloom would trigger the float-line relief. The model says it never does', 'Stopped claiming it, and added a debris test that does trigger it'],
+  ['Warning time was a hand sum of 21 minutes', 'Measured across five model blooms: at least 30 minutes'],
+];
+
+function ChangedLog() {
+  return (
+    <Panel title="What we got wrong, and what it changed" subtitle="The design moved every time the evidence did" icon={<FlaskRound size={18} />}>
+      <div className="overflow-x-auto rounded-xl border border-line">
+        <table className="w-full min-w-[720px] text-left text-[12.5px]">
+          <thead className="text-[11px] tracking-[0.06em] text-muted uppercase">
+            <tr className="border-b border-line">
+              <th className="px-3 py-2 font-medium">What we found</th>
+              <th className="px-3 py-2 font-medium">What we changed</th>
+            </tr>
+          </thead>
+          <tbody>
+            {LOG.map(([a, b]) => (
+              <tr key={a} className="border-b border-line align-top last:border-0">
+                <td className="px-3 py-2 text-pretty text-ink-2">{a}</td>
+                <td className="px-3 py-2 text-pretty text-white">{b}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
+  );
+}
 
 function Survival() {
   const r = survivalRange();
@@ -180,6 +215,8 @@ export function Evidence() {
         <Survival />
 
         <SensitivityPanel />
+
+        <ChangedLog />
 
         <Recorded />
       </div>

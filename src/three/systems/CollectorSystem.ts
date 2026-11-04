@@ -202,6 +202,17 @@ export class CollectorSystem {
       w.rotation.y = -Math.atan2(c.z - wz, c.x - wx);
       w.userData.pick = 'collector';
       this.group.add(w);
+      // Bar rack across the funnel mouth: jellyfish pass, turtles and large debris do not.
+      const bars = Math.round(K.mouthHalfWidth / K.rackGap);
+      const rack = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.05, 0.05, SITE.channel.depth + 1.4, 6), steel, bars);
+      const barAt = new THREE.Matrix4();
+      for (let i = 0; i < bars; i++) {
+        const s = (K.mouthHalfWidth * (i + 0.5)) / bars;
+        barAt.setPosition(m.x + L.nx * s, (1.4 - SITE.channel.depth) / 2, m.z + L.nz * s);
+        rack.setMatrixAt(i, barAt);
+      }
+      rack.userData.pick = 'collector';
+      this.group.add(rack);
       // Suction frame.
       const frame = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, SITE.channel.depth + 5, 16), steel);
       frame.position.set(c.x, (4.6 - SITE.channel.depth) / 2, c.z);
