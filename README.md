@@ -49,6 +49,8 @@ npm run build
 
 ## The design basis
 
+The reference site is a straight channel between two breakwaters that bends into a side basin along the plant wall, with one intake per unit. The model counts an animal as at the screens where the channel opens into the basin, because nothing further can stop it, and it then rides on to its unit's intake. The layout is schematic, and left-right mirrored from any site it resembles.
+
 Sized on fish-screen practice (NMFS): at most 0.12 m/s through the screen, and sweep faster than that.
 
 - 2 million m³/h through a 140 × 12 m channel runs at 0.33 m/s.

@@ -31,7 +31,7 @@ const WORLDS: EngineKind[] = ['baseline', 'sweepline'];
 /** Time constant (real seconds) of the shown sea state following the simulated wave height. */
 const SEA_STATE_TAU = 1.6;
 /** Centre of the shadow map: the channel. */
-const SHADOW_FOCUS = new THREE.Vector3(0, 0, 240);
+const SHADOW_FOCUS = new THREE.Vector3(240, 0, 180);
 
 /**
  * Owns the WebGL renderer and the 3D digital twin. One renderer serves both the single view and the
@@ -347,7 +347,7 @@ export class SceneManager {
       view: above,
       pick: 'collector',
     });
-    const intakeAnchor = new THREE.Vector3(0, SITE.intake.deckY + 12, SITE.intake.mouthZ);
+    const intakeAnchor = new THREE.Vector3(SITE.basin.units[1], SITE.intake.deckY + 16, SITE.basin.wallZ);
     for (const [id, vp] of [
       ['intake', ['single']],
       ['intake-base', ['base']],

@@ -6,7 +6,8 @@
  *   - +x runs along-shore (bearing 242°, WSW, as placed on the real coast by the map intro)
  *   - +z runs offshore (bearing 332°, NNW); the coastline lies toward −z
  *
- * The site is a dredged intake channel between two rock breakwaters. Everything the plant pumps
+ * The site is a dredged intake channel between two rock breakwaters that bends into a side basin
+ * along the plant wall, where each unit has its own intake. Everything the plant pumps
  * comes through it, so inside the channel the water always runs one way, toward the screens,
  * whatever the tide outside is doing. SweepLine uses that flow: two full-depth nets stand across
  * the channel at a shallow angle, the water passes through them and the jellyfish are swept along
@@ -63,6 +64,25 @@ export const SITE = {
     deckY: 3.8,
     bays: 12,
     pierWidth: 1.6,
+  },
+
+  /**
+   * The side basin. Past the nets the channel bends along the plant wall, and the east breakwater
+   * curves round the basin and ties back to the shore at its far end. The simulation counts an
+   * animal as at the screens when it reaches `intake.mouthZ`, the point where the channel opens into
+   * this basin and nothing further can stop it; it then rides on to its unit's intake.
+   */
+  basin: {
+    /** Plant wall, and the still-water line along the seaward side (z). */
+    wallZ: -120,
+    northZ: 30,
+    /** Still-water line at the far end (x). */
+    endX: 900,
+    /** Radii of the bend at the channel and of the tie-in to the shore, on the crest line (m). */
+    bendRadius: 42,
+    tieRadius: 90,
+    /** Intake centres along the plant wall, one per unit (x). */
+    units: [220, 390, 560, 730],
   },
 
   /**
@@ -147,29 +167,48 @@ function naturalDepth(x: number, z: number): number {
   return Math.min(d, b.maxDepth);
 }
 
+/** 1 inside the dredged side basin and the channel's end, feathering to 0 at its edges. */
+function basinWeight(x: number, z: number): number {
+  const B = SITE.basin;
+  const hw = SITE.channel.halfWidth;
+  return smoothstep(-hw - 8, -hw + 4, x) * (1 - smoothstep(B.endX - 10, B.endX + 20, x)) * smoothstep(B.wallZ - 6, B.wallZ + 4, z) * (1 - smoothstep(B.northZ - 2, B.northZ + 22, z));
+}
+
 /** Seabed depth below still water (positive metres) — shared by the simulation and seabed/water shaders. */
 export function seabedDepth(x: number, z: number): number {
   const d0 = naturalDepth(x, z);
   const C = SITE.channel;
-  if (z < SITE.shore.toeZ) return d0;
-  // Dredged channel and forebay, feathering out beyond the mouth.
-  const w = (1 - smoothstep(C.halfWidth + 2, C.halfWidth + 26, Math.abs(x))) * (1 - smoothstep(C.mouthZ + 20, C.mouthZ + 130, z));
-  const dredged = Math.max(d0, C.depth);
-  return d0 + (dredged - d0) * w;
+  let d = d0;
+  if (z >= SITE.shore.toeZ) {
+    // Dredged channel and forebay, feathering out beyond the mouth.
+    const w = (1 - smoothstep(C.halfWidth + 2, C.halfWidth + 26, Math.abs(x))) * (1 - smoothstep(C.mouthZ + 20, C.mouthZ + 130, z));
+    d = d0 + (Math.max(d0, C.depth) - d0) * w;
+  }
+  const b = basinWeight(x, z);
+  return d + (Math.max(d, C.depth) - d) * b;
 }
 
 /** GLSL twin of {@link seabedDepth}. Keep both in sync. */
 export const SEABED_DEPTH_GLSL = /* glsl */ `
 float seabedDepth(vec2 p) {
   float dz = p.y - (${SITE.shore.toeZ.toFixed(3)});
-  if (dz < 0.0) return max(0.5, ${SITE.bathymetry.depthAtToe.toFixed(3)} + dz * 0.75);
-  float d = ${SITE.bathymetry.depthAtToe.toFixed(3)} + ${SITE.bathymetry.slope.toFixed(4)} * dz
-    + 0.28 * sin(p.x * 0.0051 + p.y * 0.0037)
-    + 0.16 * sin(p.x * 0.0173 - p.y * 0.0113);
-  d = min(d, ${SITE.bathymetry.maxDepth.toFixed(3)});
-  float w = (1.0 - smoothstep(${(SITE.channel.halfWidth + 2).toFixed(1)}, ${(SITE.channel.halfWidth + 26).toFixed(1)}, abs(p.x)))
-    * (1.0 - smoothstep(${(SITE.channel.mouthZ + 20).toFixed(1)}, ${(SITE.channel.mouthZ + 130).toFixed(1)}, p.y));
-  return mix(d, max(d, ${SITE.channel.depth.toFixed(1)}), w);
+  float d;
+  if (dz < 0.0) {
+    d = max(0.5, ${SITE.bathymetry.depthAtToe.toFixed(3)} + dz * 0.75);
+  } else {
+    d = ${SITE.bathymetry.depthAtToe.toFixed(3)} + ${SITE.bathymetry.slope.toFixed(4)} * dz
+      + 0.28 * sin(p.x * 0.0051 + p.y * 0.0037)
+      + 0.16 * sin(p.x * 0.0173 - p.y * 0.0113);
+    d = min(d, ${SITE.bathymetry.maxDepth.toFixed(3)});
+    float w = (1.0 - smoothstep(${(SITE.channel.halfWidth + 2).toFixed(1)}, ${(SITE.channel.halfWidth + 26).toFixed(1)}, abs(p.x)))
+      * (1.0 - smoothstep(${(SITE.channel.mouthZ + 20).toFixed(1)}, ${(SITE.channel.mouthZ + 130).toFixed(1)}, p.y));
+    d = mix(d, max(d, ${SITE.channel.depth.toFixed(1)}), w);
+  }
+  float b = smoothstep(${(-SITE.channel.halfWidth - 8).toFixed(1)}, ${(-SITE.channel.halfWidth + 4).toFixed(1)}, p.x)
+    * (1.0 - smoothstep(${(SITE.basin.endX - 10).toFixed(1)}, ${(SITE.basin.endX + 20).toFixed(1)}, p.x))
+    * smoothstep(${(SITE.basin.wallZ - 6).toFixed(1)}, ${(SITE.basin.wallZ + 4).toFixed(1)}, p.y)
+    * (1.0 - smoothstep(${(SITE.basin.northZ - 2).toFixed(1)}, ${(SITE.basin.northZ + 22).toFixed(1)}, p.y));
+  return mix(d, max(d, ${SITE.channel.depth.toFixed(1)}), b);
 }
 `;
 
@@ -179,8 +218,11 @@ float seabedDepth(vec2 p) {
  */
 export function waveExposure(x: number, z: number): number {
   const C = SITE.channel;
+  const B = SITE.basin;
   const inside = (1 - smoothstep(C.halfWidth - 6, C.halfWidth + 40, Math.abs(x))) * (1 - smoothstep(C.mouthZ - 180, C.mouthZ + 30, z));
-  return 1 - inside * (1 - WAVE_SHELTER);
+  // The side basin, behind the curved breakwater.
+  const basin = smoothstep(C.halfWidth, C.halfWidth + 40, x) * (1 - smoothstep(B.endX - 20, B.endX + 60, x)) * (1 - smoothstep(B.northZ + 40, B.northZ + 75, z));
+  return 1 - Math.max(inside, basin) * (1 - WAVE_SHELTER);
 }
 
 /** Share of the offshore wave height that reaches the sheltered channel. Assumption, typical of a rubble-mound basin. */
@@ -191,7 +233,10 @@ export const WAVE_EXPOSURE_GLSL = /* glsl */ `
 float waveExposure(vec2 p) {
   float inside = (1.0 - smoothstep(${(SITE.channel.halfWidth - 6).toFixed(1)}, ${(SITE.channel.halfWidth + 40).toFixed(1)}, abs(p.x)))
     * (1.0 - smoothstep(${(SITE.channel.mouthZ - 180).toFixed(1)}, ${(SITE.channel.mouthZ + 30).toFixed(1)}, p.y));
-  return 1.0 - inside * ${(1 - WAVE_SHELTER).toFixed(3)};
+  float basin = smoothstep(${SITE.channel.halfWidth.toFixed(1)}, ${(SITE.channel.halfWidth + 40).toFixed(1)}, p.x)
+    * (1.0 - smoothstep(${(SITE.basin.endX - 20).toFixed(1)}, ${(SITE.basin.endX + 60).toFixed(1)}, p.x))
+    * (1.0 - smoothstep(${(SITE.basin.northZ + 40).toFixed(1)}, ${(SITE.basin.northZ + 75).toFixed(1)}, p.y));
+  return 1.0 - max(inside, basin) * ${(1 - WAVE_SHELTER).toFixed(3)};
 }
 `;
 
@@ -207,6 +252,46 @@ export function inMound(x: number, z: number): boolean {
   const dx = ax - cx;
   const dz = (z - C.mouthZ) * (r / BW.headRadius);
   return dx * dx + dz * dz < r * r;
+}
+
+/** Crest centre line of the channel's breakwaters, from the shared crest profile (m from the centreline). */
+export const CREST = {
+  inner: SITE.channel.halfWidth + SITE.breakwater.crestY * SITE.breakwater.slope,
+  get outer() {
+    return this.inner + SITE.breakwater.crestWidth;
+  },
+  get centre() {
+    return this.inner + SITE.breakwater.crestWidth / 2;
+  },
+};
+
+/** Crest line of the east breakwater, head to shore: down the channel, round the bend, along the basin, into the shore. */
+export function eastCrestLine(step = 6): Array<[number, number]> {
+  const B = SITE.basin;
+  const hx = CREST.centre;
+  const inset = CREST.inner - SITE.channel.halfWidth + SITE.breakwater.crestWidth / 2;
+  const zb = B.northZ + inset;
+  const R = B.bendRadius;
+  const R2 = B.tieRadius;
+  const ex = B.endX + inset - R2;
+  const pts: Array<[number, number]> = [];
+  for (let z = SITE.channel.mouthZ; z > zb + R; z -= step) pts.push([hx, z]);
+  for (let a = 180; a <= 270; a += 6) pts.push([hx + R + R * Math.cos((a * Math.PI) / 180), zb + R + R * Math.sin((a * Math.PI) / 180)]);
+  for (let x = hx + R + step; x < ex; x += step) pts.push([x, zb]);
+  for (let a = 90; a >= 0; a -= 6) pts.push([ex + R2 * Math.cos((a * Math.PI) / 180), zb - R2 + R2 * Math.sin((a * Math.PI) / 180)]);
+  for (let z = zb - R2 - step; z > SITE.shore.crestZ - 20; z -= step) pts.push([ex + R2, z]);
+  return pts;
+}
+
+/** True where a drawing of the water should appear: open sea, the channel or the side basin. */
+export function isWater(x: number, z: number): boolean {
+  const C = SITE.channel;
+  const B = SITE.basin;
+  if (inMound(x, z)) return false;
+  if (z < SITE.shore.toeZ) return x > -C.halfWidth && x < B.endX && z > B.wallZ;
+  if (x > C.halfWidth && x < B.endX + 60 && z > B.northZ && z < B.northZ + 72) return false;
+  if (x > B.endX && x < B.endX + 60 && z < B.northZ) return false;
+  return true;
 }
 
 /** Convert a compass bearing (direction of travel) to a unit world-plane vector (x, z). Bearings turn clockwise from +x toward +z. */

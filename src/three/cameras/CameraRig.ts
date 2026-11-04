@@ -27,9 +27,9 @@ export function presetPose(key: Exclude<CameraPreset, 'free'>): CameraPose {
   const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
   switch (key) {
     case 'top':
-      return { pos: v(0, 1120, 300.01), target: v(0, 0, 300) };
+      return { pos: v(330, 1420, 250.01), target: v(330, 0, 250) };
     case 'compare':
-      return { pos: v(-300, 640, 760), target: v(10, 0, 250) };
+      return { pos: v(-260, 700, 860), target: v(220, 0, 200) };
     case 'mouth':
       return { pos: v(-250, 86, 760), target: v(20, 0, 500) };
     case 'net': {
@@ -46,14 +46,14 @@ export function presetPose(key: Exclude<CameraPreset, 'free'>): CameraPose {
     case 'collector':
       return { pos: v(26, 19, 44), target: v(70, 2.5, 76) };
     case 'intake':
-      return { pos: v(-70, 34, 120), target: v(0, 1, -30) };
+      return { pos: v(210, 36, -12), target: v(330, 2, -120) };
     case 'release': {
       const r = SITE.release;
       return { pos: v(r.x - 46, 22, r.z + 44), target: v(r.x + 8, 0, r.z + 4) };
     }
     case 'aerial':
     default:
-      return { pos: v(-430, 200, 800), target: v(30, 0, 250) };
+      return { pos: v(-420, 260, 800), target: v(190, 0, 170) };
   }
 }
 

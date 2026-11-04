@@ -207,7 +207,7 @@ export function MapIntro() {
           <span className="sl-intro-cap-en">Abu Dhabi · Western coast</span>
         </div>
         <div className="sl-intro-cap" data-o="cap-coast">
-          <span className="sl-intro-cap-en">Al Dhannah coast</span>
+          <span className="sl-intro-cap-en">Gulf coast</span>
         </div>
       </div>
 

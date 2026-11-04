@@ -91,11 +91,13 @@ export interface Schematic {
 
 export function buildSchematic(): Schematic {
   const I = SITE.intake;
+  const B = SITE.basin;
+  const U = B.units;
   const L = NETS[0];
   const end = collectorPoint(L);
   return {
-    intake: `M${I.x0 - 2.4} ${I.backZ}H${I.x1 + 2.4}V${I.mouthZ + 0.4}H${I.x0 - 2.4}Z`,
-    intakeFace: `M${I.x0} ${I.mouthZ}H${I.x1}`,
+    intake: U.map((x) => `M${x + I.x0} ${B.wallZ - 54}H${x + I.x1}V${B.wallZ}H${x + I.x0}Z`).join(''),
+    intakeFace: `M${U[0] + I.x0} ${B.wallZ}H${U[U.length - 1] + I.x1}`,
     curtain: polyline([
       [L.ax, L.az],
       [L.bx, L.bz],

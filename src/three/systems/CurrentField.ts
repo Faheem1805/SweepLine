@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { SITE, inMound } from '../../config/site';
+import { SITE, isWater } from '../../config/site';
 import type { SimulationEngine } from '../../simulation/SimulationEngine';
 
 /** Particle region: the channel and the water it draws from. */
-const REGION = { x0: -640, x1: 640, z0: -28, z1: 980 };
+const REGION = { x0: -640, x1: 960, z0: SITE.basin.wallZ, z1: 980 };
 const MAX = 6400;
 
 /**
@@ -67,9 +67,9 @@ export class CurrentField {
     shape.closePath();
     const arrowGeo = new THREE.ShapeGeometry(shape);
     arrowGeo.rotateX(-Math.PI / 2);
-    for (let x = -620; x <= 620; x += 44) {
-      for (let z = -10; z <= 960; z += 44) {
-        if (inMound(x, z)) continue;
+    for (let x = -620; x <= 940; x += 44) {
+      for (let z = -106; z <= 960; z += 44) {
+        if (!isWater(x, z)) continue;
         this.arrowPos.push([x, z]);
       }
     }
@@ -89,15 +89,19 @@ export class CurrentField {
     let x = 0;
     let z = 0;
     for (let tries = 0; tries < 8; tries++) {
-      // Half the particles in the channel, where the action is.
-      if (Math.random() < 0.5) {
+      // Half the particles in the channel and basin, where the action is.
+      const k = Math.random();
+      if (k < 0.34) {
         x = (Math.random() - 0.5) * 2 * (SITE.channel.halfWidth - 2);
         z = r.z0 + Math.random() * (SITE.channel.mouthZ + 40 - r.z0);
+      } else if (k < 0.5) {
+        x = SITE.channel.halfWidth + Math.random() * (SITE.basin.endX - SITE.channel.halfWidth);
+        z = SITE.basin.wallZ + Math.random() * (SITE.basin.northZ - SITE.basin.wallZ);
       } else {
         x = r.x0 + Math.random() * (r.x1 - r.x0);
         z = r.z0 + Math.random() * (r.z1 - r.z0);
       }
-      if (!inMound(x, z)) break;
+      if (isWater(x, z)) break;
     }
     this.px[i] = x;
     this.pz[i] = z;
@@ -130,13 +134,13 @@ export class CurrentField {
     for (let i = 0; i < n; i++) {
       let x = this.px[i];
       let z = this.pz[i];
-      flow.sample(x, z, 1.2, tmp);
+      flow.sampleDrawn(x, z, 1.2, tmp);
       this.vx[i] += (tmp.x - this.vx[i]) * 0.5;
       this.vz[i] += (tmp.z - this.vz[i]) * 0.5;
       x += this.vx[i] * dt;
       z += this.vz[i] * dt;
       this.life[i] += dt;
-      const outside = x > REGION.x1 || x < REGION.x0 || z > REGION.z1 || z < SITE.intake.mouthZ + 1 || inMound(x, z);
+      const outside = x > REGION.x1 || x < REGION.x0 || z > REGION.z1 || z < SITE.basin.wallZ + 1 || !isWater(x, z);
       if (this.life[i] > this.maxLife[i] || outside) {
         this.respawn(i);
         x = this.px[i];
@@ -195,7 +199,7 @@ export class CurrentField {
     const flow = engine.flow;
     for (let i = 0; i < this.arrowPos.length; i++) {
       const [x, z] = this.arrowPos[i];
-      flow.sample(x, z, 1, this.tmp);
+      flow.sampleDrawn(x, z, 1, this.tmp);
       const sp = Math.hypot(this.tmp.x, this.tmp.z);
       this.aq.setFromAxisAngle(this.yAxis, -Math.atan2(this.tmp.z, this.tmp.x));
       const sc = 3 + Math.min(sp, 0.6) * 22;

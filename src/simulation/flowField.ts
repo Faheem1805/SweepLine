@@ -48,6 +48,33 @@ export class FlowField {
     return this.plantFlow / (Math.max(this.speed, 0.02) * SITE.channel.depth);
   }
 
+  /**
+   * Flow to draw, not to simulate: the same field, but past the nets it follows the bend into the
+   * side basin and falls away unit by unit, as each intake takes its share.
+   */
+  sampleDrawn(x: number, z: number, depth: number, out: Vec2Out): void {
+    const B = SITE.basin;
+    const hw = SITE.channel.halfWidth;
+    if (z >= B.northZ || x <= -hw || x >= B.endX) {
+      this.sample(x, z, depth, out);
+      return;
+    }
+    const U = this.channelSpeed;
+    if (x < hw) {
+      // Round the inside of the bend.
+      const dx = x - hw;
+      const dz = z - B.northZ;
+      const r = Math.max(Math.hypot(dx, dz), 1);
+      out.x = (-dz / r) * U;
+      out.z = (dx / r) * U;
+      return;
+    }
+    const last = B.units[B.units.length - 1];
+    const left = 1 - smoothstep(B.units[0] - 60, last + 40, x);
+    out.x = U * left;
+    out.z = -0.12 * smoothstep(B.units[0] - 90, B.units[0], x) * (1 - 0.6 * left);
+  }
+
   /** Ambient flow at (x, z) and depth (m). */
   sample(x: number, z: number, depth: number, out: Vec2Out): void {
     const C = SITE.channel;

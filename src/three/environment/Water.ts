@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { SEABED_DEPTH_GLSL, WAVE_EXPOSURE_GLSL } from '../../config/site';
+import { SEABED_DEPTH_GLSL, SITE, WAVE_EXPOSURE_GLSL } from '../../config/site';
 import { WAVES_GLSL } from '../../simulation/waves';
 import { MEDIUM_GLSL, SHARED } from './shaderChunks';
 import { makeFoamNoise } from './textures';
@@ -227,7 +227,9 @@ export class Water {
             float crest = clamp(vElev / max(uWaveAmp, 0.05), 0.0, 1.0);
             vec3 sss = vec3(0.04, 0.42, 0.36) * pow(max(dot(V, -uSunDir) * 0.5 + 0.5, 0.0), 3.0) * crest * 0.35;
             // Wave-break foam along the revetment waterline.
-            float shore = smoothstep(-52.5, -56.8, vWorld.z) * step(-58.5, vWorld.z);
+            // Waves break on the open shore, not along the sheltered plant wall.
+            float shore = smoothstep(-52.5, -56.8, vWorld.z) * step(-58.5, vWorld.z)
+              * (1.0 - step(${(-SITE.channel.halfWidth - 14).toFixed(1)}, vWorld.x) * step(vWorld.x, ${(SITE.basin.endX + 14).toFixed(1)}));
             float foamN = texture2D(uNormalMap, vWorld.xz / 6.0 + vec2(uTime * 0.02, 0.0)).x;
             float foam = shore * smoothstep(0.45, 0.75, foamN + 0.35 * sin(vWorld.x * 0.21 + uTime * 0.9)) * (0.6 + uWaveAmp);
             vec3 foamCol = vec3(0.78, 0.86, 0.88);

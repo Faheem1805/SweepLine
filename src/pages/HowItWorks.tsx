@@ -210,7 +210,7 @@ export function HowItWorks() {
           <div className="page-eyebrow">How it works</div>
           <h1 className="mt-1.5 text-[clamp(28px,2.4vw,38px)] leading-[1.1] font-bold tracking-tight text-balance text-white">One way in for the water. One way out for the jellyfish.</h1>
           <p className="mt-2 text-[15px] leading-relaxed text-pretty text-ink-2">
-            Everything the plant pumps comes down one channel between two breakwaters, so inside it the water always runs the same way. Two nets stand across that channel. The plant’s own flow does the sweeping.
+            Everything the plant pumps comes down one channel between two breakwaters, then along a basin to the intakes, so inside it the water always runs the same way. Two nets stand across that channel, ahead of every intake. The plant’s own flow does the sweeping.
           </p>
         </header>
 

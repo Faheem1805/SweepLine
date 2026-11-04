@@ -414,6 +414,7 @@ export class SimulationEngine {
       if (st === S_INTAKE_CONTACT) {
         timer[i] -= dt;
         if (timer[i] <= 0) pool.free(i);
+        else this.rideToIntake(i, dt);
         continue;
       }
       stateTime[i] += dt;
@@ -776,11 +777,30 @@ export class SimulationEngine {
     if ((this.counters.released & 3) === 0) this.pushMarker(p.px[i], p.py[i], p.pz[i], 'release');
   }
 
+  /** The unit whose intake this animal ends up at. */
+  private intakeX(i: number): number {
+    const u = SITE.basin.units;
+    return u[Math.min(u.length - 1, Math.floor(hash01(this.pool.id[i], 31) * u.length))];
+  }
+
+  /** Past the channel nothing can stop it: it rides the flow along the basin to its unit's intake. */
+  private rideToIntake(i: number, dt: number): void {
+    const p = this.pool;
+    const dx = this.intakeX(i) - p.px[i];
+    const dz = SITE.basin.wallZ + 5 - p.pz[i];
+    const d = Math.hypot(dx, dz);
+    if (d < 2) return;
+    const step = Math.min(d, this.flow.channelSpeed * dt);
+    p.px[i] += (dx / d) * step;
+    p.pz[i] += (dz / d) * step;
+  }
+
   private intakeContact(i: number): void {
     const p = this.pool;
     p.state[i] = S_INTAKE_CONTACT;
     p.stateTime[i] = 0;
-    p.timer[i] = ASSUMPTIONS.screens.dwell;
+    const ride = Math.hypot(this.intakeX(i) - p.px[i], SITE.basin.wallZ + 5 - p.pz[i]) / this.flow.channelSpeed;
+    p.timer[i] = ride + ASSUMPTIONS.screens.dwell;
     p.vx[i] = 0;
     p.vy[i] = 0;
     p.vz[i] = 0;
@@ -789,7 +809,7 @@ export class SimulationEngine {
       this.counters.intakeContacts++;
       this.screens.add(this.kgPerAgent);
     }
-    this.pushMarker(p.px[i], p.py[i], p.pz[i], 'intake');
+    this.pushMarker(this.intakeX(i), p.py[i], SITE.basin.wallZ + 2, 'intake');
   }
 
   private pushMarker(x: number, y: number, z: number, kind: MarkerKind): void {

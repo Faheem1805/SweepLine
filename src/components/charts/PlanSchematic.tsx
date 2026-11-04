@@ -1,9 +1,9 @@
 import { ASSUMPTIONS } from '../../config/assumptions';
-import { SITE } from '../../config/site';
+import { SITE, CREST, eastCrestLine } from '../../config/site';
 import { NETS } from '../../simulation/geometry';
 
 const W = 980;
-const H = 400;
+const H = 424;
 const k = 0.335;
 const px = (x: number) => 268 + x * k;
 const py = (z: number) => 336 - z * k;
@@ -32,9 +32,12 @@ export function PlanSchematic() {
   const B = SITE.breakwater;
   const I = SITE.intake;
   const landY = py(SITE.shore.crestZ);
-  const crest = (x: number) => x * (1 + 0.14);
   const pipe = [[76, 88], ...SITE.pipeRoute] as ReadonlyArray<readonly [number, number]>;
-  const unitW = (I.x1 - I.x0) / ASSUMPTIONS.plant.units;
+  const B2 = SITE.basin;
+  const west = `${px(-CREST.centre)},${py(C.mouthZ)} ${px(-CREST.centre)},${py(B2.wallZ)}`;
+  const east = eastCrestLine(30)
+    .map(([x, z]) => `${px(x)},${py(z)}`)
+    .join(' ');
   const R = SITE.release;
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="block h-auto w-full" role="img" aria-label="Plan of the channel between two breakwaters, the four intakes behind two angled nets, the collector, and the release line over the east breakwater to the outlet 2 km along the coast">
@@ -55,31 +58,25 @@ export function PlanSchematic() {
       {/* The water the plant draws in. */}
       <circle cx={px(0)} cy={py(C.mouthZ)} r={ASSUMPTIONS.drift.returnRadius * k} fill={RED} fillOpacity={0.07} stroke={RED} strokeOpacity={0.6} strokeDasharray="5 4" />
 
-      {/* Breakwaters. */}
-      {[-1, 1].map((s) => (
-        <rect
-          key={s}
-          x={Math.min(px(s * C.halfWidth), px(s * (C.halfWidth + B.crestWidth * 2.2)))}
-          y={py(C.mouthZ + 8)}
-          width={B.crestWidth * 2.2 * k}
-          height={py(SITE.shore.crestZ) - py(C.mouthZ + 8)}
-          rx={3}
-          fill="#6b6f6c"
-        />
-      ))}
-      <rect x={px(-C.halfWidth)} y={py(C.mouthZ)} width={2 * C.halfWidth * k} height={py(SITE.shore.crestZ) - py(C.mouthZ)} fill="#0e4257" />
+      {/* Channel and side basin. */}
+      <rect x={px(-C.halfWidth)} y={py(C.mouthZ)} width={2 * C.halfWidth * k} height={py(B2.wallZ) - py(C.mouthZ)} fill="#0e4257" />
+      <rect x={px(-C.halfWidth)} y={py(B2.northZ)} width={(B2.endX + C.halfWidth) * k} height={py(B2.wallZ) - py(B2.northZ)} fill="#0e4257" />
 
-      {/* Four intakes, all behind the nets. */}
-      {Array.from({ length: ASSUMPTIONS.plant.units }, (_, i) => (
-        <rect key={i} x={px(I.x0 + i * unitW) + 1} y={py(I.mouthZ)} width={unitW * k - 2} height={(I.mouthZ - I.backZ) * k} fill={INK} fillOpacity={0.85} />
+      {/* Breakwaters. */}
+      <polyline points={west} fill="none" stroke="#6b6f6c" strokeWidth={B.crestWidth * 2.2 * k} strokeLinecap="round" />
+      <polyline points={east} fill="none" stroke="#6b6f6c" strokeWidth={B.crestWidth * 2.2 * k} strokeLinecap="round" strokeLinejoin="round" />
+
+      {/* One intake per unit, along the plant wall behind the nets. */}
+      {B2.units.map((x) => (
+        <rect key={x} x={px(x + I.x0)} y={py(B2.wallZ)} width={(I.x1 - I.x0) * k} height={7} fill={INK} fillOpacity={0.85} />
       ))}
 
       {/* Flow down the channel. */}
       {[-40, 0, 40].map((x) => (
         <line key={x} x1={px(x)} y1={py(C.mouthZ - 8)} x2={px(x)} y2={py(C.mouthZ - 60)} stroke={CYAN} strokeWidth={1.4} markerEnd="url(#plan-arrow)" />
       ))}
-      {[-48, 0, 48].map((x) => (
-        <line key={x} x1={px(x)} y1={py(26)} x2={px(x)} y2={py(-6)} stroke={CYAN} strokeWidth={1.4} markerEnd="url(#plan-arrow)" />
+      {[-80, -20].map((z) => (
+        <line key={z} x1={px(90)} y1={py(z)} x2={px(190)} y2={py(z)} stroke={CYAN} strokeWidth={1.4} markerEnd="url(#plan-arrow)" />
       ))}
 
       {/* Nets. */}
@@ -98,19 +95,19 @@ export function PlanSchematic() {
         Tide outside, turning about four times a day
       </text>
 
-      <Label x={px(crest(-20))} y={py(I.mouthZ) + 4} tx={px(-300)} ty={py(30)} anchor="end">
-        All four intakes, behind the nets
+      <Label x={px(B2.units[1])} y={py(B2.wallZ) + 7} tx={px(B2.units[2])} ty={H - 14} anchor="middle">
+        All four intakes, along the plant wall, behind the nets
       </Label>
       <Label x={px(NETS[0].ax + 40 * NETS[0].tx)} y={py(NETS[0].az + 40 * NETS[0].tz)} tx={px(-300)} ty={py(470)} color={AMBER} anchor="end">
-        Net A, 20° across the channel
+        Net A at 20°
       </Label>
       <Label x={px(NETS[1].ax + 90 * NETS[1].tx)} y={py(NETS[1].az + 90 * NETS[1].tz)} tx={px(-300)} ty={py(330)} color={AMBER} anchor="end">
         Net B, 60 m behind
       </Label>
-      <Label x={px(84)} y={py(76)} tx={px(320)} ty={py(-30)} color={TEAL}>
+      <Label x={px(84)} y={py(76)} tx={px(250)} ty={py(330)} color={TEAL}>
         Collector and screw lifts
       </Label>
-      <Label x={px(620)} y={py(150)} tx={px(760)} ty={py(30)} color={TEAL}>
+      <Label x={px(1200)} y={py(206)} tx={px(1280)} ty={py(70)} color={TEAL}>
         1 m line over the breakwater, 2.2 km, 24 min
       </Label>
       <Label x={px(R.x)} y={py(R.z)} tx={px(R.x - 120)} ty={py(R.z + 180)} color={TEAL} anchor="end">

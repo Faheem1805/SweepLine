@@ -15,12 +15,12 @@ export class Seabed {
   constructor() {
     this.group.name = 'seabed';
     const W = 5200;
-    const D = 2200;
+    const D = 2360;
     const segX = 640;
-    const segZ = 300;
+    const segZ = 322;
     const geo = new THREE.PlaneGeometry(W, D, segX, segZ);
     geo.rotateX(-Math.PI / 2);
-    geo.translate(500, 0, 1040);
+    geo.translate(500, 0, 1000);
     const pos = geo.attributes.position as THREE.BufferAttribute;
     const colors = new Float32Array(pos.count * 3);
     for (let i = 0; i < pos.count; i++) {
@@ -78,8 +78,10 @@ export class Seabed {
     for (let i = 0; i < count; i++) {
       // Clusters near the revetment toe and a few scattered outcrops.
       const cluster = rng.next() < 0.7;
-      const x = rng.range(-1100, 1100);
+      let x = rng.range(-1100, 1100);
       const z = cluster ? SITE.shore.toeZ + rng.range(0, 30) : rng.range(-30, 1000);
+      // The shore clusters belong to the natural shore, not the dredged basin.
+      if (cluster && x > -140 && x < SITE.basin.endX + 40) x = -140 - rng.range(0, 900);
       const sc = cluster ? rng.range(0.7, 2.2) : rng.range(0.5, 1.8);
       p.set(x, -seabedDepth(x, z) + sc * 0.25, z);
       e.set(rng.next() * 3, rng.next() * 3, rng.next() * 3);

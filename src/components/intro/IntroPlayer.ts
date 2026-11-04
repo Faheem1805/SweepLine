@@ -506,7 +506,7 @@ export class IntroPlayer {
     o('intake-label', st.intakeLabel);
     if (st.intakeLabel > 0) {
       // Beside the intake's seaward corner (upstream side, where the bloom arrives).
-      const [ix, iy] = apply(this.mSite, SITE.intake.x0 - 8, SITE.intake.mouthZ + 3);
+      const [ix, iy] = apply(this.mSite, SITE.basin.units[0] - 68, SITE.basin.wallZ + 3);
       const il = this.els['intake-label'] as HTMLElement;
       il.style.transform = `translate3d(${ix.toFixed(1)}px, ${iy.toFixed(1)}px, 0)`;
       il.style.color = mixRgb(AMBER, TEAL, st.intakeSafe);
@@ -550,7 +550,7 @@ export class IntroPlayer {
     o('attrib', st.map);
     if (st.map > 0) this.updateScale(cam);
 
-    const stage = t < 1.15 ? 'United Arab Emirates' : t < 2.5 ? 'Abu Dhabi, western coast' : t < 3.2 ? 'Al Dhannah coast' : t < T.fadeStart ? 'SweepLine reference site — schematic coastal intake (engineering simulation)' : 'Entering the live digital twin';
+    const stage = t < 1.15 ? 'United Arab Emirates' : t < 2.5 ? 'Abu Dhabi, western coast' : t < 3.2 ? 'Gulf coast' : t < T.fadeStart ? 'SweepLine reference site — schematic coastal intake (engineering simulation)' : 'Entering the live digital twin';
     if (stage !== this.lastStatus) {
       this.lastStatus = stage;
       (this.els.status as HTMLElement).textContent = stage;

@@ -1,3 +1,4 @@
+import { useApp } from '../app/store';
 import { Inspector } from '../components/panels/Inspector';
 import { EventLogMenu, LiveHeadline, MarginsCard, PipelineStrip, ProblemRail, WhatIfMenu } from '../components/panels/LivePanels';
 import { CompareOverlay, FlowLegend, TideCard, UnderwaterHud, ViewportToolbar } from '../components/viewport/Hud';
@@ -9,6 +10,7 @@ import { ViewportSlot } from '../components/viewport/ViewportSlot';
  * about, each one a button that runs it.
  */
 export function LiveSimulation() {
+  const compare = useApp((s) => s.ui.compare);
   return (
     <div className="flex min-w-0 flex-1 p-3">
       <ViewportSlot className="min-h-[360px] flex-1 rounded-[16px] border border-line">
@@ -35,7 +37,7 @@ export function LiveSimulation() {
               <EventLogMenu />
               <WhatIfMenu />
             </div>
-            <PipelineStrip />
+            {!compare && <PipelineStrip />}
           </div>
         </div>
       </ViewportSlot>
