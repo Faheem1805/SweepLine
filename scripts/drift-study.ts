@@ -31,6 +31,9 @@ const POLICIES: ReleasePolicy[] = [
   { id: 'downtide-1000', label: 'Valve to the down-tide side, 1 km along, 300 m out', point: (u) => ({ x: xc + downTide(u) * 1000, z: 300 }) },
   { id: 'downtide-2000', label: 'Valve to the down-tide side, 2 km along, 300 m out (two lines)', point: (u) => ({ x: xc + downTide(u) * 2000, z: 300 }) },
   { id: 'design', label: `Design: one line down-drift (WSW), ${R.along / 1000} km along, ${R.offshore} m out`, point: () => ({ x: xc + R.along, z: R.offshore }) },
+  { id: 'downdrift-750', label: 'Down-drift (WSW) only, 750 m along, 300 m out', point: () => ({ x: xc + 750, z: 300 }) },
+  { id: 'downdrift-1000', label: 'Down-drift (WSW) only, 1 km along, 300 m out', point: () => ({ x: xc + 1000, z: 300 }) },
+  { id: 'downdrift-1500', label: 'Down-drift (WSW) only, 1.5 km along, 300 m out', point: () => ({ x: xc + 1500, z: 300 }) },
   { id: 'downdrift-3000', label: 'Down-drift (WSW) only, 3 km along, 300 m out', point: () => ({ x: xc + 3000, z: 300 }) },
   { id: 'updrift-2000', label: 'Up-drift (ENE) only, 2 km along, 300 m out', point: () => ({ x: xc - 2000, z: 300 }) },
   {
