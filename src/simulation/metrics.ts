@@ -1,107 +1,76 @@
 import { ASSUMPTIONS } from '../config/assumptions';
 import { S_TRANSFERRED } from './Agent';
+import type { ScreenStatus } from './screens';
 import type { Balance, SimulationEngine } from './SimulationEngine';
 import type { EngineKind } from './types';
 
 export type ScreenLoad = 'LOW' | 'MEDIUM' | 'HIGH';
-export type LoadLabel = 'NORMAL' | 'ELEVATED' | 'HIGH' | 'OVERLOAD' | 'INACTIVE';
 
-/**
- * Metrics derived from simulation state. All values are simulation estimates.
- * Percentages use resolved outcomes only (agents still in progress are excluded),
- * and are null until a minimum sample has resolved.
- */
+/** Per-world metrics in tonnes: everything an operator or a judge reads comes from here. */
 export interface EngineMetrics {
   kind: EngineKind;
   time: number;
   active: number;
-  spawned: number;
-  /** Agents that reached the intake screens (cumulative). */
-  intakeContacts: number;
-  /** Intake contacts / all resolved fates (contact, diverted, passed). */
-  intakeContactPct: number | null;
-  intakeRatePerMin: number;
+  /** Biomass that came into the channel (t). */
+  enteredT: number;
+  /** Biomass that reached the screens (t), and the rate now (t/h). */
+  screensT: number;
+  screenTph: number;
   screenLoad: ScreenLoad;
-  resolved: number;
-  encountered: number;
-  diverted: number;
-  /** Diverted / resolved encounters. */
-  diversionEfficiency: number | null;
-  underSkirt: number;
-  underSkirtPct: number | null;
-  overtopped: number;
-  reefReleased: number;
-  /** Agents currently guided along the curtain (curtain occupancy). */
-  guided: number;
-  avgContactTime: number | null;
-  throatQueue: number;
-  throatOccupancy: number;
-  transferred: number;
-  inTransit: number;
-  released: number;
-  transferUtilisation: number | null;
-  transferRatePerMin: number;
-  transferFlowM3h: number;
-  curtainLoad: number;
-  curtainLoadLabel: LoadLabel;
+  screenBacklogT: number;
+  screenStatus: ScreenStatus;
+  deratedAt: number | null;
+  trippedAt: number | null;
+  /** Share of the biomass that came in and reached the screens. */
+  intakeContactPct: number | null;
+  /** On the nets, by net (t). */
+  onNetT: [number, number];
+  /** In the pockets (t), in the release line (t), released alive (t). */
+  pocketT: number;
+  inPipeT: number;
+  collectedT: number;
+  releasedT: number;
+  /** Past each net without being collected there (t). */
+  leakedT: [number, number];
+  /** Being collected now (t/h). */
+  collectTph: number;
   /** Mass balance: every jellyfish that entered is accounted for. */
   balance: Balance;
 }
 
-export function screenLoadFor(ratePerMin: number, budget: number): ScreenLoad {
-  const r = ratePerMin / Math.max(budget / 1000, 0.05);
-  if (r >= ASSUMPTIONS.metrics.screenLoadHigh) return 'HIGH';
-  if (r >= ASSUMPTIONS.metrics.screenLoadMedium) return 'MEDIUM';
+export function screenLoadFor(tph: number): ScreenLoad {
+  if (tph >= ASSUMPTIONS.metrics.screenLoadHigh) return 'HIGH';
+  if (tph >= ASSUMPTIONS.metrics.screenLoadMedium) return 'MEDIUM';
   return 'LOW';
-}
-
-export function loadLabel(load: number, active: boolean): LoadLabel {
-  if (!active) return 'INACTIVE';
-  if (load >= 1) return 'OVERLOAD';
-  if (load >= 0.8) return 'HIGH';
-  if (load >= 0.6) return 'ELEVATED';
-  return 'NORMAL';
 }
 
 export function computeEngineMetrics(e: SimulationEngine): EngineMetrics {
   const c = e.counters;
-  const min = ASSUMPTIONS.metrics.minSample;
-  const resolved = c.intakeContacts + c.diverted + c.exited;
-  const encResolved = c.diverted + c.underSkirt + c.overtopped + c.reefReleased;
+  const kg = e.kgPerAgent / 1000;
   const tr = e.transfer;
-  const capRate = tr ? tr.capacityRate() : 0;
-  const rate = e.intakeRatePerMin();
-  const curtainActive = !!e.curtain && e.curtain.activeCount > 0;
+  const entered = c.entered;
+  const min = ASSUMPTIONS.metrics.minSample;
+  const scr = e.screens;
   return {
     kind: e.kind,
     time: e.time,
     active: e.pool.active,
-    spawned: c.spawned,
-    intakeContacts: c.intakeContacts,
-    intakeContactPct: resolved >= min ? c.intakeContacts / resolved : null,
-    intakeRatePerMin: rate,
-    screenLoad: screenLoadFor(rate, e.params.agentBudget),
-    resolved,
-    encountered: c.encountered,
-    diverted: c.diverted,
-    diversionEfficiency: encResolved >= min ? c.diverted / encResolved : null,
-    underSkirt: c.underSkirt,
-    underSkirtPct: encResolved >= min ? c.underSkirt / encResolved : null,
-    overtopped: c.overtopped,
-    reefReleased: c.reefReleased,
-    guided: e.guidedCount + e.backedUpCount,
-    avgContactTime: c.contactTimeN > 0 ? c.contactTimeSum / c.contactTimeN : null,
-    throatQueue: tr ? tr.queueLength : 0,
-    // The fuller of the two bellmouths (Twin-Line).
-    throatOccupancy: tr ? Math.max(tr.queues[0].length, tr.queues[1].length) / e.holdCapacity : 0,
-    transferred: c.transferred,
-    inTransit: tr ? e.countState(S_TRANSFERRED) : 0,
-    released: c.released,
-    transferUtilisation: tr && tr.throatOpen ? (capRate > 0 ? Math.min(1.5, tr.processedEMA / capRate) : 1) : null,
-    transferRatePerMin: tr ? tr.processedEMA * 60 : 0,
-    transferFlowM3h: tr ? tr.flowM3h() : 0,
-    curtainLoad: e.curtainLoad,
-    curtainLoadLabel: loadLabel(e.curtainLoad, curtainActive),
+    enteredT: entered * kg,
+    screensT: scr.totalT,
+    screenTph: scr.arrivalTph,
+    screenLoad: screenLoadFor(scr.arrivalTph),
+    screenBacklogT: scr.backlog,
+    screenStatus: scr.status,
+    deratedAt: scr.deratedAt,
+    trippedAt: scr.trippedAt,
+    intakeContactPct: entered >= min ? c.intakeContacts / entered : null,
+    onNetT: [e.onNet[0] * kg, e.onNet[1] * kg],
+    pocketT: tr ? tr.queueLength * kg : 0,
+    inPipeT: tr ? e.countState(S_TRANSFERRED) * kg : 0,
+    collectedT: c.diverted * kg,
+    releasedT: c.released * kg,
+    leakedT: [c.leaked[0] * kg, c.leaked[1] * kg],
+    collectTph: e.collectEMA * kg * 3600,
     balance: e.balance(),
   };
 }

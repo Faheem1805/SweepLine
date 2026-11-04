@@ -1,27 +1,18 @@
+import { ASSUMPTIONS } from './assumptions';
+
 /**
- * Assumed operating envelope for SweepLine V1.
- *
- * These thresholds are DESIGN ASSUMPTIONS pending flume calibration and coastal
- * pilot data. "hard" limits trigger automatic SafeOpen when exceeded during
- * operation (after a short dwell) and block deployment. "advisory" limits are
- * reported with a recommended action but do not force SafeOpen.
+ * What the operator watches, and where each limit comes from. The net is passive, so none of these
+ * shuts anything down: they say how much margin is left and when to act.
  */
 export const OPERATING_ENVELOPE = {
-  currentSpeed: { label: 'Current speed', unit: 'm/s', near: 0.48, max: 0.6, kind: 'hard' as const },
-  waveHeight: { label: 'Wave height (Hs)', unit: 'm', near: 1.2, max: 1.5, kind: 'hard' as const },
-  attackAngle: { label: 'Current–curtain angle', unit: '°', min: 10, max: 30, nearMargin: 2, kind: 'hard' as const },
-  bloomDepth: {
-    label: 'Bloom P90 depth',
-    unit: 'm',
-    /** P90 deeper than the deepest available skirt: SweepLine cannot intercept the bloom. */
-    absoluteMax: 4.0,
-    kind: 'advisory' as const,
-  },
-  seabedClearance: { label: 'Skirt–seabed clearance', unit: 'm', min: 1.0, kind: 'hard' as const },
-  curtainLoad: { label: 'Curtain load', unit: '%', near: 80, max: 100, kind: 'hard' as const },
-  transferUtilisation: { label: 'Transfer utilisation', unit: '%', near: 85, max: 100, kind: 'hard' as const },
-  throatOccupancy: { label: 'Throat occupancy', unit: '%', near: 60, max: 90, kind: 'hard' as const },
-  transferPath: { label: 'Transfer path', unit: '', kind: 'hard' as const },
+  /** Fish-screen practice (NMFS): through-screen speed at most 0.12 m/s. */
+  approach: { label: 'Through-net speed', unit: 'm/s', near: 0.1, max: ASSUMPTIONS.screenCriteria.approachMax },
+  /** Sweep must beat the through-net speed, or animals stop on the mesh. */
+  sweep: { label: 'Sweep ÷ through-net', unit: '×', min: 1, near: 1.5 },
+  /** Head across a net: the float line dips at `relief`. Assumption, to be set with the plant. */
+  head: { label: 'Head across net', unit: 'm', near: ASSUMPTIONS.net.reliefHead * 0.6, relief: ASSUMPTIONS.net.reliefHead, design: ASSUMPTIONS.net.designHead },
+  /** Share of the pockets' holding capacity in use. */
+  pocket: { label: 'Collector pockets', unit: '%', near: 60, max: 100 },
+  /** Wave height at the net line, after the breakwaters. */
+  wave: { label: 'Waves at the net', unit: 'm', near: 0.5, max: 0.8 },
 } as const;
-
-export type EnvelopeKey = keyof typeof OPERATING_ENVELOPE;

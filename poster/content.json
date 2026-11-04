@@ -1,0 +1,40 @@
+{
+  "team": "SweepLine",
+  "tagline": "Don’t stop the bloom. Give it another path.",
+  "stand": "Stand 54",
+  "track": "ENEC track",
+  "students": ["STUDENT NAMES GO HERE"],
+  "university": "Al Ain University",
+  "problem": {
+    "question": "How might we advance the sustainable management of seasonal jellyfish blooms in coastal environments?",
+    "context": "Seasonal jellyfish blooms can gather around coastal infrastructure. Offshore detection already gives early warning. The challenge starts after that warning: manage large, continuous swarms with less manual effort, less specialised equipment and less field support, with no harm to marine life and no redesign of plant systems."
+  },
+  "solution": "SweepLine turns a plant’s own cooling flow into a jellyfish conveyor. Two full-depth nets stand across the intake channel at a shallow 20° angle. Water passes through the mesh. Jellyfish cannot, so the flow sweeps them sideways along the net into a collection pocket at the channel wall. A gentle low-lift pump feeds a release line that returns them to the sea 2 km down-drift, away from the intake. The early warning simply starts the pumps: no boats or crews on the water during a bloom. Because the plant’s pumps set the flow inside the channel, the net keeps sweeping at slack water, through the turn of the tide, and at night. The plant’s screens and systems stay exactly as they are.",
+  "technical": "A plant drawing 400 m³/s through a channel 140 m wide and 9 m deep moves water at about 0.32 m/s. A net at 20° splits that flow: 0.11 m/s through the mesh, inside the 0.12 m/s limit used for fish screens, and 0.30 m/s along its face, so animals slide rather than pin. Each panel is modelled as a parallel hydraulic path: a fouled or covered panel passes less, its neighbours pass more, and one shared head difference gives the load. At 0.12 m of head the float line dips, so the net can never act as a dam. We test this in a live 3D digital twin: an agent-based simulation of the same bloom with and without SweepLine, using recorded currents and waves.",
+  "features": [
+    ["Works at slack water", "The plant sets the flow, so the tide changing outside changes nothing inside the channel."],
+    ["Nothing passes underneath", "Nets run from float line to seabed, so deep-swimming species meet them too."],
+    ["Two layers", "A second net 60 m behind catches whatever gets past the first."],
+    ["Never a dam", "At a set head the float line dips and water spills over, so cooling flow always comes first."],
+    ["Passive if power fails", "No moving parts in the water. If the pumps stop, the net keeps holding the bloom."],
+    ["Sheltered from storms", "The nets stand inside the breakwaters, where most wave energy never reaches."],
+    ["Works in the dark", "Sonar and load cells replace cameras in poor visibility."],
+    ["Fouling managed", "Panels are swapped for clean ones every four weeks, and load cells show when one is due."],
+    ["Species-ready", "Mesh sized for Blue Blubber, moon jellyfish and Crambionella."],
+    ["Water only", "No air, no blades, no chemicals in the animals’ path."]
+  ],
+  "future": [
+    "Flume test with live jellyfish: guidance, snagging and damage at 10–25° and 0.05–0.15 m/s.",
+    "96-hour survival test through the pump and a pipe loop, against paired controls.",
+    "Four-to-six-week panel test at sea to measure real Gulf fouling.",
+    "Current and echo-sounder surveys to replace assumed flows, depths and bloom densities.",
+    "One-season pilot with a 100 m net section at a real channel.",
+    "Size and cost the final design with the plant’s real layout and a marine contractor, then calibrate the twin so it can forecast net load from each bloom report."
+  ],
+  "builtSimulatedNext": {
+    "built": "Live 3D digital twin and agent-based model. Recorded current and wave data. Hydraulic net model. Mass-balance check on every run.",
+    "simulated": "Jellyfish behaviour at the net: sliding, snagging and leakage are assumptions. All performance figures here are model estimates, not field results.",
+    "next": "Flume, survival and fouling tests, then a one-season pilot."
+  },
+  "footnote": "Reference site is schematic and does not represent any real plant. Simulation estimates, not field-validated."
+}

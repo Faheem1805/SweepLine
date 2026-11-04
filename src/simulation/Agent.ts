@@ -9,7 +9,8 @@
 export const S_INACTIVE = 0;
 export const S_APPROACHING = 1;
 export const S_GUIDED = 2;
-export const S_UNDER_SKIRT = 3;
+/** Slipped past a net (through a tear, over a relief section, or through a joint). */
+export const S_PAST_NET = 3;
 export const S_TRANSFER_QUEUE = 4;
 export const S_TRANSFERRED = 5;
 export const S_RELEASED = 6;
@@ -20,7 +21,7 @@ export const STATE_NAMES = [
   'INACTIVE',
   'APPROACHING',
   'GUIDED',
-  'UNDER_SKIRT',
+  'PAST_NET',
   'TRANSFER_QUEUE',
   'TRANSFERRED',
   'RELEASED',
@@ -32,13 +33,15 @@ export type AgentStateName = (typeof STATE_NAMES)[number];
 
 /** Flag bits. */
 export const F_ENCOUNTERED = 1;
-export const F_UNDER_COUNTED = 2;
-export const F_OVERTOPPED = 4;
+/** Slipped past net A, and past net B. */
+export const F_LEAKED = 2;
+export const F_LEAKED_B = 64;
+export const F_SNAGGED = 4;
 export const F_DIVERTED = 8;
-export const F_REEF_RELEASED = 16;
+/** Has come into the channel. */
+export const F_ENTERED = 16;
 export const F_RESOLVED = 32;
-export const F_OVERTOPPING = 64;
-/** Arrived from the +x end of the site (on a current toward −x); passes the intake toward −x. */
+/** Arrived from the +x end of the site (on a current toward −x); passes the mouth toward −x. */
 export const F_FROM_EAST = 128;
 
 export class AgentPool {

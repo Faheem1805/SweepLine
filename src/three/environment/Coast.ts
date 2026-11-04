@@ -105,7 +105,7 @@ export function buildCoast(): CoastParts {
   });
   const rockGeos = [makeRockGeometry(1, 1), makeRockGeometry(2, 1), makeRockGeometry(3, 1)];
   const rng = new SeededRandom(1234);
-  const perVariant = 1500;
+  const perVariant = 2600;
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const e = new THREE.Euler();
@@ -116,7 +116,7 @@ export function buildCoast(): CoastParts {
     const mesh = new THREE.InstancedMesh(geo, rockMat, perVariant);
     let n = 0;
     while (n < perVariant) {
-      const x = rng.range(-520, 520);
+      const x = rng.range(-1100, 1100);
       if (x > ix0 - 1 && x < ix1 + 1) {
         rng.next();
         continue;
@@ -142,6 +142,7 @@ export function buildCoast(): CoastParts {
     breakwater.add(mesh);
   });
   group.add(breakwater);
+  group.add(buildBreakwaters(mats, rockMat, rockGeos));
 
   // ------------------------------------------------------------ intake structure
   const intake = buildIntake(mats);
@@ -151,6 +152,130 @@ export function buildCoast(): CoastParts {
   group.add(buildPlantBackdrop(mats));
 
   return { group, intake, breakwater };
+}
+
+/**
+ * The two rock breakwaters that form the intake channel: a core mound under armour stone, a concrete
+ * crest road with lamp posts, and a harbour light on each head.
+ */
+function buildBreakwaters(mats: Record<string, THREE.Material>, rockMat: THREE.Material, rockGeos: THREE.BufferGeometry[]): THREE.Group {
+  const g = new THREE.Group();
+  g.name = 'breakwaters';
+  const C = SITE.channel;
+  const B = SITE.breakwater;
+  const hw = C.halfWidth;
+  const crestY = B.crestY;
+  const crestIn = hw + (crestY + C.depth) * B.slope * 0.72;
+  const crestOut = crestIn + B.crestWidth;
+  const toe = B.outerToe;
+  const z0 = SITE.shore.crestZ;
+  const z1 = C.mouthZ;
+  const bottom = -C.depth - 1.5;
+  const headX = (crestIn + crestOut) / 2;
+  const headTop = B.crestWidth / 2;
+  const headBase = (toe - hw) / 2;
+  const mb = new MergeBuilder();
+  for (const side of [-1, 1]) {
+    // Core mound: two armour slopes and the crest, extruded along the channel.
+    const prof: Array<[number, number]> = [
+      [hw - 2, bottom],
+      [crestIn, crestY],
+      [crestOut, crestY],
+      [toe + 3, bottom],
+    ];
+    for (let i = 0; i < prof.length - 1; i++) {
+      const [a, ay] = prof[i];
+      const [b, by] = prof[i + 1];
+      const pos = [side * a, ay, z0, side * b, by, z0, side * b, by, z1, side * a, ay, z0, side * b, by, z1, side * a, ay, z1];
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      geo.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1], 2));
+      geo.computeVertexNormals();
+      if (side > 0) {
+        // Flip the winding so the mound faces outward on both sides.
+        const flip = geo.attributes.position.array as Float32Array;
+        for (let k = 0; k < 18; k += 9) {
+          for (let c = 0; c < 3; c++) {
+            const t = flip[k + 3 + c];
+            flip[k + 3 + c] = flip[k + 6 + c];
+            flip[k + 6 + c] = t;
+          }
+        }
+        geo.computeVertexNormals();
+      }
+      mb.add('rockCore', geo);
+    }
+    // Rounded head.
+    const head = new THREE.CylinderGeometry(headTop, headBase + 3, crestY - bottom, 40, 1, false);
+    head.scale(1, 1, B.headRadius / headBase);
+    head.translate(side * ((hw + toe) / 2), (crestY + bottom) / 2, z1);
+    mb.add('rockCore', head);
+    // Crest road.
+    mb.box('concrete', side > 0 ? crestIn + 0.8 : -crestOut + 0.8, side > 0 ? crestOut - 0.8 : -crestIn - 0.8, crestY - 0.1, crestY + 0.22, z0, z1 + 4);
+    // Lamp posts along the road.
+    for (let z = 0; z <= z1; z += 60) {
+      const x = side * (crestIn + 1.6);
+      mb.box('steel', x - 0.1, x + 0.1, crestY, crestY + 7, z - 0.1, z + 0.1);
+      mb.box('steel', x - 0.1, x + 0.1 + (side > 0 ? 1.4 : -1.4) * 0 , crestY + 6.9, crestY + 7.05, z - 0.8, z + 0.8);
+    }
+    // Harbour light on the head.
+    const lx = side * ((hw + toe) / 2);
+    mb.add('concrete', new THREE.CylinderGeometry(1.6, 2.2, 9, 20).translate(lx, crestY + 4.5, z1));
+    mb.add(side > 0 ? 'lightGreen' : 'lightRed', new THREE.CylinderGeometry(0.9, 0.9, 1.6, 16).translate(lx, crestY + 9.8, z1));
+    mb.add('steel', new THREE.CylinderGeometry(1.2, 1.0, 0.5, 16).translate(lx, crestY + 10.9, z1));
+  }
+  mats.lightGreen ??= mediumMaterial({ color: 0x1f9e6a, emissive: 0x25d58c, emissiveIntensity: 1.6, roughness: 0.4 }, false);
+  mats.lightRed ??= mediumMaterial({ color: 0xa8332b, emissive: 0xff4a3a, emissiveIntensity: 1.6, roughness: 0.4 }, false);
+  mb.build(mats, g, true);
+
+  // Armour stone over both slopes and around the heads.
+  const rng = new SeededRandom(9191);
+  const perVariant = 6500;
+  const m = new THREE.Matrix4();
+  const q = new THREE.Quaternion();
+  const e = new THREE.Euler();
+  const p = new THREE.Vector3();
+  const sc3 = new THREE.Vector3();
+  const col = new THREE.Color();
+  rockGeos.forEach((geo, vi) => {
+    const mesh = new THREE.InstancedMesh(geo, rockMat, perVariant);
+    for (let n = 0; n < perVariant; n++) {
+      const side = rng.next() < 0.5 ? -1 : 1;
+      const onHead = rng.next() < 0.07;
+      let x: number;
+      let y: number;
+      let z: number;
+      const t = Math.pow(rng.next(), 0.8);
+      if (onHead) {
+        const a = rng.next() * Math.PI;
+        const r = headTop + (1 - t) * 0 + t * headBase;
+        x = side * ((hw + toe) / 2) + Math.cos(a) * r;
+        z = z1 + Math.sin(a) * r * (B.headRadius / headBase);
+        y = crestY - t * (crestY + 3);
+      } else {
+        z = rng.range(SITE.shore.toeZ, z1);
+        const inner = rng.next() < 0.45;
+        const a = inner ? THREE.MathUtils.lerp(crestIn, hw, t) : THREE.MathUtils.lerp(crestOut, toe, t);
+        x = side * a;
+        y = crestY - t * (crestY + 3);
+      }
+      const sc = rng.range(1.1, 2.3) * (vi === 2 ? 0.85 : 1);
+      p.set(x, y + sc * 0.3, z);
+      e.set(rng.next() * Math.PI, rng.next() * Math.PI, rng.next() * Math.PI);
+      q.setFromEuler(e);
+      sc3.set(sc * rng.range(0.9, 1.3), sc * rng.range(0.7, 1.0), sc * rng.range(0.9, 1.25));
+      m.compose(p, q, sc3);
+      mesh.setMatrixAt(n, m);
+      const shade = rng.range(0.78, 1.08);
+      col.setRGB(shade, shade * rng.range(0.96, 1.0), shade * rng.range(0.9, 0.98));
+      mesh.setColorAt(n, col);
+    }
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.name = `breakwater-armour-${vi}`;
+    g.add(mesh);
+  });
+  return g;
 }
 
 function buildIntake(mats: Record<string, THREE.Material>): THREE.Group {

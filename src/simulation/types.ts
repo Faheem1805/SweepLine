@@ -1,52 +1,36 @@
+import type { SpeciesKey } from '../config/assumptions';
+
 export type EngineKind = 'baseline' | 'sweepline';
 
-/** Pre-engineered anchor configurations (degrees between curtain and nominal current). */
-export type AnchorAngle = 15 | 20 | 25;
-export const ANCHOR_ANGLES: readonly AnchorAngle[] = [15, 20, 25];
-
-/** Pop-up: stowed on the seabed and raised by inflating the float line. Workboat: laid by a vessel. */
-export type DeployMode = 'popup' | 'workboat';
-
-/** Twin-Line guide lines: 0 guides a current toward +x, 1 (its mirror image) a current toward −x. */
-export type LineSide = 0 | 1;
+/** Net A stands upstream, net B catches what gets past it. */
+export type NetIndex = 0 | 1;
 
 export interface SimParams {
   seed: number;
-  /** Simulated agent budget (performance setting; rates scale with it). */
+  /** Simulated agent budget (performance setting; each agent stands for more biomass when it is lower). */
   agentBudget: number;
-  /** Bloom density, 0..1. */
-  bloomDensity: number;
-  /** Bloom mean depth (m). */
+  /** Biomass arriving with the bloom (t/h). */
+  bloomRate: number;
+  species: SpeciesKey;
+  /** Bloom mean depth (m) and its spread; the species' own unless a scenario overrides them. */
   bloomMeanDepth: number;
-  /** Bloom depth standard deviation (m). */
   bloomDepthSD: number;
-  /** Current speed (m/s). */
+  /** Along-shore current outside the channel (m/s) and the direction it flows toward (compass bearing). */
   currentSpeed: number;
-  /** Direction the current flows toward (compass bearing, degrees). */
   currentBearing: number;
-  /** Significant wave height Hs (m). */
+  /** Significant wave height offshore, Hs (m). */
   waveHeight: number;
-  /** Skirt depth setpoint (m). */
-  skirtDepth: number;
-  /** Anchor layout — fixed while the curtain is deployed. */
-  anchorAngle: AnchorAngle;
-  /** Transfer capacity setpoint, 0..1 of design. */
-  transferCapacity: number;
-  /** Whether the optional standby transfer path is installed/armed. */
+  /** Units running (each draws its condenser flow through the channel). */
+  unitsRunning: number;
+  /** Weeks since the panels in the water were swapped for clean ones. */
+  foulingWeeks: number;
+  /** Second net behind the first. */
+  secondNet: boolean;
+  /** Standby collector pump installed and armed. */
   standbyEnabled: boolean;
-  /** Assumed transfer-line length to the safe release zone (m). */
-  releaseDistance: number;
-  /** Deploy automatically once the early warning arrives and the envelope is satisfied. */
-  autoDeploy: boolean;
-  /** Active flow: conveyor and foot water jets built into the curtain. */
-  activeFlow: boolean;
-  /** Jet output, 0..1 of design flow. */
-  jetLevel: number;
-  /** How the curtain is deployed. */
-  deployMode: DeployMode;
-  /** Twin-Line: a second, mirror-image line takes over when the tide turns (off = a single line). */
-  twinLine: boolean;
-  /** Drive the current from the real tidal record at the site instead of the fixed speed and bearing. */
+  /** Night or turbid water: cameras are blind, the sonar and load cells carry on. */
+  night: boolean;
+  /** Drive the outside current from the recorded tide at the site instead of the fixed speed and bearing. */
   tide: boolean;
   /** Hours into the tidal record at which the run starts. */
   tideStart: number;
@@ -57,67 +41,38 @@ export interface SimParams {
 
 export const DEFAULT_PARAMS: SimParams = {
   seed: 240826,
-  agentBudget: 1000,
-  bloomDensity: 0.72,
-  bloomMeanDepth: 1.8,
-  bloomDepthSD: 0.8,
+  agentBudget: 3000,
+  // The upper end of documented intake events, about 200 t in a day at its peak (Shin Hanul 2024) to 25 t/h.
+  bloomRate: 25,
+  species: 'catostylus',
+  bloomMeanDepth: 2.4,
+  bloomDepthSD: 1.4,
   currentSpeed: 0.2,
   currentBearing: 242,
-  waveHeight: 0.8,
-  // Below the bloom's P90 depth with margin: the reference run keeps shore-side leaks to a few (npm run test:demo).
-  skirtDepth: 3.5,
-  anchorAngle: 20,
-  transferCapacity: 0.9,
+  waveHeight: 0.6,
+  unitsRunning: 4,
+  foulingWeeks: 2,
+  secondNet: true,
   standbyEnabled: true,
-  releaseDistance: 500,
-  autoDeploy: true,
-  activeFlow: true,
-  jetLevel: 0.75,
-  deployMode: 'popup',
-  twinLine: true,
+  night: false,
   tide: false,
   tideStart: 0,
   waterTemp: 28.6,
   salinity: 41.2,
 };
 
-export type CurtainMode = 'STOWED' | 'DEPLOYING' | 'DEPLOYED' | 'REEFING' | 'REEFED' | 'UNREEFING' | 'STOWING';
-
 export type ModuleStatus = 'ONLINE' | 'STANDBY' | 'ACTIVATING' | 'FAULT' | 'DISABLED' | 'OFF';
 
-export type FailureKey =
-  | 'transferPrimary'
-  | 'transferStandby'
-  | 'extremeCurrent'
-  | 'deepBloom'
-  | 'highDensity'
-  | 'curtainOverload'
-  | 'highWaves';
+/** Faults and conditions an operator (or a judge) can inject while the twin runs. */
+export type FailureKey = 'pumpPrimary' | 'pumpStandby' | 'panelTear' | 'unitTrip' | 'storm' | 'surge' | 'sonarLoss';
 
-export type SafeOpenPhase =
-  | 'IDLE'
-  | 'INITIATED'
-  | 'UPSTREAM_REEF'
-  | 'CLEARING'
-  | 'PROGRESSIVE_REEF'
-  | 'THROAT_CLEAR'
-  | 'COMPLETE';
-
-export type StatusCode =
-  | 'READY'
-  | 'WARNING'
-  | 'DEPLOYING'
-  | 'NOMINAL'
-  | 'ELEVATED'
-  | 'SAFEOPEN'
-  | 'BASELINE_RESTORED'
-  | 'OUTSIDE_ENVELOPE'
-  | 'STANDBY';
+export type StatusCode = 'READY' | 'WARNING' | 'ARMING' | 'NOMINAL' | 'ELEVATED' | 'RELIEF' | 'OVERLOAD' | 'STANDBY';
 
 export type EventLevel = 'info' | 'ok' | 'warn' | 'alarm';
 
 export interface SimEvent {
   id: number;
+  /** Simulated time of the event (s). */
   t: number;
   level: EventLevel;
   message: string;

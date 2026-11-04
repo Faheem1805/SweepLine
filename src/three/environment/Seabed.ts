@@ -14,13 +14,13 @@ export class Seabed {
 
   constructor() {
     this.group.name = 'seabed';
-    const W = 1500;
-    const D = 900;
-    const segX = 300;
-    const segZ = 180;
+    const W = 5200;
+    const D = 2200;
+    const segX = 640;
+    const segZ = 300;
     const geo = new THREE.PlaneGeometry(W, D, segX, segZ);
     geo.rotateX(-Math.PI / 2);
-    geo.translate(-10, 0, 110);
+    geo.translate(500, 0, 1040);
     const pos = geo.attributes.position as THREE.BufferAttribute;
     const colors = new Float32Array(pos.count * 3);
     for (let i = 0; i < pos.count; i++) {
@@ -67,7 +67,7 @@ export class Seabed {
     const rng = new SeededRandom(4242);
     const geo = makeRockGeometry(3, 1);
     const mat = applyMedium(new THREE.MeshStandardMaterial({ color: 0x8a8274, roughness: 0.95, flatShading: true }), { caustics: true });
-    const count = 260;
+    const count = 900;
     const mesh = new THREE.InstancedMesh(geo, mat, count);
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
@@ -78,9 +78,9 @@ export class Seabed {
     for (let i = 0; i < count; i++) {
       // Clusters near the revetment toe and a few scattered outcrops.
       const cluster = rng.next() < 0.7;
-      const x = rng.range(-320, 300);
-      const z = cluster ? SITE.shore.toeZ + rng.range(0, 14) : rng.range(-30, 180);
-      const sc = cluster ? rng.range(0.5, 1.6) : rng.range(0.3, 1.1);
+      const x = rng.range(-1100, 1100);
+      const z = cluster ? SITE.shore.toeZ + rng.range(0, 30) : rng.range(-30, 1000);
+      const sc = cluster ? rng.range(0.7, 2.2) : rng.range(0.5, 1.8);
       p.set(x, -seabedDepth(x, z) + sc * 0.25, z);
       e.set(rng.next() * 3, rng.next() * 3, rng.next() * 3);
       q.setFromEuler(e);
@@ -115,14 +115,14 @@ export class Seabed {
       },
     );
     const rng = new SeededRandom(777);
-    const count = 4200;
+    const count = 9000;
     const mesh = new THREE.InstancedMesh(blade, mat, count);
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
     const s = new THREE.Vector3();
     const p = new THREE.Vector3();
     const patches: Array<[number, number, number]> = [];
-    for (let i = 0; i < 26; i++) patches.push([rng.range(-280, 260), rng.range(-44, 120), rng.range(5, 14)]);
+    for (let i = 0; i < 70; i++) patches.push([rng.range(-900, 900), rng.range(-40, 900), rng.range(8, 26)]);
     let n = 0;
     for (let i = 0; i < count; i++) {
       const [cx, cz, r] = patches[i % patches.length];

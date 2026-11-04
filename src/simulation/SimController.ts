@@ -1,41 +1,22 @@
-import { ASSUMPTIONS } from '../config/assumptions';
-import { OPERATING_ENVELOPE } from '../config/operatingEnvelope';
-import { S_APPROACHING, S_GUIDED, S_TRANSFER_QUEUE } from './Agent';
+import { ASSUMPTIONS, SPECIES } from '../config/assumptions';
+import { OPERATING_ENVELOPE as E } from '../config/operatingEnvelope';
 import { computeEngineMetrics, type EngineMetrics } from './metrics';
-import { bloomP90 } from './curtain';
-import { evaluateEnvelope, SafeOpenController, type EnvelopeResult } from './safety';
-import { compassLabel } from '../config/site';
 import { getScenario, type Scenario, type ScenarioStep } from './scenarios';
 import { SimulationEngine, type AgentInfo } from './SimulationEngine';
 import { hoursToNextTurn, tideCurrent, tideCurrentVector, tideDate } from './tide';
+import { TRANSFER_TPH } from './transfer';
 import {
   DEFAULT_PARAMS,
-  type DeployMode,
-  type AnchorAngle,
-  type CurtainMode,
   type EngineKind,
   type EventLevel,
   type FailureKey,
-  type LineSide,
   type ModuleStatus,
-  type SafeOpenPhase,
   type SimEvent,
   type SimParams,
   type StatusCode,
 } from './types';
 
-/** Twin-Line names: line A guides a current toward +x, line B (its mirror) one toward −x. */
-export const LINE_NAMES = ['Line A', 'Line B'] as const;
-
-/** Time-lapse used to carry a tide scenario through slack water, and the speed to watch the action at. */
-const TIDE_TIMELAPSE = 60;
-const TIDE_WATCH = 5;
-const TIDE_SWEEP = 10;
-
-/** Tide-scenario pacing: through slack water to the handover, the pop-up, then to the bloom's arrival at the new line. */
-type TidePace = 'off' | 'toTurn' | 'popUp' | 'toArrival' | 'done';
-
-export type StageKey = 'bloom' | 'warning' | 'deploy' | 'sweep' | 'transfer' | 'release' | 'recovery';
+export type StageKey = 'install' | 'warning' | 'sonar' | 'net' | 'collect' | 'release';
 
 export interface TimelineStage {
   key: StageKey;
@@ -50,26 +31,44 @@ export interface SystemStatus {
   tone: 'ok' | 'info' | 'warn' | 'alarm';
 }
 
+export interface Constraint {
+  key: string;
+  label: string;
+  value: string;
+  limit: string;
+  status: 'ok' | 'near' | 'out';
+}
+
 export interface HistorySample {
   t: number;
-  bContacts: number;
-  sContacts: number;
-  bRate: number;
-  sRate: number;
-  bPct: number | null;
-  sPct: number | null;
-  diverted: number;
-  underSkirt: number;
-  underPct: number | null;
-  efficiency: number | null;
-  utilisation: number | null;
-  load: number;
-  occupancy: number;
-  contactTime: number | null;
-  guided: number;
-  transferred: number;
+  /** Biomass on the screens, without and with SweepLine (t). */
+  bScreens: number;
+  sScreens: number;
+  bTph: number;
+  sTph: number;
+  onNet: number;
+  collected: number;
   released: number;
-  flow: number;
+  head: number;
+}
+
+export interface NetSnapshot {
+  name: string;
+  length: number;
+  panels: number;
+  inPlace: number;
+  active: boolean;
+  head: number;
+  loadFraction: number;
+  panelLoadKN: number;
+  relief: number;
+  torn: number;
+  onNetT: number;
+  through: number;
+  sweep: number;
+  foulPct: number;
+  /** Biomass it could still take before the relief head (t). */
+  marginT: number;
 }
 
 export interface SimSnapshot {
@@ -84,28 +83,7 @@ export interface SimSnapshot {
   baseline: EngineMetrics;
   sweepline: EngineMetrics;
   status: SystemStatus;
-  curtain: {
-    mode: CurtainMode;
-    deployedPct: number;
-    reefedPct: number;
-    angle: number;
-    length: number;
-    skirtActual: number;
-    skirtTarget: number;
-    attackAngle: number;
-    liftAngle: number;
-    normalVelocity: number;
-    activeFraction: number;
-    clearanceMax: number;
-    /** Delivered jet output 0..1 and what it means physically (first estimates). */
-    jetOutput: number;
-    jetConveyor: number;
-    jetFlowM3s: number;
-    jetPowerKW: number;
-    /** Method of the current (or last) deployment and the time left before its front moves. */
-    deployMode: DeployMode;
-    deployDelay: number;
-  };
+  nets: NetSnapshot[];
   transfer: {
     primary: ModuleStatus;
     standby: ModuleStatus;
@@ -113,41 +91,24 @@ export interface SimSnapshot {
     path: string;
     availability: number;
     flowM3h: number;
-    capacityPerMin: number;
-    queue: number;
-    holdCapacity: number;
+    capacityTph: number;
+    pocketFill: number;
   };
-  safeOpen: { phase: SafeOpenPhase; reason: string; elapsed: number };
-  envelope: EnvelopeResult;
+  channel: { flow: number; speed: number; waveAtNet: number; captureBand: number };
+  sonar: { on: boolean; inRangeT: number; arrivalTph: number };
+  constraints: Constraint[];
   timeline: TimelineStage[];
   stage: StageKey;
   events: SimEvent[];
   failures: Record<FailureKey, boolean>;
-  bloom: { p50: number; p90: number; active: boolean; arrivalsPerMin: number; warningAt: number | null };
+  bloom: { active: boolean; rate: number; species: string };
   selectedAgent: (AgentInfo & { engine: EngineKind }) | null;
-  underSkirtSeq: number;
-  /** SweepLine Twin-Line: which line is on duty, both lines' state, and the outlet the valve releases to. */
-  twin: {
-    enabled: boolean;
-    duty: LineSide;
-    lines: Array<{ mode: CurtainMode; deployedPct: number }>;
-    /** The previous duty line is still clearing its traffic after a handover. */
-    handover: boolean;
-    outlet: LineSide;
-  };
-  /** The real tidal current, when the run uses it. */
   tide: {
     on: boolean;
-    /** Along-shore current (m/s), positive toward +x. */
     u: number;
-    /** Recorded date and time (UTC ms) the run is at. */
     date: number;
-    /** Hours until the current next reverses, if within the record. */
     turnIn: number | null;
-    /** Along-shore current from 6 h before to 6 h after now, every 15 min (m/s). */
     trace: number[];
-    /** The run is time-lapsing through slack water. */
-    timeLapse: boolean;
   };
 }
 
@@ -161,76 +122,62 @@ type Publisher = (snap: SimSnapshot) => void;
 type LoadingPublisher = (state: LoadingState) => void;
 
 const STAGES: Array<{ key: StageKey; label: string }> = [
-  { key: 'bloom', label: 'Bloom Approach' },
-  { key: 'warning', label: 'Warning Received' },
-  { key: 'deploy', label: 'Deploy SweepLine' },
-  { key: 'sweep', label: 'Sweep' },
-  { key: 'transfer', label: 'Transfer' },
-  { key: 'release', label: 'Release' },
-  { key: 'recovery', label: 'Recovery / Standby' },
+  { key: 'install', label: 'Panels in' },
+  { key: 'warning', label: 'Early warning' },
+  { key: 'sonar', label: 'Sonar contact' },
+  { key: 'net', label: 'On the net' },
+  { key: 'collect', label: 'Collected' },
+  { key: 'release', label: 'Released' },
 ];
 
-const FAILURE_LABELS: Record<FailureKey, string> = {
-  transferPrimary: 'Primary transfer failure',
-  transferStandby: 'Standby transfer failure',
-  extremeCurrent: 'Extreme current',
-  deepBloom: 'Deep bloom',
-  highDensity: 'High bloom density',
-  curtainOverload: 'Curtain overload',
-  highWaves: 'High wave state',
+export const FAILURE_LABELS: Record<FailureKey, string> = {
+  pumpPrimary: 'Duty pump fails',
+  pumpStandby: 'Standby pump fails',
+  panelTear: 'Panel tears out',
+  unitTrip: 'One unit offline',
+  storm: 'Storm, Hs 1.82 m',
+  surge: 'Bloom surge, ×3',
+  sonarLoss: 'Sonar offline',
 };
 
 const noFailures = (): Record<FailureKey, boolean> => ({
-  transferPrimary: false,
-  transferStandby: false,
-  extremeCurrent: false,
-  deepBloom: false,
-  highDensity: false,
-  curtainOverload: false,
-  highWaves: false,
+  pumpPrimary: false,
+  pumpStandby: false,
+  panelTear: false,
+  unitTrip: false,
+  storm: false,
+  surge: false,
+  sonarLoss: false,
 });
 
-/** Yield to the event loop between pre-roll chunks (timers keep running in background windows, unlike rAF). */
+/** The busiest panel of net A, torn out in the stress test. */
+const TEAR_PANEL = 17;
+/** Highest wave recorded at the site, 2022–2025 (m). */
+const STORM_HS = 1.82;
+
 const nextFrame = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-type RequestIdle = (cb: (deadline: { timeRemaining(): number; didTimeout: boolean }) => void, opts?: { timeout?: number }) => number;
-
 /**
- * Wait for idle time between frames and resolve with the budget (ms) it offers, capped at
- * `cap`. Without requestIdleCallback, or when starved past the timeout, fall back to a
- * timer yield and the full cap so the pre-roll always progresses.
- */
-function idleBudget(cap: number): Promise<number> {
-  const ric = (globalThis as { requestIdleCallback?: RequestIdle }).requestIdleCallback;
-  if (!ric) return nextFrame().then(() => cap);
-  return new Promise((resolve) => ric((d) => resolve(d.didTimeout ? cap : Math.min(cap, d.timeRemaining() - 1)), { timeout: 60 }));
-}
-
-/**
- * Runtime controller. Owns the baseline and SweepLine engines (same seed, same
- * bloom), advances them in lock-step, runs the safety logic, records the
- * timeline, event log and metric history, and publishes snapshots to the UI at
- * a few hertz. React never touches per-frame simulation state.
+ * Runtime controller. Owns the baseline and SweepLine engines (same seed, same bloom), advances them
+ * in lock-step, records the timeline, event log and metric history, and publishes snapshots to the
+ * UI at a few hertz. React never touches per-frame simulation state.
  */
 export class SimController {
   params: SimParams = { ...DEFAULT_PARAMS };
   readonly baseline: SimulationEngine;
   readonly sweepline: SimulationEngine;
-  readonly safeOpen = new SafeOpenController();
-  speed = 5;
+  speed: number = ASSUMPTIONS.sequence.runSpeed;
   paused = false;
   ready = false;
-  /** Main-thread budget per pre-roll chunk (ms); lowered while an animation must stay smooth. */
+  /** Main-thread budget per pre-roll chunk (ms). */
   preRollSliceMs = 24;
-  /** Run pre-roll chunks only in idle time between frames (set while an animation must stay smooth). */
-  preRollIdle = false;
   scenario: Scenario | null = null;
   failures = noFailures();
   events: SimEvent[] = [];
   timeline: TimelineStage[] = STAGES.map((s) => ({ ...s, at: null }));
   history: HistorySample[] = [];
   historyVersion = 0;
-  envelope: EnvelopeResult;
+  constraints: Constraint[] = [];
   clockStart = Date.now();
   selection: { engine: EngineKind; agentId: number } | null = null;
 
@@ -239,42 +186,25 @@ export class SimController {
   private acc = 0;
   private lastPublish = 0;
   private eventId = 1;
-  private warningAt: number | null = null;
-  private safetyTimer = 0;
   private historyTimer = 0;
-  private stowCheckTimer = 0;
-  private envOkFor = 0;
-  private deployBlockLogged = false;
-  private dwell: Record<string, number> = {};
-  private transferLossFor = 0;
-  private prevPrimary: ModuleStatus = 'STANDBY';
-  private prevStandby: ModuleStatus = 'STANDBY';
-  private prevCurtainMode: CurtainMode = 'STOWED';
-  private prevOffMode: CurtainMode = 'STOWED';
-  private prevOutlet: LineSide = 0;
+  private safetyTimer = 0;
   private savedParams: Partial<SimParams> = {};
   private script: ScenarioStep[] = [];
   private runStart = 0;
-  private skirtLogTimer: ReturnType<typeof setTimeout> | null = null;
-  private jetLogTimer: ReturnType<typeof setTimeout> | null = null;
-  /** Counts deployments so per-deployment events are logged once each. */
-  private deployCount = 0;
   private runToken = 0;
-  /** Set when the operator stows the curtain: suppresses auto-deployment until they deploy again. */
-  private standDown = false;
-  /** Skirt depth the winches are holding below the operator setpoint for a deep bloom (0 = none). */
-  private adaptiveSkirt = 0;
-  /** How long the current has run against the duty line (s). */
-  private reversedFor = 0;
-  /** Tide-scenario pacing: time-lapse through slack water, real-time-ish for the handover and the new sweep. */
-  private pace: TidePace = 'off';
-  private paceAt = 0;
+  /** The opening: panels going in at a watchable pace, then up to run speed. */
+  private opening = false;
+  private prevRelief = [false, false];
+  private prevPocketFull = false;
+  private prevBaseStatus = 'CLEAR';
+  private prevSweepStatus = 'CLEAR';
+  private prevPrimary: ModuleStatus = 'STANDBY';
+  private prevStandby: ModuleStatus = 'STANDBY';
 
   constructor() {
     this.baseline = new SimulationEngine('baseline', this.params);
     this.sweepline = new SimulationEngine('sweepline', this.params);
-    const m = computeEngineMetrics(this.sweepline);
-    this.envelope = evaluateEnvelope(this.params, this.sweepline, m, false, false, false);
+    this.constraints = this.evaluate();
   }
 
   setPublisher(p: Publisher, loading: LoadingPublisher): void {
@@ -297,7 +227,6 @@ export class SimController {
     const token = ++this.runToken;
     this.ready = false;
     this.scenario = scenario;
-    // Stress-test conditions belong to the run they were injected into.
     this.params = { ...this.params, ...this.savedParams };
     this.failures = noFailures();
     this.savedParams = {};
@@ -305,66 +234,54 @@ export class SimController {
     this.history = [];
     this.historyVersion++;
     this.timeline = STAGES.map((s) => ({ ...s, at: null }));
-    this.warningAt = null;
-    this.safeOpen.reset();
     this.acc = 0;
-    this.safetyTimer = 0;
     this.historyTimer = 0;
-    this.stowCheckTimer = 0;
-    this.envOkFor = 0;
-    this.deployBlockLogged = false;
-    this.dwell = {};
-    this.transferLossFor = 0;
+    this.safetyTimer = 0;
+    this.selection = null;
+    this.prevRelief = [false, false];
+    this.prevPocketFull = false;
+    this.prevBaseStatus = 'CLEAR';
+    this.prevSweepStatus = 'CLEAR';
     this.prevPrimary = 'STANDBY';
     this.prevStandby = 'STANDBY';
-    this.prevCurtainMode = 'STOWED';
-    this.prevOffMode = 'STOWED';
-    this.selection = null;
-    this.standDown = false;
-    this.adaptiveSkirt = 0;
-    this.reversedFor = 0;
-    // A paced tide run hands the default speed back to the next run.
-    if (this.pace !== 'off') this.speed = TIDE_WATCH;
-    this.pace = scenario?.pace === 'tide' && this.params.tide ? 'toTurn' : 'off';
     if (this.params.tide) this.params = { ...this.params, ...this.tideAt(0) };
     this.baseline.reset(this.params, 'approach');
     this.sweepline.reset(this.params, 'approach');
-    this.prevOutlet = this.sweepline.flowSide();
-    this.timeline[0].at = 0;
-    this.log('info', `Run started — ${scenario ? scenario.name : this.isReferenceRun() ? 'reference conditions' : 'custom conditions'} · seed ${this.params.seed}`);
-    this.log('info', `Bloom approach — Blue Blubber (Catostylus mosaicus), density ${(this.params.bloomDensity * 100).toFixed(0)}%`);
+    const sp = SPECIES[this.params.species];
+    this.log('info', `Run started — ${scenario ? scenario.name : 'custom conditions'} · seed ${this.params.seed}`);
+    this.log('info', `Bloom: ${sp.name} (${sp.latin}), ${this.params.bloomRate} t/h, drifting along the coast`);
 
-    if (start === 'steady') {
-      // A workboat deployment first has to mobilise before steady operation can begin.
-      const target = (scenario?.preRoll ?? ASSUMPTIONS.sequence.steadyPreRoll) + (this.params.deployMode === 'workboat' ? ASSUMPTIONS.deploy.workboatMobilisation : 0);
+    if (start === 'sequence') {
+      for (const net of this.sweepline.nets) if (net.active) net.arm();
+      this.opening = true;
+      this.speed = ASSUMPTIONS.sequence.openingSpeed;
+      this.log('info', 'Season start: panels going down their pile guides (time-lapse)');
+    } else {
+      this.opening = false;
+      this.stage('install');
+      this.startPumps();
+      const target = scenario?.preRoll ?? ASSUMPTIONS.sequence.steadyPreRoll;
       const h = ASSUMPTIONS.sequence.preRollStep;
-      this.loadingPublisher?.({ active: true, progress: 0, label: 'Pre-rolling simulation to steady operation' });
+      this.loadingPublisher?.({ active: true, progress: 0, label: 'Running the bloom up to the net' });
       while (this.sweepline.time < target) {
         if (token !== this.runToken) return;
-        const budget = this.preRollIdle ? await idleBudget(this.preRollSliceMs) : this.preRollSliceMs;
-        if (token !== this.runToken) return;
         const t0 = performance.now();
-        while (this.sweepline.time < target && performance.now() - t0 < budget) this.stepAll(h);
-        this.loadingPublisher?.({
-          active: true,
-          progress: Math.min(1, this.sweepline.time / target),
-          label: `Pre-rolling simulation · ${formatDuration(this.sweepline.time)} / ${formatDuration(target)}`,
-        });
-        if (!this.preRollIdle) await nextFrame();
+        while (this.sweepline.time < target && performance.now() - t0 < this.preRollSliceMs) this.stepAll(h);
+        this.loadingPublisher?.({ active: true, progress: Math.min(1, this.sweepline.time / target), label: `Running the bloom up to the net · ${formatDuration(this.sweepline.time)} / ${formatDuration(target)}` });
+        await nextFrame();
       }
+      this.speed = ASSUMPTIONS.sequence.runSpeed;
     }
     if (token !== this.runToken) return;
     this.clockStart = Date.now() - this.sweepline.time * 1000;
     this.runStart = this.sweepline.time;
     this.script = scenario?.script ? [...scenario.script].sort((a, b) => a.at - b.at) : [];
-    if (this.pace === 'toTurn') this.speed = TIDE_TIMELAPSE;
-    else if (scenario?.pace === 'tide') this.speed = TIDE_WATCH;
     this.ready = true;
     this.loadingPublisher?.({ active: false, progress: 1, label: '' });
     this.publish(true);
   }
 
-  /** Restart the current run the way it started (a scenario's own start, otherwise from the bloom approach). */
+  /** Restart the current run the way it started. */
   async replay(): Promise<void> {
     await this.restart(this.scenario?.start ?? 'sequence', this.scenario);
   }
@@ -372,35 +289,25 @@ export class SimController {
   async runScenario(id: string): Promise<void> {
     const sc = getScenario(id);
     if (!sc) return;
-    this.params = { ...DEFAULT_PARAMS, seed: this.params.seed, agentBudget: this.params.agentBudget, releaseDistance: this.params.releaseDistance, ...sc.params };
+    this.params = { ...DEFAULT_PARAMS, seed: this.params.seed, agentBudget: this.params.agentBudget, ...sc.params };
     this.savedParams = {};
     await this.restart(sc.start, sc);
   }
 
-  /** Load a scenario's parameters into the running simulation without restarting. */
-  loadScenario(id: string): void {
-    const sc = getScenario(id);
-    if (!sc) return;
-    this.scenario = sc;
-    const p: Partial<SimParams> = { ...sc.params };
-    if (this.sweepline.curtain!.mode !== 'STOWED') delete p.anchorAngle;
-    this.setParams(p, { silent: true });
-    this.log('info', `Scenario parameters loaded — ${sc.name}`);
-    this.publish(true);
-  }
-
   setSpeed(speed: number): void {
     this.speed = speed;
-    // The operator has taken over the pace of a tide scenario.
-    if (this.pace !== 'off') this.pace = 'done';
+    this.opening = false;
     this.publish(true);
   }
 
-  /** Current speed and bearing from the tidal record at `t` seconds into the run. */
+  togglePause(): void {
+    this.paused = !this.paused;
+    this.publish(true);
+  }
+
   private tideAt(t: number): Pick<SimParams, 'currentSpeed' | 'currentBearing'> {
     const v = tideCurrentVector(tideCurrent(this.params.tideStart + t / 3600));
-    // The extreme-current stress test still overrides the speed; the tide keeps the direction.
-    return { currentSpeed: this.failures.extremeCurrent ? 0.78 : v.speed, currentBearing: v.bearing };
+    return { currentSpeed: v.speed, currentBearing: v.bearing };
   }
 
   private applyTide(t: number): void {
@@ -411,186 +318,37 @@ export class SimController {
     this.sweepline.setCurrent(v.currentSpeed, v.currentBearing);
   }
 
-  private setPace(pace: TidePace, speed?: number): void {
-    this.pace = pace;
-    this.paceAt = this.simTime;
-    if (speed !== undefined) this.speed = speed;
-  }
-
-  togglePause(): void {
-    this.paused = !this.paused;
-    this.publish(true);
-  }
-
   // ------------------------------------------------------------------ parameters
 
-  setParams(partial: Partial<SimParams>, opts: { silent?: boolean } = {}): void {
-    const p = { ...partial };
-    const c = this.sweepline.curtain!;
-    if (p.anchorAngle !== undefined && p.anchorAngle !== this.params.anchorAngle && c.mode !== 'STOWED') {
-      this.log('warn', 'Anchor layout is fixed while SweepLine is deployed — reef and stow to change configuration');
-      delete p.anchorAngle;
-    }
-    if (p.skirtDepth !== undefined) {
-      const max = c.clearanceLimitedMax;
-      if (p.skirtDepth > max + 1e-6) p.skirtDepth = Math.round(max * 10) / 10;
-    }
+  setParams(partial: Partial<SimParams>): void {
     const prev = this.params;
-    this.params = { ...this.params, ...p };
+    this.params = { ...this.params, ...partial };
     this.baseline.applyParams(this.params);
     this.sweepline.applyParams(this.params);
-    if (!opts.silent) {
-      if (p.anchorAngle !== undefined && p.anchorAngle !== prev.anchorAngle) {
-        this.log('info', `Anchor configuration ${p.anchorAngle}° selected (pre-engineered layout, ${this.sweepline.curtain!.length.toFixed(0)} m)`);
-      }
-      if (p.standbyEnabled !== undefined && p.standbyEnabled !== prev.standbyEnabled) {
-        this.log(p.standbyEnabled ? 'info' : 'warn', p.standbyEnabled ? 'Standby transfer path armed' : 'Standby transfer path disarmed');
-      }
-      if (p.activeFlow !== undefined && p.activeFlow !== prev.activeFlow) {
-        this.log(
-          p.activeFlow ? 'info' : 'warn',
-          p.activeFlow ? `Active flow jets on — ${Math.round(this.params.jetLevel * 100)}% output` : 'Active flow jets off — curtain running as a passive guide',
-        );
-      }
-      if (p.jetLevel !== undefined && p.jetLevel !== prev.jetLevel && this.params.activeFlow) {
-        if (this.jetLogTimer) clearTimeout(this.jetLogTimer);
-        this.jetLogTimer = setTimeout(() => {
-          const v = this.params.jetLevel * ASSUMPTIONS.jets.conveyorSpeed;
-          this.log('info', `Jet output ${Math.round(this.params.jetLevel * 100)}% — conveyor ${v.toFixed(2)} m/s at the curtain face`);
-        }, 700);
-      }
-      if (p.deployMode !== undefined && p.deployMode !== prev.deployMode) {
-        this.log(
-          'info',
-          p.deployMode === 'popup'
-            ? 'Deployment method: pop-up from the seabed (applies to the next deployment)'
-            : 'Deployment method: workboat laying (applies to the next deployment)',
-        );
-      }
-      if (p.skirtDepth !== undefined && p.skirtDepth !== prev.skirtDepth) {
-        if (this.skirtLogTimer) clearTimeout(this.skirtLogTimer);
-        this.skirtLogTimer = setTimeout(() => {
-          this.log('info', `Skirt depth setpoint ${this.params.skirtDepth.toFixed(1)} m — winches adjusting`);
-        }, 700);
-      }
-    }
+    if (partial.unitsRunning !== undefined && partial.unitsRunning !== prev.unitsRunning) this.log('info', `${partial.unitsRunning} of ${ASSUMPTIONS.plant.units} units running — channel flow ${(this.sweepline.flow.plantFlow).toFixed(0)} m³/s`);
+    if (partial.foulingWeeks !== undefined && partial.foulingWeeks !== prev.foulingWeeks) this.log('info', partial.foulingWeeks === 0 ? 'Clean panels in the water' : `Panels ${partial.foulingWeeks} weeks in the water`);
+    if (partial.secondNet !== undefined && partial.secondNet !== prev.secondNet) this.log(partial.secondNet ? 'info' : 'warn', partial.secondNet ? 'Net B in place' : 'Net B out of the water');
     this.publish(true);
   }
 
-  /** Changing seed or agent budget re-seeds the bloom, so it restarts the run. */
   async reseed(seed: number, budget: number): Promise<void> {
     this.params = { ...this.params, seed: Math.max(1, Math.floor(seed)), agentBudget: budget };
     await this.restart('sequence', this.scenario);
   }
 
-  // ------------------------------------------------------------------ operator commands
-
-  deploy(source: 'auto' | 'manual' = 'manual'): boolean {
-    const c = this.sweepline.curtain!;
-    const tr = this.sweepline.transfer!;
-    if (c.mode !== 'STOWED') return false;
-    if (!this.envelope.deployPermitted) {
-      if (source === 'manual') {
-        const reasons = [...this.envelope.hardViolations, ...this.envelope.advisories.filter((a) => a.status === 'out')]
-          .map((v) => `${v.label} ${v.value}`)
-          .join(', ');
-        this.log('alarm', `Deployment rejected — outside validated operating envelope (${reasons || 'transfer path unavailable'})`);
-      }
-      return false;
-    }
-    c.deploy(this.params.deployMode);
-    this.deployCount++;
-    tr.throatOpen = true;
-    tr.acceptingNew = true;
-    this.safeOpen.reset();
-    this.standDown = false;
-    this.timeline.find((s) => s.key === 'deploy')!.at = this.simTime;
-    this.timeline.find((s) => s.key === 'recovery')!.at = null;
-    if (this.params.deployMode === 'popup') {
-      this.log(
-        'info',
-        `Pop-up deployment started — ${this.params.anchorAngle}° anchor layout, ${c.length.toFixed(0)} m curtain, skirt ${c.skirtTarget.toFixed(1)} m (no vessel needed)`,
-      );
-    } else {
-      this.log('info', `Workboat deployment requested — crew and vessel mobilising (~${Math.round(ASSUMPTIONS.deploy.workboatMobilisation / 60)} min, assumption)`);
-    }
-    return true;
-  }
-
-  initiateSafeOpen(reason = 'Operator command'): boolean {
-    const ok = this.safeOpen.initiate(this.sweepline, reason, (l, m) => this.log(l, m));
-    this.publish(true);
-    return ok;
-  }
-
-  /** Re-engage after SafeOpen (downstream-first) or deploy from stowed. */
-  rearm(): boolean {
-    const c = this.sweepline.curtain!;
-    const tr = this.sweepline.transfer!;
-    if (c.mode === 'STOWED') return this.deploy('manual');
-    if (!this.safeOpen.complete && c.mode !== 'REEFED') return false;
-    if (!this.envelope.deployPermitted) {
-      this.log('alarm', 'Re-arm rejected — conditions outside validated operating envelope');
-      return false;
-    }
-    if (!tr.poweredPathAvailable) {
-      this.log('alarm', 'Re-arm rejected — no powered transfer path available');
-      return false;
-    }
-    c.unreef();
-    tr.throatOpen = true;
-    tr.acceptingNew = true;
-    this.safeOpen.reset();
-    this.dwell = {};
-    this.timeline.find((s) => s.key === 'recovery')!.at = null;
-    this.log('ok', 'SweepLine re-armed — downstream-first re-engagement');
-    this.publish(true);
-    return true;
-  }
-
-  /** Reel a reefed (or idle deployed) curtain back onto the throat-side reel. */
-  stowCurtain(): boolean {
-    const c = this.sweepline.curtain!;
-    if (this.safeOpen.active) return false;
-    if (c.mode !== 'REEFED' && c.mode !== 'DEPLOYED') return false;
-    if (c.mode === 'DEPLOYED') {
-      // A deployed curtain is always disengaged upstream-first before it is stowed.
-      return this.initiateSafeOpen('Planned retraction');
-    }
-    c.stow();
-    this.standDown = true;
-    this.log(
-      'info',
-      c.deployMode === 'popup'
-        ? 'Curtain stowing — deflating back to the seabed from the upstream anchor (auto-deploy suspended)'
-        : 'Curtain stowing — reeling in from the upstream anchor (auto-deploy suspended)',
-    );
-    this.publish(true);
-    return true;
-  }
-
-  /**
-   * Select a pre-engineered anchor layout. The angle can never change while the
-   * curtain is deployed: a new layout means a fresh deployment, so the run restarts
-   * (same seed) and the curtain is laid on the newly selected anchors.
-   */
-  async selectAnchorLayout(angle: AnchorAngle): Promise<'applied' | 'restarted'> {
-    if (this.sweepline.curtain!.mode === 'STOWED') {
-      this.setParams({ anchorAngle: angle });
-      return 'applied';
-    }
-    this.params = { ...this.params, anchorAngle: angle };
-    // A manual layout change is a custom run: keep the conditions, drop any scripted failures.
-    await this.restart('sequence', null);
-    this.log('info', `Anchor configuration ${angle}° selected — redeploying on the pre-engineered anchors`);
-    return 'restarted';
-  }
-
   endBloom(): void {
     this.baseline.bloomActive = false;
     this.sweepline.bloomActive = false;
-    this.log('info', 'Bloom passage ending — no new arrivals upstream');
+    this.log('info', 'Bloom passing — no new arrivals upstream');
     this.publish(true);
+  }
+
+  private startPumps(): void {
+    const tr = this.sweepline.transfer!;
+    if (tr.running) return;
+    tr.running = true;
+    this.stage('warning');
+    this.log('warn', 'Early warning received — collector pumps started');
   }
 
   // ------------------------------------------------------------------ failure injection
@@ -600,51 +358,36 @@ export class SimController {
     const s = this.sweepline;
     const tr = s.transfer!;
     switch (key) {
-      case 'transferPrimary':
+      case 'pumpPrimary':
         tr.primaryFault = true;
         break;
-      case 'transferStandby':
+      case 'pumpStandby':
         tr.standbyFault = true;
         break;
-      case 'extremeCurrent':
-        this.savedParams.currentSpeed ??= this.params.currentSpeed;
-        this.setParams({ currentSpeed: 0.78 }, { silent: true });
+      case 'panelTear':
+        s.tearPanel(0, TEAR_PANEL);
         break;
-      case 'deepBloom':
-        // Below the skirt but within its adjustable range: the adaptive skirt follows it down.
-        this.savedParams.bloomMeanDepth ??= this.params.bloomMeanDepth;
-        this.savedParams.bloomDepthSD ??= this.params.bloomDepthSD;
-        this.setParams({ bloomMeanDepth: 3.2, bloomDepthSD: 0.5 }, { silent: true });
+      case 'unitTrip':
+        this.savedParams.unitsRunning ??= this.params.unitsRunning;
+        this.setParams({ unitsRunning: Math.max(1, this.params.unitsRunning - 1) });
         break;
-      case 'highDensity': {
-        this.savedParams.bloomDensity ??= this.params.bloomDensity;
-        this.setParams({ bloomDensity: 1.0 }, { silent: true });
-        // Both worlds receive the same surge, placed just upstream of the (SweepLine) curtain.
-        const surge = Math.round(this.params.agentBudget * 0.25);
-        const edge = this.sweepline.surgeEdge();
-        this.baseline.spawnSurge(surge, edge);
-        this.sweepline.spawnSurge(surge, edge);
+      case 'storm':
+        this.savedParams.waveHeight ??= this.params.waveHeight;
+        this.setParams({ waveHeight: STORM_HS });
+        break;
+      case 'surge': {
+        this.baseline.surge = 3;
+        s.surge = 3;
+        const n = Math.round((this.params.agentBudget * 0.2 * this.params.bloomRate) / 25);
+        this.baseline.spawnSurge(n);
+        s.spawnSurge(n);
         break;
       }
-      case 'curtainOverload':
-        s.debrisTarget = 0.95;
-        break;
-      case 'highWaves':
-        this.savedParams.waveHeight ??= this.params.waveHeight;
-        this.setParams({ waveHeight: 1.9 }, { silent: true });
+      case 'sonarLoss':
         break;
     }
     this.failures = { ...this.failures, [key]: true };
-    const msg: Record<FailureKey, [EventLevel, string]> = {
-      transferPrimary: ['info', 'Failure injected — primary transfer module'],
-      transferStandby: ['info', 'Failure injected — standby transfer module'],
-      extremeCurrent: ['warn', 'Stress test: extreme current 0.78 m/s'],
-      deepBloom: ['warn', 'Stress test: deep bloom — mean depth 3.2 m'],
-      highDensity: ['warn', 'Stress test: bloom surge — density 100%'],
-      curtainOverload: ['warn', 'Stress test: curtain overload — debris and bio-fouling accumulation'],
-      highWaves: ['warn', 'Stress test: high wave state — Hs 1.9 m'],
-    };
-    this.log(msg[key][0], msg[key][1]);
+    this.log(key === 'pumpPrimary' || key === 'pumpStandby' || key === 'panelTear' ? 'alarm' : 'warn', FAILURE_LABELS[key]);
     this.publish(true);
   }
 
@@ -653,30 +396,30 @@ export class SimController {
     const s = this.sweepline;
     const tr = s.transfer!;
     switch (key) {
-      case 'transferPrimary':
+      case 'pumpPrimary':
         tr.primaryFault = false;
         break;
-      case 'transferStandby':
+      case 'pumpStandby':
         tr.standbyFault = false;
         break;
-      case 'extremeCurrent':
-        this.restoreSaved(['currentSpeed']);
+      case 'panelTear':
+        s.repairPanels();
         break;
-      case 'deepBloom':
-        this.restoreSaved(['bloomMeanDepth', 'bloomDepthSD']);
+      case 'unitTrip':
+        this.restoreSaved('unitsRunning');
         break;
-      case 'highDensity':
-        this.restoreSaved(['bloomDensity']);
+      case 'storm':
+        this.restoreSaved('waveHeight');
         break;
-      case 'curtainOverload':
-        s.debrisTarget = 0;
+      case 'surge':
+        this.baseline.surge = 1;
+        s.surge = 1;
         break;
-      case 'highWaves':
-        this.restoreSaved(['waveHeight']);
+      case 'sonarLoss':
         break;
     }
     this.failures = { ...this.failures, [key]: false };
-    this.log('ok', `${FAILURE_LABELS[key]} cleared`);
+    this.log('ok', `Cleared: ${FAILURE_LABELS[key]}`);
     this.publish(true);
   }
 
@@ -684,18 +427,12 @@ export class SimController {
     (Object.keys(this.failures) as FailureKey[]).forEach((k) => this.clearFailure(k));
   }
 
-  private restoreSaved(keys: Array<keyof SimParams>): void {
-    const p: Partial<SimParams> = {};
-    for (const k of keys) {
-      if (this.savedParams[k] !== undefined) {
-        (p as Record<string, unknown>)[k] = this.savedParams[k];
-        delete this.savedParams[k];
-      }
-    }
-    this.setParams(p, { silent: true });
+  private restoreSaved<K extends keyof SimParams>(key: K): void {
+    const v = this.savedParams[key];
+    if (v === undefined) return;
+    delete this.savedParams[key];
+    this.setParams({ [key]: v } as Partial<SimParams>);
   }
-
-  // ------------------------------------------------------------------ selection
 
   select(engine: EngineKind, agentId: number | null): void {
     this.selection = agentId === null ? null : { engine, agentId };
@@ -710,310 +447,143 @@ export class SimController {
       const h = ASSUMPTIONS.timeStep;
       this.acc += Math.min(dtReal, 0.1) * this.speed;
       let n = 0;
-      while (this.acc >= h && n < 40) {
+      while (this.acc >= h && n < 80) {
         this.stepAll(h);
         this.acc -= h;
         n++;
       }
-      if (n >= 40) this.acc = 0;
+      if (n >= 80) this.acc = 0;
+      if (this.opening) this.updateOpening(dtReal);
     }
     this.publish(false);
   }
 
+  private updateOpening(dtReal: number): void {
+    const armed = this.sweepline.nets.every((n) => !n.arming);
+    if (!armed) return;
+    if (this.timeline[0].at === null) {
+      this.stage('install');
+      this.log('ok', 'Both nets in place');
+      this.startPumps();
+    }
+    const target: number = ASSUMPTIONS.sequence.runSpeed;
+    this.speed = Math.min(target, this.speed + (target / 3) * Math.min(dtReal, 0.1));
+    if (this.speed >= target) this.opening = false;
+  }
+
   private stepAll(dt: number): void {
     const s = this.sweepline;
-    if (this.params.tide) this.applyTide(s.time + dt);
+    if (this.params.tide) this.applyTide(s.time + dt - 0);
     this.baseline.step(dt);
     s.step(dt);
-    const t = s.time;
-    const c = s.curtain!;
-    const tr = s.transfer!;
+    this.runScript();
+    this.watch(dt);
+    this.historyTimer -= dt;
+    if (this.historyTimer <= 0) {
+      this.historyTimer = 10;
+      this.sampleHistory();
+    }
+  }
 
-    // Twin-Line: the previous duty line clearing and settling back, and the release valve.
-    const off = s.lines[s.duty === 0 ? 1 : 0];
-    if (off.mode !== this.prevOffMode) {
-      const name = LINE_NAMES[off.layout.side];
-      if (off.mode === 'STOWING' && this.prevOffMode !== 'STOWED') this.log('info', `${name} clear of traffic — venting and settling back onto the seabed`);
-      else if (off.mode === 'STOWED' && this.prevOffMode === 'STOWING') this.log('ok', `${name} stowed on the seabed — ready for the next turn of the tide`);
-      this.prevOffMode = off.mode;
-    }
-    const outlet = s.flowSide();
-    if (outlet !== this.prevOutlet) {
-      if (tr.throatOpen && this.params.twinLine && ASSUMPTIONS.release.design.side === 'down-tide')
-        this.log('info', `Release valve to the ${compassLabel(this.params.currentBearing)} outlet — released jellyfish go out down-tide`);
-      this.prevOutlet = outlet;
-    }
-
-    if (this.warningAt === null && t >= ASSUMPTIONS.sequence.warningAt && s.bloomActive) {
-      this.warningAt = t;
-      this.stage('warning');
-      const p90 = this.params.bloomMeanDepth + 1.2816 * this.params.bloomDepthSD;
-      this.log('warn', `Early warning received — bloom approaching intake (density ${(this.params.bloomDensity * 100).toFixed(0)}%, P90 depth ${p90.toFixed(1)} m)`);
-    }
-
-    // Transfer path transitions.
-    const ps = tr.primaryStatus;
-    const ss = tr.standbyStatus;
-    if (ps !== this.prevPrimary) {
-      if (ps === 'FAULT') this.log('alarm', 'Primary transfer FAULT — throughput lost');
-      else if (this.prevPrimary === 'FAULT') this.log('ok', 'Primary transfer restored');
-      this.prevPrimary = ps;
-    }
-    if (ss !== this.prevStandby) {
-      if (ss === 'ACTIVATING') this.log('warn', 'Standby transfer activating');
-      else if (ss === 'ONLINE') this.log('ok', 'Standby transfer online — capacity restored');
-      else if (ss === 'FAULT') this.log('alarm', tr.primaryFault ? 'Standby transfer unavailable' : 'Standby transfer fault — no redundancy');
-      else if (ss === 'DISABLED' && tr.primaryFault) this.log('alarm', 'Standby transfer unavailable (not armed)');
-      this.prevStandby = ss;
-    }
-
-    // Curtain mode transitions.
-    if (c.mode !== this.prevCurtainMode) {
-      if (c.mode === 'DEPLOYED' && this.prevCurtainMode === 'DEPLOYING') {
-        if (s.handoverAt >= 0 || s.duty === 1)
-          this.log('ok', `${LINE_NAMES[s.duty]} up and guiding the ${compassLabel(this.params.currentBearing)}-going tide — skirt ${c.skirtActual.toFixed(1)} m`);
-        else this.log('ok', `SweepLine active — curtain fully deployed, skirt ${c.skirtActual.toFixed(1)} m`);
-        if (this.stageAt('sweep') === null) this.stage('sweep');
-      }
-      if (c.mode === 'DEPLOYED' && this.prevCurtainMode === 'UNREEFING') this.log('ok', 'Curtain re-engaged — SweepLine active');
-      if (c.mode === 'STOWED' && this.prevCurtainMode === 'STOWING') {
-        tr.throatOpen = false;
-        tr.acceptingNew = true;
-        this.safeOpen.reset();
-        this.envOkFor = 0;
-        this.log('ok', 'Curtain stowed — system returned to standby');
-        this.stage('recovery');
-      }
-      this.prevCurtainMode = c.mode;
-    }
-    if (c.mode === 'DEPLOYING') {
-      if (c.deployDelay <= 0 && !this.flag(`front${this.deployCount}`)) {
-        this.log('info', c.deployMode === 'popup' ? 'Float line inflating — curtain rising from the throat end' : 'Workboat on station — laying the curtain from the throat end');
-      }
-      const pct = Math.floor(c.deployedFraction * 4) * 25;
-      if (pct === 50 && !this.flag('laid50')) this.log('info', `Curtain 50% ${c.deployMode === 'popup' ? 'risen' : 'laid'} — throat section guiding`);
-    }
-    // Active flow reports once it reaches the commanded output.
-    if (c.jetTarget > 0 && c.activeCount > 0 && c.jetOutput >= c.jetTarget * 0.9 && !this.flag(`jets${this.deployCount}`)) {
-      this.log('ok', `Active flow running — conveyor jets ${(c.jetTarget * ASSUMPTIONS.jets.conveyorSpeed).toFixed(2)} m/s along the face, foot jets lifting at the skirt edge`);
-    }
-
-    this.safeOpen.update(s, (l, m) => this.log(l, m));
-    if (this.safeOpen.complete && this.stageAt('recovery') === null) this.stage('recovery');
-
-    if (this.stageAt('sweep') !== null && this.stageAt('transfer') === null && s.counters.transferred > 0) {
-      this.stage('transfer');
-      this.log('info', 'First jellyfish entered recovery throat — low-shear transfer running');
-    }
-    if (this.stageAt('transfer') !== null && this.stageAt('release') === null && s.counters.released > 0) {
-      this.stage('release');
-      this.log('ok', `First jellyfish released alive down-current (${this.params.releaseDistance} m line, simulation assumption)`);
-    }
-
-    this.safetyTimer += dt;
-    if (this.safetyTimer >= 0.5) {
-      this.safetyUpdate(this.safetyTimer);
-      this.safetyTimer = 0;
-    }
-
-    this.stowCheckTimer += dt;
-    if (this.stowCheckTimer >= 2) {
-      this.stowCheckTimer = 0;
-      if (!s.bloomActive && c.mode === 'DEPLOYED' && !this.safeOpen.active) {
-        const pending = s.countState(S_APPROACHING) + s.countState(S_GUIDED) + s.countState(S_TRANSFER_QUEUE);
-        if (pending === 0) {
-          c.stow();
-          this.log('info', 'Bloom passed — curtain stowing');
-        }
-      }
-    }
-
-    // Scenario script.
-    while (this.script.length > 0 && t - this.runStart >= this.script[0].at) {
+  private runScript(): void {
+    const t = this.simTime - this.runStart;
+    while (this.ready && this.script.length > 0 && this.script[0].at <= t) {
       const step = this.script.shift()!;
       const a = step.action;
       if (a.kind === 'fail') this.injectFailure(a.failure);
       else if (a.kind === 'clear') this.clearFailure(a.failure);
       else {
-        this.setParams(a.params, { silent: true });
         this.log('warn', a.message);
+        this.setParams(a.params);
       }
     }
-
-    this.historyTimer += dt;
-    if (this.historyTimer >= 2) {
-      this.historyTimer = 0;
-      this.sampleHistory();
-    }
   }
 
-  private flags = new Set<string>();
-  private flag(key: string): boolean {
-    if (this.flags.has(`${this.runToken}:${key}`)) return true;
-    this.flags.add(`${this.runToken}:${key}`);
-    return false;
-  }
-
-  private safetyUpdate(dt: number): void {
+  /** Stages and events that follow from what the engines are doing. */
+  private watch(dt: number): void {
+    this.safetyTimer -= dt;
+    if (this.safetyTimer > 0) return;
+    this.safetyTimer = 1;
     const s = this.sweepline;
-    const c = s.curtain!;
     const tr = s.transfer!;
-    const m = computeEngineMetrics(s);
-    const deployed = c.mode === 'DEPLOYING' || c.mode === 'DEPLOYED' || c.mode === 'UNREEFING';
-    const env = evaluateEnvelope(this.params, s, m, deployed || this.safeOpen.active, this.safeOpen.active, this.safeOpen.complete);
-    this.envelope = env;
-
-    // Adaptive skirt: report when the winches follow a deep bloom down, and when they return.
-    const setpoint = Math.min(this.params.skirtDepth, c.clearanceLimitedMax);
-    const adaptive = c.skirtTarget > setpoint + 0.05 ? c.skirtTarget : 0;
-    if (adaptive !== this.adaptiveSkirt) {
-      if (adaptive > 0)
-        this.log('warn', `Deep bloom — P90 ${bloomP90(this.params).toFixed(1)} m is below the ${setpoint.toFixed(1)} m skirt: lowering the skirt to ${adaptive.toFixed(1)} m`);
-      else this.log('ok', `Bloom back above the skirt — returning to the ${setpoint.toFixed(1)} m setpoint`);
-      this.adaptiveSkirt = adaptive;
+    const c = s.counters;
+    if (s.sonarKg > 200 && !this.failures.sonarLoss) {
+      if (this.stageAt('sonar') === null) this.log('warn', `Sonar contact at the mouth — ${(s.sonarKg / 1000).toFixed(1)} t in range`);
+      this.stage('sonar');
     }
-
-    this.updateTwin(dt, env);
-    if (this.pace !== 'off' && this.pace !== 'done') this.updatePace();
-
-    // Auto-deployment after the early warning, only inside the envelope.
-    if (c.mode === 'STOWED' && this.warningAt !== null && s.bloomActive && this.params.autoDeploy && !this.safeOpen.complete && !this.standDown) {
-      if (env.deployPermitted) {
-        this.envOkFor += dt;
-        if (this.deployBlockLogged) {
-          this.log('ok', 'Conditions within assumed envelope — deployment permitted');
-          this.deployBlockLogged = false;
-        }
-        if (this.envOkFor >= ASSUMPTIONS.sequence.deployConfirm) this.deploy('auto');
-      } else {
-        this.envOkFor = 0;
-        if (!this.deployBlockLogged) {
-          const reasons = [...env.hardViolations, ...env.advisories.filter((a) => a.status === 'out')].map((v) => `${v.label} ${v.value}`);
-          this.log('alarm', `OUTSIDE VALIDATED OPERATING ENVELOPE — deployment not recommended (${reasons.join(', ') || 'transfer path unavailable'})`);
-          this.deployBlockLogged = true;
-        }
+    if (c.encountered > 0 && this.stageAt('net') === null) {
+      this.stage('net');
+      this.log('info', 'First animals on net A — sweeping toward the collector');
+    }
+    if (c.diverted > 0 && this.stageAt('collect') === null) {
+      this.stage('collect');
+      this.log('ok', 'Collector taking the bloom');
+    }
+    if (c.released > 0 && this.stageAt('release') === null) {
+      this.stage('release');
+      this.log('ok', 'First animals released 2 km down-drift');
+    }
+    s.nets.forEach((net, i) => {
+      const on = net.reliefFraction > 0;
+      if (on !== this.prevRelief[i]) {
+        this.prevRelief[i] = on;
+        this.log(on ? 'alarm' : 'ok', on ? `${net.line.name} head at the relief limit — float line dipping, water spilling over` : `${net.line.name} relief closed`);
       }
+    });
+    const pFull = tr.queues[0].length >= s.holdCapacity;
+    if (pFull !== this.prevPocketFull) {
+      this.prevPocketFull = pFull;
+      this.log(pFull ? 'warn' : 'ok', pFull ? 'Pocket full — the bloom is stacking up along the net' : 'Pocket clearing');
     }
-
-    if (deployed && !this.safeOpen.active) {
-      // Loss of all powered transfer paths → SafeOpen (after a short confirmation delay).
-      if (tr.primaryFault && !tr.poweredPathAvailable) {
-        this.transferLossFor += dt;
-        if (this.transferLossFor >= ASSUMPTIONS.safeOpen.transferLossDelay) {
-          this.safeOpen.initiate(s, 'transfer capacity lost, standby unavailable', (l, msg) => this.log(l, msg));
-          this.transferLossFor = 0;
-        }
-      } else this.transferLossFor = 0;
-
-      // Hard envelope limits held beyond the dwell time → automatic SafeOpen.
-      const violated = new Set(env.hardViolations.filter((v) => v.key !== 'transferPath').map((v) => v.key));
-      for (const k of Object.keys(this.dwell)) if (!violated.has(k as never)) delete this.dwell[k];
-      for (const v of env.hardViolations) {
-        if (v.key === 'transferPath') continue;
-        this.dwell[v.key] = (this.dwell[v.key] ?? 0) + dt;
-        if (this.dwell[v.key] >= ASSUMPTIONS.safeOpen.violationDwell && !this.safeOpen.active) {
-          this.log('alarm', `OUTSIDE VALIDATED OPERATING ENVELOPE — ${v.label} ${v.value} (limit ${v.limit})`);
-          this.safeOpen.initiate(s, `${v.label} outside envelope`, (l, msg) => this.log(l, msg));
-          this.dwell = {};
-          break;
-        }
-      }
+    if (tr.primaryStatus !== this.prevPrimary || tr.standbyStatus !== this.prevStandby) {
+      if (this.prevStandby !== 'ONLINE' && tr.standbyStatus === 'ONLINE') this.log('ok', 'Standby pump carrying the load');
+      this.prevPrimary = tr.primaryStatus;
+      this.prevStandby = tr.standbyStatus;
     }
-  }
-
-  /**
-   * Twin-Line: once the current has run against the duty line for `switchDwell`, duty passes to the
-   * line laid for the new direction. A stowed system just changes which line it will deploy.
-   */
-  private updateTwin(dt: number, env: EnvelopeResult): void {
-    const s = this.sweepline;
-    if (!this.params.twinLine) return;
-    const want = s.flowSide();
-    const c = s.curtain!;
-    if (want === s.duty || this.params.currentSpeed < ASSUMPTIONS.twin.switchSpeed) {
-      this.reversedFor = 0;
-      return;
+    const b = this.baseline.screens.status;
+    if (b !== this.prevBaseStatus) {
+      this.prevBaseStatus = b;
+      if (b === 'DERATED') this.log('warn', 'Without SweepLine: screens past their wash capacity');
     }
-    if (c.mode === 'STOWED' && s.lines[want].mode === 'STOWED') {
-      s.duty = want;
-      this.reversedFor = 0;
-      return;
+    const ss = s.screens.status;
+    if (ss !== this.prevSweepStatus) {
+      this.prevSweepStatus = ss;
+      if (ss === 'DERATED') this.log('alarm', 'Screens past their wash capacity');
     }
-    const up = c.mode === 'DEPLOYING' || c.mode === 'DEPLOYED' || c.mode === 'UNREEFING';
-    if (!up || this.safeOpen.active || this.safeOpen.complete) return;
-    this.reversedFor += dt;
-    if (this.reversedFor < ASSUMPTIONS.twin.switchDwell || !env.deployPermitted) return;
-    const from = s.duty;
-    if (!s.switchDuty(want)) return;
-    this.reversedFor = 0;
-    this.deployCount++;
-    this.prevOffMode = s.lines[from].mode;
-    const dir = compassLabel(this.params.currentBearing);
-    this.log('warn', `Tide turned — current now ${this.params.currentSpeed.toFixed(2)} m/s toward ${dir}`);
-    this.log(
-      'info',
-      this.params.deployMode === 'popup'
-        ? `${LINE_NAMES[want]} popping up on the other side of the intake (no vessel needed)`
-        : `${LINE_NAMES[want]} requested — workboat mobilising (~${Math.round(ASSUMPTIONS.deploy.workboatMobilisation / 60)} min, assumption)`,
-    );
-    this.log('info', `${LINE_NAMES[from]} keeps guiding the traffic already on it to its throat`);
-    if (this.pace === 'toTurn') this.setPace('popUp', TIDE_WATCH);
-  }
-
-  /** Tide scenario pacing: time-lapse through slack water and the bloom's approach, normal speed for the handover and the sweep. */
-  private updatePace(): void {
-    const s = this.sweepline;
-    const elapsed = this.simTime - this.paceAt;
-    if (this.pace === 'toTurn' && !this.params.twinLine && s.flowSide() !== s.duty) {
-      // A single line: slow down to watch it face the wrong way.
-      this.setPace('done', TIDE_SWEEP);
-    } else if (this.pace === 'popUp' && s.curtain!.mode === 'DEPLOYED' && elapsed > 20) {
-      this.setPace('toArrival', TIDE_TIMELAPSE);
-    } else if (this.pace === 'toArrival' && s.guidedByLine[s.duty] >= 3) {
-      this.setPace('done', TIDE_SWEEP);
-    }
+    this.constraints = this.evaluate();
   }
 
   private stage(key: StageKey): void {
-    const st = this.timeline.find((s) => s.key === key)!;
+    const st = this.timeline.find((x) => x.key === key)!;
     if (st.at === null) st.at = this.simTime;
   }
 
   private stageAt(key: StageKey): number | null {
-    return this.timeline.find((s) => s.key === key)!.at;
+    return this.timeline.find((x) => x.key === key)!.at;
   }
 
   private currentStage(): StageKey {
-    let cur: StageKey = 'bloom';
+    let cur: StageKey = 'install';
     for (const s of this.timeline) if (s.at !== null) cur = s.key;
     return cur;
   }
 
   private sampleHistory(): void {
-    const b = computeEngineMetrics(this.baseline);
-    const m = computeEngineMetrics(this.sweepline);
+    const b = this.baseline;
+    const s = this.sweepline;
+    const kg = s.kgPerAgent / 1000;
     this.history.push({
-      t: this.simTime,
-      bContacts: b.intakeContacts,
-      sContacts: m.intakeContacts,
-      bRate: b.intakeRatePerMin,
-      sRate: m.intakeRatePerMin,
-      bPct: b.intakeContactPct,
-      sPct: m.intakeContactPct,
-      diverted: m.diverted,
-      underSkirt: m.underSkirt,
-      underPct: m.underSkirtPct,
-      efficiency: m.diversionEfficiency,
-      utilisation: m.transferUtilisation,
-      load: m.curtainLoad,
-      occupancy: m.throatOccupancy,
-      contactTime: m.avgContactTime,
-      guided: m.guided,
-      transferred: m.transferred,
-      released: m.released,
-      flow: m.transferFlowM3h * (m.transferUtilisation ?? 0),
+      t: s.time,
+      bScreens: b.screens.totalT,
+      sScreens: s.screens.totalT,
+      bTph: b.screens.arrivalTph,
+      sTph: s.screens.arrivalTph,
+      onNet: (s.onNet[0] + s.onNet[1]) * kg,
+      collected: s.counters.diverted * kg,
+      released: s.counters.released * kg,
+      head: s.nets[0].head,
     });
-    if (this.history.length > 5400) this.history.splice(0, this.history.length - 5400);
+    if (this.history.length > 2400) this.history.splice(0, this.history.length - 2400);
     this.historyVersion++;
   }
 
@@ -1022,45 +592,58 @@ export class SimController {
     if (this.events.length > 400) this.events.splice(0, this.events.length - 400);
   }
 
+  /** Mean through-speed of the panels in place on a net (m/s). */
+  private meanThrough(i: number): number {
+    const net = this.sweepline.nets[i];
+    let sum = 0;
+    let n = 0;
+    for (let k = 0; k < net.n; k++) {
+      if (net.torn[k]) continue;
+      sum += net.through[k];
+      n++;
+    }
+    return n ? sum / n : 0;
+  }
+
+  /** What the operator watches. Nothing here shuts anything down: it shows the margin left. */
+  evaluate(): Constraint[] {
+    const s = this.sweepline;
+    const tr = s.transfer!;
+    const net = s.nets[0];
+    const U = s.flow.channelSpeed;
+    const through = this.meanThrough(0);
+    const sweep = U * Math.cos((20 * Math.PI) / 180) * ASSUMPTIONS.net.slide;
+    const band = (v: number, near: number, max: number): Constraint['status'] => (v > max ? 'out' : v > near ? 'near' : 'ok');
+    const fill = (tr.queues[0].length + tr.queues[1].length) / (2 * s.holdCapacity);
+    return [
+      { key: 'approach', label: E.approach.label, value: `${through.toFixed(2)} m/s`, limit: `≤ ${E.approach.max} m/s`, status: band(through, E.approach.near, E.approach.max) },
+      { key: 'sweep', label: E.sweep.label, value: `${(sweep / Math.max(through, 0.01)).toFixed(1)}×`, limit: '> 1×', status: sweep < through ? 'out' : sweep < through * E.sweep.near ? 'near' : 'ok' },
+      { key: 'head', label: E.head.label, value: `${(net.head * 1000).toFixed(0)} mm`, limit: `relief at ${(E.head.relief * 1000).toFixed(0)} mm`, status: band(net.head, E.head.near, E.head.relief) },
+      { key: 'pocket', label: E.pocket.label, value: `${Math.round(fill * 100)} %`, limit: `≤ ${E.pocket.max} %`, status: band(fill * 100, E.pocket.near, E.pocket.max) },
+      { key: 'wave', label: E.wave.label, value: `${s.channelWave.toFixed(2)} m`, limit: `≤ ${E.wave.max} m`, status: band(s.channelWave, E.wave.near, E.wave.max) },
+    ];
+  }
+
   computeStatus(): SystemStatus {
-    const c = this.sweepline.curtain!;
-    const env = this.envelope;
-    const so = this.safeOpen;
-    if (so.active) return { code: 'SAFEOPEN', label: 'SafeOpen', detail: PHASE_LABELS[so.state.phase], tone: 'alarm' };
-    if (so.complete) return { code: 'BASELINE_RESTORED', label: 'Baseline protection', detail: 'SweepLine reefed — existing intake screens active', tone: 'warn' };
-    if (c.mode === 'STOWED') {
-      if (this.warningAt !== null && this.sweepline.bloomActive && !env.deployPermitted)
-        return { code: 'OUTSIDE_ENVELOPE', label: 'Outside envelope', detail: 'Deployment not recommended', tone: 'alarm' };
-      if (this.warningAt !== null && this.sweepline.bloomActive)
-        return this.standDown
-          ? { code: 'STANDBY', label: 'Stood down', detail: 'Curtain stowed by operator — deploy when ready', tone: 'info' }
-          : { code: 'WARNING', label: 'Warning received', detail: 'Preparing deployment', tone: 'warn' };
-      return { code: 'READY', label: 'Ready', detail: 'SweepLine stowed — awaiting early warning', tone: 'ok' };
-    }
-    if (c.mode === 'DEPLOYING') {
-      if (c.deployDelay > 0)
-        return c.deployMode === 'workboat'
-          ? { code: 'DEPLOYING', label: 'Mobilising', detail: `Workboat on station in ${formatDuration(c.deployDelay)}`, tone: 'info' }
-          : { code: 'DEPLOYING', label: 'Deploying', detail: 'Pop-up: inflating float line', tone: 'info' };
-      return { code: 'DEPLOYING', label: 'Deploying', detail: `Curtain ${(c.deployedFraction * 100).toFixed(0)}% ${c.deployMode === 'popup' ? 'risen' : 'laid'}`, tone: 'info' };
-    }
-    if (c.mode === 'STOWING') return { code: 'STANDBY', label: 'Stowing', detail: 'Bloom passed — recovering curtain', tone: 'info' };
-    if (c.mode === 'UNREEFING') return { code: 'DEPLOYING', label: 'Re-arming', detail: 'Downstream-first re-engagement', tone: 'info' };
-    if (!env.within) return { code: 'OUTSIDE_ENVELOPE', label: 'Outside envelope', detail: 'SafeOpen recommended', tone: 'alarm' };
-    const tr = this.sweepline.transfer!;
-    if (tr.primaryFault) return { code: 'ELEVATED', label: 'Elevated', detail: tr.standbyStatus === 'ONLINE' ? 'Standby transfer carrying load' : 'Standby transfer activating', tone: 'warn' };
-    const near = env.constraints.filter((k) => k.status === 'near');
-    if (near.length > 0 || env.advisories.length > 0) {
-      const first = env.advisories[0] ?? near[0];
-      return { code: 'ELEVATED', label: 'Elevated', detail: `${first.label} ${first.value}`, tone: 'warn' };
-    }
-    return { code: 'NOMINAL', label: 'Nominal', detail: 'All systems nominal', tone: 'ok' };
+    const s = this.sweepline;
+    const tr = s.transfer!;
+    if (s.nets.some((n) => n.arming)) return { code: 'ARMING', label: 'Panels going in', detail: `${Math.round(s.nets[0].inPlace * 100)} % in place`, tone: 'info' };
+    if (s.nets.some((n) => n.reliefFraction > 0)) return { code: 'RELIEF', label: 'Relief open', detail: 'Float line dipped: cooling flow first', tone: 'alarm' };
+    if (tr.running && !tr.poweredPathAvailable) return { code: 'OVERLOAD', label: 'Net holding', detail: 'No collector pump: bloom stacking on the net', tone: 'alarm' };
+    if (s.nets[0].tornCount > 0) return { code: 'ELEVATED', label: 'Panel out', detail: 'Net B catching what comes through', tone: 'warn' };
+    if (tr.primaryFault) return { code: 'ELEVATED', label: 'On standby', detail: tr.standbyStatus === 'ONLINE' ? 'Standby pump carrying the load' : 'Standby pump starting', tone: 'warn' };
+    const near = this.constraints.find((c) => c.status !== 'ok');
+    if (near) return { code: 'ELEVATED', label: 'Watch', detail: `${near.label} ${near.value}`, tone: 'warn' };
+    if (s.counters.encountered > 0) return { code: 'NOMINAL', label: 'Sweeping', detail: 'Bloom moving along the net', tone: 'ok' };
+    if (tr.running) return { code: 'WARNING', label: 'Warning received', detail: 'Pumps running, bloom on its way', tone: 'warn' };
+    return { code: 'READY', label: 'Ready', detail: 'Nets in place, awaiting warning', tone: 'ok' };
   }
 
   buildSnapshot(): SimSnapshot {
     const s = this.sweepline;
-    const c = s.curtain!;
     const tr = s.transfer!;
+    const kg = s.kgPerAgent;
+    const Q = s.flow.plantFlow;
     let selectedAgent: SimSnapshot['selectedAgent'] = null;
     if (this.selection) {
       const e = this.engine(this.selection.engine);
@@ -1068,8 +651,8 @@ export class SimController {
       const info = slot >= 0 ? e.agentInfo(slot) : null;
       if (info) selectedAgent = { ...info, engine: this.selection.engine };
     }
-    let underSeq = 0;
-    for (const mk of s.markers) if (mk.kind === 'under') underSeq++;
+    const sp = SPECIES[this.params.species];
+    const sweep = s.flow.channelSpeed * Math.cos((20 * Math.PI) / 180);
     return {
       ready: this.ready,
       simTime: s.time,
@@ -1078,30 +661,31 @@ export class SimController {
       paused: this.paused,
       params: { ...this.params },
       scenarioId: this.scenario?.id ?? null,
-      scenarioName: this.scenario?.name ?? (this.isReferenceRun() ? 'Reference conditions' : 'Custom conditions'),
+      scenarioName: this.scenario?.name ?? 'Custom conditions',
       baseline: computeEngineMetrics(this.baseline),
       sweepline: computeEngineMetrics(s),
       status: this.computeStatus(),
-      curtain: {
-        mode: c.mode,
-        deployedPct: c.deployedFraction * 100,
-        reefedPct: c.reefedFraction * 100,
-        angle: c.layout.angle,
-        length: c.length,
-        skirtActual: c.skirtActual,
-        skirtTarget: c.skirtTarget,
-        attackAngle: s.flow.attackAngle(c.layout.angle, this.params.currentBearing, c.layout.side),
-        liftAngle: c.liftAngleDeg,
-        normalVelocity: c.normalVelocity,
-        activeFraction: c.activeCount / c.layout.segCount,
-        clearanceMax: c.clearanceLimitedMax,
-        jetOutput: c.jetOutput,
-        jetConveyor: c.jetOutput * ASSUMPTIONS.jets.conveyorSpeed,
-        jetFlowM3s: c.jetOutput * ASSUMPTIONS.jets.designFlowM3s,
-        jetPowerKW: c.jetOutput ** 3 * ASSUMPTIONS.jets.designPowerKW,
-        deployMode: c.deployMode,
-        deployDelay: c.deployDelay,
-      },
+      nets: s.nets.map((net, i) => {
+        let foul = 0;
+        for (let k = 0; k < net.n; k++) foul += net.foul[k];
+        return {
+          name: net.line.name,
+          length: net.line.length,
+          panels: net.n,
+          inPlace: net.inPlace,
+          active: net.active,
+          head: net.head,
+          loadFraction: net.loadFraction,
+          panelLoadKN: net.panelLoadKN,
+          relief: net.reliefFraction,
+          torn: net.tornCount,
+          onNetT: (s.onNet[i] * kg) / 1000,
+          through: this.meanThrough(i),
+          sweep,
+          foulPct: (foul / net.n) * 100,
+          marginT: net.marginKg(Q, s.blockPerKg) / 1000,
+        };
+      }),
       transfer: {
         primary: tr.primaryStatus,
         standby: tr.standbyStatus,
@@ -1109,189 +693,70 @@ export class SimController {
         path: tr.activePath,
         availability: tr.availability(),
         flowM3h: tr.flowM3h(),
-        capacityPerMin: tr.capacityRate() * 60,
-        queue: tr.queueLength,
-        holdCapacity: s.holdCapacity,
+        capacityTph: TRANSFER_TPH * tr.availability(),
+        pocketFill: (tr.queues[0].length + tr.queues[1].length) / (2 * s.holdCapacity),
       },
-      safeOpen: {
-        phase: this.safeOpen.state.phase,
-        reason: this.safeOpen.state.reason,
-        elapsed: this.safeOpen.state.phase === 'IDLE' ? 0 : s.time - this.safeOpen.state.startedAt,
-      },
-      envelope: this.envelope,
-      timeline: this.timeline.map((x) => ({ ...x })),
+      channel: { flow: Q, speed: s.flow.channelSpeed, waveAtNet: s.channelWave, captureBand: s.flow.captureBand() },
+      sonar: { on: !this.failures.sonarLoss, inRangeT: this.failures.sonarLoss ? 0 : s.sonarKg / 1000, arrivalTph: (s.enterEMA * kg * 3600) / 1000 },
+      constraints: this.constraints,
+      timeline: this.timeline,
       stage: this.currentStage(),
-      events: this.events.slice(-80),
+      events: this.events,
       failures: { ...this.failures },
-      bloom: {
-        p50: this.params.bloomMeanDepth,
-        p90: this.params.bloomMeanDepth + 1.2816 * this.params.bloomDepthSD,
-        active: s.bloomActive,
-        arrivalsPerMin: s.spawnRate() * 60,
-        warningAt: this.warningAt,
-      },
+      bloom: { active: s.bloomActive, rate: this.params.bloomRate * s.surge, species: sp.name },
       selectedAgent,
-      underSkirtSeq: s.counters.underSkirt,
-      twin: {
-        enabled: this.params.twinLine,
-        duty: s.duty,
-        lines: s.lines.map((l) => ({ mode: l.mode, deployedPct: l.deployedFraction * 100 })),
-        handover: s.handoverAt >= 0,
-        outlet: ASSUMPTIONS.release.design.side === 'down-tide' ? s.flowSide() : 0,
-      },
       tide: this.tideSnapshot(),
     };
   }
 
   private tideSnapshot(): SimSnapshot['tide'] {
-    const p = this.params;
-    if (!p.tide) return { on: false, u: 0, date: 0, turnIn: null, trace: [], timeLapse: false };
-    const h = p.tideStart + this.simTime / 3600;
+    const on = this.params.tide;
+    const hours = this.params.tideStart + this.simTime / 3600;
+    const u = on ? tideCurrent(hours) : 0;
     const trace: number[] = [];
-    for (let k = -24; k <= 24; k++) trace.push(tideCurrent(h + k * 0.25));
-    return {
-      on: true,
-      u: tideCurrent(h),
-      date: tideDate(h).getTime(),
-      turnIn: hoursToNextTurn(h),
-      trace,
-      timeLapse: this.pace === 'toTurn' || this.pace === 'toArrival',
-    };
-  }
-
-  /** True while the run uses the reference (default) parameters. */
-  private isReferenceRun(): boolean {
-    return (Object.keys(DEFAULT_PARAMS) as Array<keyof SimParams>).every((k) => k === 'seed' || k === 'agentBudget' || this.params[k] === DEFAULT_PARAMS[k]);
+    if (on) for (let k = -24; k <= 24; k++) trace.push(tideCurrent(hours + k * 0.25));
+    return { on, u, date: on ? tideDate(hours).getTime() : 0, turnIn: on ? hoursToNextTurn(hours) : null, trace };
   }
 
   private publish(force: boolean): void {
     const now = performance.now();
-    if (!force && now - this.lastPublish < 125) return;
+    if (!force && now - this.lastPublish < 120) return;
     this.lastPublish = now;
     this.publisher?.(this.buildSnapshot());
   }
 
-  // ------------------------------------------------------------------ export
-
   exportRun(): object {
-    const b = computeEngineMetrics(this.baseline);
-    const m = computeEngineMetrics(this.sweepline);
-    const reduction =
-      b.intakeContactPct !== null && m.intakeContactPct !== null && b.intakeContactPct > 0
-        ? 1 - m.intakeContactPct / b.intakeContactPct
-        : null;
     const step = Math.max(1, Math.ceil(this.history.length / 600));
     return {
-      application: 'SweepLine — Adaptive Live Jellyfish Bypass Visualiser',
+      application: 'SweepLine digital twin',
       notice: [
         'Engineering design visualiser. Performance values are simulation estimates and are not field-validated.',
-        'Reference coastal intake geometry is schematic and does not represent confidential or exact ENEC facility design.',
-        'Agent-based engineering simulation — not validated field performance.',
+        'Reference coastal intake geometry is schematic and does not represent any real plant.',
       ],
       exportedAt: new Date().toISOString(),
-      scenario: this.scenario
-        ? { id: this.scenario.id, name: this.scenario.name }
-        : { id: null, name: this.isReferenceRun() ? 'Reference conditions' : 'Custom conditions' },
+      scenario: this.scenario ? { id: this.scenario.id, name: this.scenario.name } : { id: null, name: 'Custom conditions' },
       seed: this.params.seed,
       simulatedSeconds: Math.round(this.simTime),
       parameters: this.params,
       assumptions: ASSUMPTIONS,
-      operatingEnvelope: OPERATING_ENVELOPE,
-      metrics: { baseline: b, sweepline: m },
-      comparison: {
-        sameSeed: true,
-        baselineIntakeContactPct: b.intakeContactPct,
-        sweeplineIntakeContactPct: m.intakeContactPct,
-        intakeContactReduction: reduction,
-        label: 'Simulation estimate',
-      },
-      failures: {
-        active: Object.entries(this.failures)
-          .filter(([, v]) => v)
-          .map(([k]) => k),
-      },
-      safeOpen: this.safeOpen.state,
-      envelope: {
-        within: this.envelope.within,
-        satisfied: this.envelope.satisfied,
-        total: this.envelope.total,
-        recommendation: this.envelope.recommendation,
-        constraints: this.envelope.constraints,
-      },
+      metrics: { baseline: computeEngineMetrics(this.baseline), sweepline: computeEngineMetrics(this.sweepline) },
+      failures: Object.entries(this.failures)
+        .filter(([, v]) => v)
+        .map(([k]) => k),
+      constraints: this.constraints,
       timeline: this.timeline,
-      events: this.events.map((e) => ({ ...e, clock: new Date(this.clockStart + e.t * 1000).toISOString() })),
-      result: {
-        status: this.computeStatus(),
-        curtainMode: this.sweepline.curtain!.mode,
-      },
+      events: this.events,
       history: this.history.filter((_, i) => i % step === 0),
     };
   }
 
   exportCsv(): string {
-    const cols: Array<keyof HistorySample> = [
-      't',
-      'bContacts',
-      'sContacts',
-      'bRate',
-      'sRate',
-      'bPct',
-      'sPct',
-      'diverted',
-      'underSkirt',
-      'underPct',
-      'efficiency',
-      'utilisation',
-      'load',
-      'occupancy',
-      'contactTime',
-      'guided',
-      'transferred',
-      'released',
-      'flow',
-    ];
-    const header = [
-      'sim_time_s',
-      'baseline_intake_contacts',
-      'sweepline_intake_contacts',
-      'baseline_contact_rate_per_min',
-      'sweepline_contact_rate_per_min',
-      'baseline_intake_contact_pct',
-      'sweepline_intake_contact_pct',
-      'diverted',
-      'under_skirt',
-      'under_skirt_pct',
-      'diversion_efficiency',
-      'transfer_utilisation',
-      'curtain_load',
-      'throat_occupancy',
-      'avg_contact_time_s',
-      'guided',
-      'transferred',
-      'released',
-      'transfer_flow_m3h',
-    ];
-    const rows = this.history.map((h) =>
-      cols
-        .map((c) => {
-          const v = h[c];
-          return v === null ? '' : typeof v === 'number' ? (Number.isInteger(v) ? String(v) : v.toFixed(4)) : String(v);
-        })
-        .join(','),
-    );
+    const cols: Array<keyof HistorySample> = ['t', 'bScreens', 'sScreens', 'bTph', 'sTph', 'onNet', 'collected', 'released', 'head'];
+    const header = ['sim_time_s', 'baseline_screens_t', 'sweepline_screens_t', 'baseline_tph', 'sweepline_tph', 'on_net_t', 'collected_t', 'released_t', 'head_m'];
+    const rows = this.history.map((h) => cols.map((c) => (Number.isInteger(h[c]) ? String(h[c]) : h[c].toFixed(4))).join(','));
     return [`# SweepLine simulation estimate — seed ${this.params.seed} — not field-validated`, header.join(','), ...rows].join('\n');
   }
 }
-
-export const PHASE_LABELS: Record<SafeOpenPhase, string> = {
-  IDLE: 'Idle',
-  INITIATED: 'SafeOpen initiated — stop accepting new traffic',
-  UPSTREAM_REEF: 'Upstream reef in progress',
-  CLEARING: 'Existing SweepLine traffic clearing',
-  PROGRESSIVE_REEF: 'Progressive reef of remaining curtain',
-  THROAT_CLEAR: 'Throat clearing',
-  COMPLETE: 'Baseline intake protection restored',
-};
 
 export function formatDuration(s: number): string {
   const m = Math.floor(s / 60);

@@ -1,3 +1,4 @@
+import { SPECIES } from '../config/assumptions';
 import { TIDE } from './tide';
 import type { FailureKey, SimParams } from './types';
 
@@ -16,164 +17,139 @@ export interface Scenario {
   id: string;
   name: string;
   tagline: string;
+  /** The question a judge would ask that this run answers. */
+  question: string;
   description: string;
-  /** What the scenario is designed to demonstrate. */
-  demonstrates: string[];
   params: Partial<SimParams>;
-  /** 'sequence' runs from bloom approach (warning → deploy …); 'steady' pre-rolls into live operation. */
+  /** 'sequence' runs from the panels going in; 'steady' pre-rolls into live operation with a bloom on the net. */
   start: 'sequence' | 'steady';
   script?: ScenarioStep[];
   tone: 'nominal' | 'stress' | 'failure';
   /** Pre-roll for a steady start (s), when it differs from the default. */
   preRoll?: number;
-  /** 'tide': time-lapse through slack water, normal speed for the handover and the new sweep. */
-  pace?: 'tide';
 }
 
-const NORMAL: Partial<SimParams> = {
-  bloomDensity: 0.55,
-  currentSpeed: 0.2,
-  currentBearing: 242,
-  bloomMeanDepth: 1.7,
-  bloomDepthSD: 0.6,
-  skirtDepth: 2.5,
-  waveHeight: 0.6,
-  anchorAngle: 20,
-  transferCapacity: 0.8,
-  standbyEnabled: true,
-};
+const speciesDepth = (k: keyof typeof SPECIES): Partial<SimParams> => ({
+  species: k,
+  bloomMeanDepth: SPECIES[k].meanDepth,
+  bloomDepthSD: SPECIES[k].depthSD,
+});
 
-/**
- * Scenario presets. Each loads real parameter values into the simulation; the
- * outcomes are computed by the agent model, never scripted.
- */
+/** Scenario presets. Each loads real parameter values; the outcomes are computed by the agent model, never scripted. */
 export const SCENARIOS: Scenario[] = [
   {
-    id: 'normal',
-    name: 'Normal Bloom',
-    tagline: 'Typical seasonal bloom inside the envelope',
-    description:
-      'Moderate bloom density near the surface. Runs the full sequence from bloom approach and early warning through deployment, sweep, transfer and release.',
-    demonstrates: ['Full DETECT → DEPLOY → SWEEP → TRANSFER → RELEASE sequence', 'Diversion along the angled curtain'],
-    params: NORMAL,
+    id: 'reference',
+    name: 'Heavy bloom',
+    tagline: 'Top of the documented range, 25 t/h',
+    question: 'What does a normal response look like?',
+    description: 'Blue Blubber at the top of the documented intake range. The panels go in, the warning starts the pumps, and the plant’s own flow sweeps the bloom along the net to the collector.',
+    params: {},
     start: 'sequence',
     tone: 'nominal',
   },
   {
-    id: 'extreme',
-    name: 'Extreme Bloom',
-    tagline: 'Maximum density, deeper distribution',
-    description:
-      'Peak bloom density with a deeper distribution. Transfer utilisation and throat occupancy approach their limits — watch the throat indicator move from green to amber.',
-    demonstrates: ['Transfer utilisation near capacity', 'Throat occupancy rising', 'Curtain biomass loading'],
-    params: { ...NORMAL, bloomDensity: 1.0, currentSpeed: 0.34, bloomMeanDepth: 2.1, bloomDepthSD: 0.7, skirtDepth: 3.0, waveHeight: 0.9, transferCapacity: 0.85 },
-    start: 'steady',
+    id: 'moon',
+    name: 'Moon jellyfish swarm',
+    tagline: 'Smaller, softer, more of them',
+    question: 'Does it only work for one species?',
+    description: 'Moon jellyfish are the classic intake blocker worldwide. They are soft, so more work through the mesh and they block more of it per tonne. The second net earns its place here.',
+    params: { ...speciesDepth('aurelia'), bloomRate: 18 },
+    start: 'sequence',
     tone: 'stress',
   },
   {
     id: 'deep',
-    name: 'Deep Bloom',
-    tagline: 'Bloom sits below the skirt setpoint',
-    description:
-      'Most of the bloom sits deeper than the 2.5 m skirt setpoint. The winches lower the skirt automatically to 4.0 m, the most the seabed clearance allows, and the foot jets lift animals close to the hem — switch to the underwater camera to see the deepest few still slip underneath.',
-    demonstrates: ['Adaptive skirt depth', 'Under-skirt escape at the clearance limit', 'Foot jets at the hem'],
-    params: { ...NORMAL, bloomDensity: 0.7, bloomMeanDepth: 3.4, bloomDepthSD: 0.45, skirtDepth: 2.5 },
-    start: 'steady',
-    tone: 'stress',
-  },
-  {
-    id: 'high-current',
-    name: 'High Current',
-    tagline: 'Current exceeds the assumed envelope',
-    description:
-      'A 0.72 m/s current exceeds the assumed 0.60 m/s limit. The warning arrives but deployment is rejected — SweepLine reports DO NOT DEPLOY instead of faking success.',
-    demonstrates: ['Operating-envelope check', 'Deployment rejected outside validated envelope'],
-    params: { ...NORMAL, currentSpeed: 0.72, bloomDensity: 0.65 },
+    name: 'Deep bloom',
+    tagline: 'Crambionella, near the seabed',
+    question: 'What if they swim under it?',
+    description: 'Crambionella gather at depth. The nets run from float line to seabed, so depth does not matter except at the ground-line joints.',
+    params: { ...speciesDepth('crambionella'), bloomRate: 20 },
     start: 'sequence',
     tone: 'stress',
   },
   {
-    id: 'high-waves',
-    name: 'High Waves',
-    tagline: 'Sea state builds during operation',
-    description:
-      'Starts in normal operation; significant wave height then builds to 1.8 m. The hard limit is exceeded and SafeOpen retracts the curtain automatically, upstream end first.',
-    demonstrates: ['Automatic SafeOpen on envelope exceedance', 'Wave overtopping of the float line'],
-    params: { ...NORMAL, waveHeight: 0.8 },
+    id: 'night',
+    name: 'Night, turbid water',
+    tagline: 'No cameras, no problem',
+    question: 'How does it cope with poor visibility?',
+    description: 'Nothing here needs to see. The sonar at the mouth and the load cells on the net carry on in the dark, and the net works whether anyone is watching or not.',
+    params: { night: true },
+    start: 'steady',
+    tone: 'stress',
+  },
+  {
+    id: 'storm',
+    name: 'Shamal storm',
+    tagline: 'Hs 1.82 m, the highest recorded in four years',
+    question: 'What happens in a storm?',
+    description: 'The sea builds to the highest wave recorded at the site in 2022–2025. The breakwaters take it: about a fifth of it reaches the net line.',
+    params: { waveHeight: 0.8 },
     start: 'steady',
     script: [
-      { at: 30, action: { kind: 'params', params: { waveHeight: 1.25 }, message: 'Sea state increasing — Hs 1.25 m' } },
-      { at: 70, action: { kind: 'params', params: { waveHeight: 1.8 }, message: 'Sea state increasing — Hs 1.8 m' } },
+      { at: 20, action: { kind: 'params', params: { waveHeight: 1.3 }, message: 'Sea state building — Hs 1.3 m offshore' } },
+      { at: 60, action: { kind: 'fail', failure: 'storm' } },
     ],
     tone: 'stress',
   },
   {
-    id: 'slack-tide',
-    name: 'Slack Tide',
-    tagline: 'The current dies away during operation',
-    description:
-      'Starts in normal operation; the along-shore current then slackens to 0.06 m/s. A passive curtain stops sweeping and jellyfish stall against it, while the conveyor jets keep the bloom moving to the throat. Switch Active flow off to compare.',
-    demonstrates: ['Active flow independent of the tide', 'Conveyor jets vs passive sweep'],
-    params: { ...NORMAL },
+    id: 'fouled',
+    name: 'Missed panel swap',
+    tagline: 'Panels in the water for ten weeks',
+    question: 'What about fouling?',
+    description: 'Gulf growth is fast. The planned swap is every four weeks; here it has been missed twice. Head across the net climbs and the margin to relief shrinks, but it shows on the load cells long before it matters.',
+    params: { foulingWeeks: 10 },
     start: 'steady',
-    script: [
-      { at: 30, action: { kind: 'params', params: { currentSpeed: 0.15 }, message: 'Current slackening — 0.15 m/s' } },
-      { at: 70, action: { kind: 'params', params: { currentSpeed: 0.06 }, message: 'Slack tide — current 0.06 m/s' } },
-    ],
     tone: 'stress',
   },
   {
-    id: 'tide-turn',
-    name: 'Tide Turn',
-    tagline: 'Recorded tide reverses mid-bloom: Line B takes over',
-    description:
-      'Replays a recorded spring-tide turn at the site (Copernicus current, 8 Oct 2025, 02:43 UTC): 0.2 m/s along the shore, slackening, then reversing. ' +
-      'Once it has turned, Line B pops up on the other side of the intake, Line A guides the traffic already on it to its throat and settles back onto the seabed, ' +
-      'and both feed the same release line 2 km down-drift. Time-lapse through slack water. Switch Second line off in Stress test to see one curtain face the wrong way.',
-    demonstrates: ['Real tidal current at the site', 'Twin-Line handover', 'One release line for both tides'],
-    params: { ...NORMAL, bloomDensity: 0.7, tide: true, tideStart: TIDE.referenceTurn - 1.6 },
+    id: 'tide',
+    name: 'Recorded tide turn',
+    tagline: 'Copernicus current, 8 Oct 2025',
+    question: 'What happens when the tide turns?',
+    description: 'The recorded spring tide slackens and reverses outside. Inside the channel nothing changes: the plant’s pumps set the flow, so the net keeps sweeping through slack water and the turn.',
+    params: { tide: true, tideStart: TIDE.referenceTurn - 1.2, bloomRate: 18 },
     start: 'steady',
-    preRoll: 3000,
-    pace: 'tide',
     tone: 'stress',
   },
   {
-    id: 'transfer-failure',
-    name: 'Transfer Failure',
-    tagline: 'Primary transfer fault, standby takes over',
-    description:
-      'A primary transfer fault is injected during operation. The standby transfer path activates automatically and capacity is restored — the first fail-safe.',
-    demonstrates: ['Transfer fault detection', 'Standby transfer activation'],
-    params: { ...NORMAL, bloomDensity: 0.7 },
-    start: 'steady',
-    script: [{ at: 40, action: { kind: 'fail', failure: 'transferPrimary' } }],
-    tone: 'failure',
-  },
-  {
-    id: 'safeopen',
-    name: 'SafeOpen Demonstration',
-    tagline: 'Primary and standby transfer both fail',
-    description:
-      'Primary transfer fails, the standby activates, then the standby also fails. SafeOpen reefs the upstream end first, clears existing curtain traffic, progressively reefs the rest and restores baseline intake protection.',
-    demonstrates: ['Upstream-first reefing', 'Existing traffic clearing', 'Return to baseline protection'],
-    params: { ...NORMAL, bloomDensity: 0.7 },
+    id: 'pump',
+    name: 'Collector pumps fail',
+    tagline: 'Duty pump, then standby',
+    question: 'What happens when a part fails?',
+    description: 'The duty pump trips and the standby takes over. Then the standby fails too. The pockets fill and the bloom stacks up along the net, which is passive and goes on holding it, buying time for repair.',
+    params: {},
     start: 'steady',
     script: [
-      { at: 30, action: { kind: 'fail', failure: 'transferPrimary' } },
-      { at: 90, action: { kind: 'fail', failure: 'transferStandby' } },
+      { at: 30, action: { kind: 'fail', failure: 'pumpPrimary' } },
+      { at: 240, action: { kind: 'fail', failure: 'pumpStandby' } },
     ],
     tone: 'failure',
   },
   {
-    id: 'workboat',
-    name: 'Workboat Deployment',
-    tagline: 'Same bloom, laid by boat instead of popping up',
-    description:
-      'The curtain is laid by a workboat after a 15-minute mobilisation (assumption) instead of rising from the seabed. The leading edge of the bloom reaches the intake before the curtain is in place: the late-deployment leak the pop-up curtain removes.',
-    demonstrates: ['Late-deployment leakage', 'Pop-up vs workboat response time'],
-    params: { ...NORMAL, deployMode: 'workboat' },
-    start: 'sequence',
-    tone: 'stress',
+    id: 'tear',
+    name: 'Panel tears out',
+    tagline: 'A hole in net A',
+    question: 'What if the net rips?',
+    description: 'A busy panel in the first net tears out. Flow rushes to the hole and takes animals with it. The second net, 60 m behind, catches them.',
+    params: {},
+    start: 'steady',
+    script: [{ at: 40, action: { kind: 'fail', failure: 'panelTear' } }],
+    tone: 'failure',
+  },
+  {
+    id: 'overload',
+    name: 'Everything at once',
+    tagline: 'Pumps down, triple bloom',
+    question: 'Can the net ever become a dam?',
+    description: 'No collector and three times the bloom. The net loads up until the head reaches the relief limit, then the float line dips at the upstream end and water spills over, so cooling flow always comes first.',
+    params: { foulingWeeks: 6 },
+    start: 'steady',
+    script: [
+      { at: 20, action: { kind: 'fail', failure: 'pumpPrimary' } },
+      { at: 20, action: { kind: 'fail', failure: 'pumpStandby' } },
+      { at: 60, action: { kind: 'fail', failure: 'surge' } },
+    ],
+    tone: 'failure',
   },
 ];
 

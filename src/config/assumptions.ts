@@ -1,231 +1,175 @@
 /**
  * Simulation and design assumptions.
  *
- * Every number in this file is a DESIGN ASSUMPTION used by the agent-based
- * engineering simulation. None of them is a validated field value. They are
- * grouped here so they can be reviewed, challenged and calibrated against flume
- * and field data later without touching simulation code.
+ * Every number in this file is a DESIGN ASSUMPTION used by the agent-based engineering simulation,
+ * unless its comment names a source. None of them is a validated field value. They are grouped here
+ * so they can be reviewed, challenged and calibrated against flume and field data later without
+ * touching simulation code. `src/config/sensitivity.ts` says which test settles which number.
  */
+
+/** Jellyfish the twin can be run against. The brief names the first and asks designs to adapt to others. */
+export const SPECIES = {
+  catostylus: {
+    name: 'Blue Blubber',
+    latin: 'Catostylus',
+    /** Bell diameter range (m) and wet mass of one animal (kg). */
+    bellMin: 0.3,
+    bellMax: 0.45,
+    kgEach: 1.2,
+    /** Self-propulsion (m/s), from bell pulsation: lab bells swim about one bell-width a second (Neil & Askew 2018). */
+    swimMin: 0.02,
+    swimMax: 0.06,
+    /** Share of animals that work through the mesh or a panel joint, per panel travelled. Firm bell: low. */
+    leakPerPanel: 0.0006,
+    /** Bell area blocking the net, per kg on it (m²/kg). */
+    blockPerKg: 0.1,
+    meanDepth: 2.4,
+    depthSD: 1.4,
+    tint: 0,
+  },
+  aurelia: {
+    name: 'Moon jellyfish',
+    latin: 'Aurelia',
+    bellMin: 0.12,
+    bellMax: 0.28,
+    kgEach: 0.15,
+    swimMin: 0.01,
+    swimMax: 0.04,
+    /** Soft and easily torn: more fragments pass the mesh. */
+    leakPerPanel: 0.002,
+    blockPerKg: 0.22,
+    meanDepth: 3.2,
+    depthSD: 2.0,
+    tint: 1,
+  },
+  crambionella: {
+    name: 'Crambionella',
+    latin: 'Crambionella orsini',
+    bellMin: 0.15,
+    bellMax: 0.3,
+    kgEach: 0.5,
+    swimMin: 0.02,
+    swimMax: 0.05,
+    leakPerPanel: 0.001,
+    blockPerKg: 0.16,
+    /** Reported at depth, up to 90 % of bottom-trawl catches off Iran (Daryanabard & Dawson 2008). */
+    meanDepth: 5.0,
+    depthSD: 2.2,
+    tint: 2,
+  },
+} as const;
+
+export type SpeciesKey = keyof typeof SPECIES;
+
 export const ASSUMPTIONS = {
   /** Fixed integration step for the agent model (simulated seconds). */
   timeStep: 0.1,
 
+  /** The plant. Condenser flow about 6,000 m³/min per unit (world-nuclear-news, published for a 1.4 GW unit). */
+  plant: {
+    unitFlowM3s: 100,
+    units: 4,
+  },
+
   agent: {
     /** Velocity relaxation time — gives inertia so trajectories bend gradually (s). */
     tau: 2.0,
-    /** Self-propulsion from bell pulsation (m/s). */
-    swimSpeedMin: 0.02,
-    swimSpeedMax: 0.06,
     /** Small-scale stochastic motion amplitude (m/s). */
     turbulence: 0.022,
     /** Vertical swimming toward preferred depth: gain (1/s) and cap (m/s). */
     verticalGain: 0.06,
     verticalMax: 0.04,
     /** Vertical turbulent mixing amplitude (m/s). */
-    verticalNoise: 0.014,
-    /** Full-scale bell diameter range for Catostylus mosaicus (m). */
-    bellDiameterMin: 0.3,
-    bellDiameterMax: 0.45,
+    verticalNoise: 0.02,
     /** Shallowest depth an agent will occupy (m). */
     minDepth: 0.3,
+    /** Biomass one simulated agent stands for at the default agent budget (kg). */
+    kgPerAgent: 8,
+    /** Agent budget `kgPerAgent` refers to. A smaller budget means each agent stands for more. */
+    referenceBudget: 3000,
   },
 
   bloom: {
-    /** Fraction of spawns drawn from the main (near-shore) patch; the rest is a broad background. */
-    mainPatchFraction: 0.88,
+    /** Fraction of spawns drawn from the main patch; the rest is a broad background. */
+    mainPatchFraction: 0.86,
     /** Slow lateral wander of the patch centre (m). */
-    patchWander: 6,
-    /**
-     * Once an agent has passed the intake reference line clear of the site, it is no
-     * longer tracked: it fades out over this distance (m) and leaves the simulation.
-     * Its outcome is already counted.
-     */
-    passedFadeDistance: 30,
+    patchWander: 40,
     /** Temporal patchiness of the arrival rate (± fraction). */
     rateVariation: 0.3,
-    /**
-     * Extent of the bloom when a run starts from the approach stage (m), used when the curtain is
-     * not popped up automatically (workboat or manual deployment): the leading edge is still
-     * upstream of every anchor layout.
-     */
-    approachFillFrom: -240,
-    approachFillTo: -200,
-    /**
-     * With an automatic pop-up deployment the run starts with the bloom close in: its leading
-     * edge lies just upstream of the curtain's upstream anchor, set back from every section by the
-     * drift until that section has surfaced (early warning, deployment confirmation and its pop-up
-     * time, × this margin), plus `popUpFrontGap` (m). Every section is up before the bloom reaches
-     * it; behind the edge the bloom extends back to the spawn line.
-     */
-    popUpFrontMargin: 1.15,
-    popUpFrontGap: 6,
-    /**
-     * The bloom's ragged leading edge: a few individuals ahead of the patch in the inshore lanes
-     * (lateral band, m), this far (m) upstream of the curtain line. They reach it while its
-     * upstream end is still rising, so they cross before it can guide them — the leak a pop-up
-     * deployment still allows. Assumption.
-     */
-    leadingScatter: { count: 4, zMin: -48.5, zMax: -42, leadMin: 3, leadMax: 9 },
-    /** Stress-test bloom surge: a band this deep (m) ending this far (m) upstream of a guiding curtain. */
-    surgeDepth: 45,
-    surgeGap: 8,
   },
 
-  curtain: {
-    /** Thickness of the zone where the curtain influences an agent (m). */
-    interactionRange: 3.0,
-    /** Distance at which an agent is considered to be guided along the curtain (m). */
-    guideDistance: 1.8,
-    /** Closest stand-off of a bell centre from the skirt plane (m). */
-    minStandoff: 0.35,
-    /** Fraction of the blocked (normal) velocity redirected along the curtain tangent. */
-    redirectGain: 0.6,
-    /** Fraction of the blocked velocity that becomes downward entrainment at the skirt face. */
-    entrainmentGain: 0.1,
-    /** Skirt blow-back: tan(theta) = liftCoefficient * Un^2. */
-    liftCoefficient: 4.6,
-    /** Fraction of wave elevation that appears as relative heave between skirt edge and bloom. */
-    relativeHeave: 0.5,
-    moduleLength: 10,
-    floatSpacing: 1.2,
-    intermediateAnchorSpacing: 30,
-    /** Deployment tow speed of the workboat (m/s ≈ 3 kn). */
-    deploySpeed: 1.5,
-    stowSpeed: 2.0,
-    /** Skirt depth adjustment rate of the reefing winches (m/s). */
-    skirtWinchRate: 0.3,
-    /** Length behind the laying point over which the skirt drops to full depth (m). */
-    skirtDropLag: 10,
-    /** Length over which a reefed section transitions (m). */
-    reefBand: 6,
-    /** Minimum allowed clearance between skirt bottom and seabed (m). */
-    seabedClearance: 1.0,
-    skirtDepthMin: 1.5,
-    skirtDepthMax: 4.0,
-    /**
-     * Adaptive skirt: while the bloom's P90 depth is below the skirt setpoint, the winches lower
-     * the skirt to P90 + this margin (m), within the seabed clearance limit.
-     */
-    adaptiveSkirtMargin: 0.3,
-    /** Wave overtopping: threshold Hs (m) and gain. */
-    overtopThreshold: 1.0,
-    overtopGain: 0.02,
+  /** Guide nets. All of it to be measured: flume for guidance, a 4–6 week panel test at the site for fouling. */
+  net: {
+    /** Bar mesh and twine (m). 50 mm bar stops every target bell and passes small debris. Solidity ≈ 2 × twine / bar. */
+    meshBar: 0.05,
+    twine: 0.004,
+    /** Distance from the net at which an agent is on it, and its closest approach (m). */
+    guideDistance: 1.4,
+    standoff: 0.35,
+    /** Share of the along-net flow an animal on the mesh keeps (mesh friction). */
+    slide: 0.75,
+    /** Chance per second that an animal snags, at the 0.12 m/s through-net speed (scales with its square). */
+    snagRate: 0.0007,
+    /** Mean time a snagged animal stays put before the flow frees it (s). */
+    snagTime: 300,
+    /** Chance per panel of a near-bed animal slipping under at a ground-line joint. */
+    jointLeak: 0.0015,
+    /** Height above the seabed the ground-line joints matter over (m). */
+    jointBand: 0.5,
+    /** Fouling: added solidity = foulMax × (1 − exp(−weeks / foulWeeks)). Proxy from the Gunderboom and tropical net-cage records. */
+    foulMax: 0.6,
+    foulWeeks: 5,
+    /** Planned panel swap interval (weeks). */
+    swapWeeks: 4,
+    /** Screen loss coefficient K = lossK × (1 − ε²) / ε², ε = open area. */
+    lossK: 1.5,
+    /** Loss coefficient of a torn-out panel. */
+    tornK: 0.08,
+    /** Head difference (m) at which the relief sections let the float line dip, so the net can never act as a dam. */
+    reliefHead: 0.12,
+    /** Design head for the panels and piles (m): load is reported against this. */
+    designHead: 0.15,
+    /** How far the float line dips at full relief (m below still water), and how many panels at the upstream end relieve. */
+    reliefDip: 2.5,
+    reliefPanels: 6,
+    /** Time to lower one panel down its pile guides during the season's installation (s). */
+    panelDropTime: 5,
+    panelDropStagger: 1.1,
   },
 
-  /**
-   * Active flow (SweepLine Active): low-velocity water jets built into the curtain.
-   * Conveyor jets drive a gentle wall jet along the bloom face toward the throat, so the
-   * sweep does not depend on the natural current; foot jets on the weighted hem push water
-   * upward at the gap under the skirt (a "water skirt"). First-pass values from plane
-   * wall-jet scaling, to be sized by CFD and flume tests.
-   */
-  jets: {
-    /** Along-face velocity at the curtain face at 100 % output (m/s). */
-    conveyorSpeed: 0.3,
-    /** Width of the conveyor layer on the bloom side; the velocity falls to zero across it (m). */
-    conveyorBand: 3.0,
-    /** Upward velocity at the skirt's lower edge at 100 % output (m/s). */
-    footUplift: 0.07,
-    /** How far below the skirt edge the foot jets reach (m). */
-    footReach: 1.5,
-    /** Horizontal reach of the foot jets from the curtain plane (m). */
-    footBand: 2.0,
-    /** Time for the jets to reach the commanded output (s). */
-    rampTime: 10,
-    /** Water flow and pump power at 100 % output (first estimate; power scales with output cubed). */
-    designFlowM3s: 1.5,
-    designPowerKW: 50,
+  /** Fish-screen practice used as the design basis (NMFS): through-screen speed at most 0.12 m/s, sweep faster than that. */
+  screenCriteria: {
+    approachMax: 0.12,
   },
 
-  /**
-   * SweepLine Twin-Line: a second line, the mirror image of the first, stowed on the seabed on the
-   * other side of the intake. When the tidal current has run the other way past `switchSpeed` for
-   * `switchDwell`, duty passes to that line: it pops up, while the previous line keeps guiding the
-   * traffic already on it to its throat and then settles back onto the seabed. Assumptions.
-   */
-  twin: {
-    /** Reversed along-shore current (m/s) and how long it must hold (s) before the handover. */
-    switchSpeed: 0.015,
-    switchDwell: 30,
-    /** The previous line stows once at most this many agents remain guided on it and its throat is empty… */
-    handoverClearThreshold: 1,
-    /** …but not before this long (s), and at the latest after this long (s). */
-    handoverMin: 60,
-    handoverMax: 420,
-  },
-
-  deploy: {
-    /** Pop-up: valve checks before the float line starts inflating (s). */
-    popUpDelay: 15,
-    /** Pop-up: speed of the inflation front along the curtain from the throat end (m/s). */
-    popUpSpeed: 2.5,
-    /**
-     * Pop-up: ascent speed of an inflated section from the seabed to the surface (m/s), so a
-     * section takes ~10–16 s to surface over 5–8 m of water. A section guides only once its
-     * float line is at the surface. Assumption — to be confirmed by flume tests.
-     */
-    riseSpeed: 0.5,
-    /** Pop-up: sink speed of a vented section settling back onto the seabed when stowing (m/s). Assumption. */
-    sinkSpeed: 0.35,
-    /** Workboat option: crew and vessel mobilisation before laying starts (s). */
-    workboatMobilisation: 900,
-  },
-
-  throat: {
-    /**
-     * Clear gap between the smooth round bars of the excluder grid across the throat mouth (m):
-     * passes the 0.30–0.45 m bells, stops adult turtles and dugongs. Design assumption.
-     */
-    excluderBarSpacing: 0.55,
-    /** Bellmouth holding capacity per 1000 simulated agents. */
-    holdCapacityPerThousand: 20,
-    /** Advection speed through the bellmouth (m/s) = base + flow * transferFlowFraction. */
-    funnelSpeedBase: 0.15,
-    funnelSpeedFlow: 0.3,
+  collector: {
+    /** Biomass the pocket holds before animals back up along the net (kg per 1000 agents' worth is derived). */
+    holdKg: 900,
+    /** Speed through the funnel (m/s). */
+    funnelSpeed: 0.28,
   },
 
   transfer: {
-    /**
-     * Transfer rate at 100 % capacity, per 1000 simulated agents (agents/s). Sized so the
-     * reference bloom — which arrives along the coast and almost all reaches the throat —
-     * runs at roughly 55–75 % utilisation, leaving headroom for rate surges.
-     */
-    designRatePerThousand: 0.85,
-    /**
-     * Bore of the transfer line (m): at least twice the largest bell, so animals never touch both
-     * walls. With `pipeVelocity` it sets the transfer water flow.
-     */
+    /** Bore of the transfer line (m): at least twice the largest bell. */
     pipeBore: 1.0,
-    /** Nominal transfer water flow at 100 % capacity (m³/h): the bore's cross-section at `pipeVelocity` (1.5 m/s). */
-    designFlowM3h: Math.round((Math.PI / 4) * 1.0 * 1.0 * 1.5 * 3600),
-    /** Largest share of the transfer water (by volume) taken up by jellyfish, for gentle handling. Assumption, to be set by bell-damage tests. */
-    maxJellyFraction: 0.05,
-    /** Transfer pump wire-to-water efficiency, and the line's minor-loss coefficient (entrance, bends, valve, diffuser). */
-    pumpEfficiency: 0.6,
-    minorLossK: 5,
-    /** Time for the standby path to reach full capacity after a primary fault (s). */
-    standbyActivationTime: 8,
-    /**
-     * Residual capacity of the passive open-flow line when no powered path is
-     * available (fraction of design). Set to 0 to model no passive path.
-     */
-    passiveDrainFraction: 0.25,
     /** Mean velocity in the transfer line (m/s). */
     pipeVelocity: 1.5,
+    /** Nominal water flow (m³/h): the bore's cross-section at `pipeVelocity`. */
+    designFlowM3h: Math.round((Math.PI / 4) * 1.0 * 1.0 * 1.5 * 3600),
+    /** Largest share of the transfer water by volume taken up by jellyfish, for gentle handling. To be set by bell-damage tests. */
+    maxJellyFraction: 0.05,
+    /** Pump wire-to-water efficiency and the line's minor-loss coefficient. */
+    pumpEfficiency: 0.6,
+    minorLossK: 5,
+    /** Time for the standby pump to reach full capacity after a fault (s). */
+    standbyActivationTime: 12,
+    /** Line length to the outlet (m). */
+    length: 2200,
   },
 
   release: {
-    /**
-     * Design release point, chosen with the drift study (scripts/drift-study.ts): both throats feed
-     * one release line running this far along the shore (m) to the down-drift side (+x, WSW: the
-     * Oct–Nov residual drift and wind), and this far offshore (site z, m). It brings as few animals
-     * back as a valve choosing the down-tide side each time, with half the pipe. `side: 'down-tide'`
-     * selects that alternative (two release lines, one each side). The twin draws its outlets
-     * schematically, close to the site.
-     */
-    design: { side: 'down-drift' as 'down-drift' | 'down-tide', along: 2000, offshore: 300 },
-    /** Assumed transfer-line length to the safe release zone (m) — simulation assumption. */
-    distanceOptions: [250, 500, 750] as const,
+    /** One release line, this far along the shore on the down-drift side (+x, WSW) and this far offshore (site z, m). */
+    design: { along: 2000, offshore: 300 },
     jetSpeed: 0.35,
     /** Released jellyfish are tracked while they clear the outlet plume (s), then fade out over fadeTime and leave the simulation. */
     trackTime: 40,
@@ -237,7 +181,6 @@ export const ASSUMPTIONS = {
    * current and wind and the real coastline. Assumptions, to be checked with drifters at sea.
    */
   drift: {
-    /** Integration step (s) and how long each released animal is followed (s). */
     step: 300,
     horizon: 7 * 86400,
     /** Share of the 10 m wind speed that moves a near-surface jellyfish (windage). */
@@ -246,63 +189,45 @@ export const ASSUMPTIONS = {
     diffusivity: 1.0,
     /** Within this distance of land (m) the current's onshore component fades out (it runs along the shore). */
     coastDamping: 100,
-    /** "Back at the site": within this along-shore distance (m) of the intake and this far offshore (site z, m)… */
-    returnHalfWidth: 300,
-    returnMaxZ: 150,
+    /** "Back at the site": within this distance (m) of the channel mouth, the water the intake is drawing in… */
+    returnRadius: 300,
     /** …at least this long (s) after release, so the release plume itself does not count. */
     returnGrace: 7200,
   },
 
-  intake: {
-    /** Time a jellyfish remains impinged on the screens before removal (s). */
-    impingementDwell: 150,
+  /** The plant's existing screens: what they can clear, and what blinding them does. Ask the plant for its own logs. */
+  screens: {
+    /** Biomass the travelling screens can wash off (t/h). Uljin's screens hit their limit at about 0.8–2.1 moon jellyfish per m³ (KIOST). */
+    washTph: 10,
+    /** Backlog on the screens (t) at which the plant reduces load, and at which it trips. */
+    derateAt: 2,
+    tripAt: 5,
+    /** Time a jellyfish stays visible on the screens (s). */
+    dwell: 150,
   },
 
-  safeOpen: {
-    /** Fraction of curtain length reefed in the fast upstream-first step. */
-    upstreamFraction: 0.4,
-    upstreamReefSpeed: 2.0,
-    /** Reef front speed while existing curtain traffic clears (m/s). */
-    clearingReefSpeed: 0.45,
-    finalReefSpeed: 1.5,
-    /** Clearing ends when this many or fewer agents remain guided on active sections. */
-    clearingThreshold: 2,
-    maxClearingTime: 150,
-    throatClearTimeout: 150,
-    /** Hard-limit violations must persist this long before SafeOpen triggers (s). */
-    violationDwell: 6,
-    /** Delay between losing all powered transfer paths and SafeOpen initiation (s). */
-    transferLossDelay: 2,
-    rearmSpeed: 2.0,
+  /** Near-field sonar at the mouth: works at night and in turbid water, where cameras do not. Range (m), sweep period (s). */
+  sonar: {
+    range: 420,
+    period: 8,
+    /** Share of the bloom it resolves at night or in turbid water (it needs no light). */
+    detectShare: 0.92,
   },
 
   sequence: {
-    /** Early-warning message arrives this long after the bloom approach starts (s). */
-    warningAt: 4,
-    /** Envelope must be satisfied this long before auto-deployment begins (s). */
-    deployConfirm: 2,
     /** Pre-roll used when a run starts in steady operation (s). */
-    steadyPreRoll: 780,
+    steadyPreRoll: 1500,
     /** Integration step used only during pre-roll (s). Both engines use it, so the comparison stays fair. */
     preRollStep: 0.4,
-  },
-
-  loads: {
-    /** Normal-velocity reference giving 100 % hydrodynamic load at full design skirt (m/s). */
-    designNormalVelocity: 0.2,
-    designSkirt: 4.0,
-    designWave: 1.5,
-    /** Guided agents per 1000-agent budget that represent 100 % biomass load. */
-    designGuidedPerThousand: 260,
-    hydroWeight: 0.55,
-    waveWeight: 0.3,
-    biomassWeight: 0.25,
+    /** Run speed while the panels go in, and after. */
+    openingSpeed: 3,
+    runSpeed: 20,
   },
 
   metrics: {
-    /** Intake contacts per minute per 1000 agents dividing LOW/MEDIUM/HIGH screen loading. */
-    screenLoadMedium: 2.0,
-    screenLoadHigh: 5.0,
+    /** Screen load in t/h dividing LOW/MEDIUM/HIGH. */
+    screenLoadMedium: 3,
+    screenLoadHigh: 10,
     /** Rolling window for rates (s). */
     rateWindow: 300,
     /** Minimum resolved sample before a percentage is shown. */

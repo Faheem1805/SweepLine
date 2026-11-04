@@ -1,63 +1,55 @@
-import { OUTLETS, SITE, mirrorX, seabedDepth } from '../config/site';
-import { ASSUMPTIONS } from '../config/assumptions';
+import { ASSUMPTIONS, SPECIES } from '../config/assumptions';
+import { SITE, seabedDepth, waveExposure } from '../config/site';
 import {
   AgentPool,
   F_DIVERTED,
   F_ENCOUNTERED,
+  F_ENTERED,
   F_FROM_EAST,
-  F_OVERTOPPED,
-  F_OVERTOPPING,
-  F_REEF_RELEASED,
+  F_LEAKED,
+  F_LEAKED_B,
   F_RESOLVED,
-  F_UNDER_COUNTED,
+  F_SNAGGED,
   STATE_NAMES,
   S_APPROACHING,
   S_FREE_DRIFT,
   S_GUIDED,
   S_INACTIVE,
   S_INTAKE_CONTACT,
+  S_PAST_NET,
   S_RELEASED,
   S_TRANSFERRED,
   S_TRANSFER_QUEUE,
-  S_UNDER_SKIRT,
 } from './Agent';
-import { CurtainState, popUpSurfaceTime, skirtSetpoint } from './curtain';
 import { FlowField } from './flowField';
-import {
-  curtainXAt,
-  getCurtainLayout,
-  nearestSegment,
-  SegmentHit,
-  sideForCurrent,
-  throatHalfHeightAt,
-  throatHalfWidthAt,
-  type CurtainLayout,
-} from './geometry';
+import { collectorPoint, NETS, pointOnNet, type NetLine } from './geometry';
+import { NetState } from './net';
+import { ScreenState } from './screens';
 import { fbm1, hash01, SeededRandom, valueNoise } from './seededRandom';
-import { TransferState } from './transfer';
-import type { EngineKind, LineSide, SimParams } from './types';
+import { TRANSFER_TPH, TransferState } from './transfer';
+import type { EngineKind, NetIndex, SimParams } from './types';
 
-const DEG = Math.PI / 180;
+const N = ASSUMPTIONS.net;
+/** Distance past the mouth, along the current, at which a bloom has clearly gone by (m). */
+const PASS_X = 420;
 
 export interface Counters {
   spawned: number;
   dropped: number;
   /** Agents that reached the intake screens. */
   intakeContacts: number;
-  /** Agents that passed the intake reference line (or left the site) without contact or diversion. */
+  /** Agents that went on past the site without reaching the screens or a collector. */
   exited: number;
-  /** Agents that interacted with SweepLine (curtain or throat). */
+  /** Agents that came into the channel. */
+  entered: number;
+  /** Agents that touched a net. */
   encountered: number;
-  /** Agents that reached the recovery throat. */
+  /** Agents that reached a collection pocket. */
   diverted: number;
-  underSkirt: number;
-  overtopped: number;
-  /** Agents released from the curtain by reefing (SafeOpen) — dispersed, not diverted. */
-  reefReleased: number;
+  /** Agents past each net without being collected there. */
+  leaked: [number, number];
   transferred: number;
   released: number;
-  contactTimeSum: number;
-  contactTimeN: number;
 }
 
 /** Where every jellyfish that entered the site is (see `SimulationEngine.balance`). */
@@ -71,7 +63,7 @@ export interface Balance {
   closes: boolean;
 }
 
-export type MarkerKind = 'under' | 'overtop' | 'intake' | 'release';
+export type MarkerKind = 'leak' | 'intake' | 'release';
 
 export interface Marker {
   x: number;
@@ -90,7 +82,6 @@ export interface AgentInfo {
   x: number;
   z: number;
   size: number;
-  contactTime: number | null;
   transitRemaining: number | null;
 }
 
@@ -99,32 +90,23 @@ const zeroCounters = (): Counters => ({
   dropped: 0,
   intakeContacts: 0,
   exited: 0,
+  entered: 0,
   encountered: 0,
   diverted: 0,
-  underSkirt: 0,
-  overtopped: 0,
-  reefReleased: 0,
+  leaked: [0, 0],
   transferred: 0,
   released: 0,
-  contactTimeSum: 0,
-  contactTimeN: 0,
 });
 
 const MARKER_CAPACITY = 128;
 
-/** x on the given side of the site for a position given in the side-0 frame (the Twin-Line mirror for side 1). */
-const onSide = (x: number, side: LineSide) => (side === 0 ? x : mirrorX(x));
-
 /**
- * Agent-based engineering simulation of one world (baseline or SweepLine).
- * Agent-based engineering simulation — not validated field performance.
+ * Agent-based engineering simulation of one world (baseline, or with SweepLine) — not validated
+ * field performance.
  *
- * SweepLine Twin-Line: the SweepLine world holds two guide lines, mirror images
- * about the intake centreline. The duty line is the one laid for the current's
- * direction; when the tide turns the controller hands duty to the other line,
- * which pops up while the old one clears its traffic and settles back onto the
- * seabed. Both throats feed one transfer manifold whose valve releases every
- * animal from the outlet down-current at the time.
+ * Jellyfish drift with the bloom along the coast; the water the plant draws carries the ones in its
+ * band into the channel. With SweepLine, two nets stand across the channel: animals meet the bloom
+ * face, are swept along it by the plant's own flow and collected at the east wall.
  */
 export class SimulationEngine {
   readonly kind: EngineKind;
@@ -132,46 +114,43 @@ export class SimulationEngine {
   pool: AgentPool;
   rng: SeededRandom;
   readonly flow = new FlowField();
-  /** Twin-Line guide lines by side (SweepLine world only). */
-  lines: CurtainState[] = [];
-  /** Side of the duty line. */
-  duty: LineSide = 0;
-  /** Sim time the last handover began (the previous duty line clears and stows). */
-  handoverAt = -1;
+  /** The two guide nets (SweepLine world only). */
+  nets: NetState[] = [];
   transfer: TransferState | null = null;
+  readonly screens = new ScreenState();
   counters: Counters = zeroCounters();
   time = 0;
   bloomActive = true;
-  /** Additional debris / bio-fouling load (fraction of design) — failure injection. */
-  debrisLoad = 0;
-  debrisTarget = 0;
-  /** Smoothed curtain load as a fraction of design (1 = 100 %). */
-  curtainLoad = 0;
-  guidedCount = 0;
-  backedUpCount = 0;
-  underSkirtNow = 0;
-  holdCapacity = 20;
-  /** Releases per second (EMA), in total and by outlet. */
+  /** Extra bloom arriving for a while (stress test), as a multiplier of the rate. */
+  surge = 1;
+  /** Biomass one agent stands for (kg). */
+  kgPerAgent: number = ASSUMPTIONS.agent.kgPerAgent;
+  /** Agents on each net now. */
+  readonly onNet = [0, 0];
+  /** Pocket capacity (agents). */
+  holdCapacity = 100;
+  /** Releases per second (EMA). */
   releaseEMA = 0;
-  readonly outletEMA = [0, 0];
-  /** Animals released at each outlet (cumulative). */
-  readonly outletReleased = [0, 0];
-  /** Agents currently guided on each line. */
-  readonly guidedByLine = [0, 0];
+  /** Agents arriving at a pocket per second (EMA). */
+  collectEMA = 0;
+  /** Agents coming in through the mouth per second (EMA). */
+  enterEMA = 0;
+  /** Biomass inside the sonar's range, heading in (kg). */
+  sonarKg = 0;
 
   readonly markers: Marker[] = [];
   markerSeq = 0;
-  /** Sim times of recent intake contacts (for rolling rates). */
-  intakeTimes: number[] = [];
 
   private spawnAcc = 0;
   private nextId = 1;
-  private arrivalsThisStep = 0;
   private releasesThisStep = 0;
-  private readonly outletThisStep = [0, 0];
+  private collectsThisStep = 0;
+  private entersThisStep = 0;
   private readonly tmp = { x: 0, z: 0 };
-  private readonly hit = new SegmentHit();
-  private readonly arc = { x: 0, z: 0, nx: 0, nz: 0 };
+  private readonly tally: [Float32Array, Float32Array] = [new Float32Array(NETS[0].panels), new Float32Array(NETS[1].panels)];
+  /** Agents stopped behind a full pocket on each net. */
+  private readonly backed = [0, 0];
+  private readonly backedNext = [0, 0];
 
   constructor(kind: EngineKind, params: SimParams) {
     this.kind = kind;
@@ -182,47 +161,7 @@ export class SimulationEngine {
   }
 
   static poolSize(budget: number): number {
-    return Math.ceil(budget * 2.6) + 64;
-  }
-
-  /** The duty guide line (null in the baseline world). */
-  get curtain(): CurtainState | null {
-    return this.lines[this.duty] ?? null;
-  }
-
-  get layout(): CurtainLayout | null {
-    return this.curtain ? this.curtain.layout : null;
-  }
-
-  /** Side the current comes from: 0 for a current toward +x (the bloom arrives from −x), 1 for one toward −x. */
-  flowSide(): LineSide {
-    return sideForCurrent(this.flow.dirX);
-  }
-
-  /** Lines with sections in the water column above the seabed (deploying, guiding, reefing or stowing). */
-  lineUp(side: LineSide): boolean {
-    const c = this.lines[side];
-    return !!c && c.mode !== 'STOWED';
-  }
-
-  /**
-   * Hand duty to the line on `side` (the tide has turned): it deploys while the previous duty line
-   * keeps guiding its traffic to its throat, then stows once clear (see `updateHandover`).
-   */
-  switchDuty(side: LineSide): boolean {
-    if (side === this.duty || this.lines.length < 2) return false;
-    const next = this.lines[side];
-    if (next.mode !== 'STOWED') return false;
-    const prev = this.curtain!;
-    next.deploy(this.params.deployMode);
-    this.duty = side;
-    this.handoverAt = prev.mode === 'STOWED' ? -1 : this.time;
-    return true;
-  }
-
-  /** Stow any line that is not on duty (SafeOpen, or the end of a handover). */
-  stowOffDuty(): void {
-    for (const c of this.lines) if (c !== this.curtain && c.mode !== 'STOWED' && c.mode !== 'STOWING') c.stow();
+    return Math.ceil(budget * 2) + 64;
   }
 
   reset(params: SimParams, fill: 'approach' | 'none'): void {
@@ -236,58 +175,40 @@ export class SimulationEngine {
     this.spawnAcc = 0;
     this.nextId = 1;
     this.bloomActive = true;
-    this.debrisLoad = 0;
-    this.debrisTarget = 0;
-    this.curtainLoad = 0;
-    this.guidedCount = 0;
-    this.backedUpCount = 0;
+    this.surge = 1;
+    this.onNet.fill(0);
+    this.backed.fill(0);
     this.releaseEMA = 0;
-    this.outletEMA.fill(0);
-    this.outletReleased.fill(0);
-    this.guidedByLine.fill(0);
-    this.intakeTimes = [];
+    this.collectEMA = 0;
+    this.enterEMA = 0;
+    this.sonarKg = 0;
     this.markers.length = 0;
     this.markerSeq = 0;
-    this.holdCapacity = Math.max(6, Math.round((ASSUMPTIONS.throat.holdCapacityPerThousand * params.agentBudget) / 1000));
-    this.flow.setCurrent(params.currentSpeed, params.currentBearing);
-    this.flow.throatFlow.fill(0);
-    this.flow.releaseJet.fill(0);
-    this.handoverAt = -1;
-
+    this.screens.reset();
+    this.flow.releaseJet = 0;
     if (this.kind === 'sweepline') {
-      this.lines = ([0, 1] as const).map((side) => new CurtainState(getCurtainLayout(params.anchorAngle, side), params.skirtDepth));
-      // The duty line is the one laid for the current (a single line is always side 0).
-      this.duty = params.twinLine ? this.flowSide() : 0;
+      this.nets = NETS.map((L) => new NetState(L));
       this.transfer = new TransferState();
-      this.flow.throats = this.lines.map((c) => c.layout.throat);
     } else {
-      this.lines = [];
-      this.duty = 0;
+      this.nets = [];
       this.transfer = null;
-      this.flow.throats = [null, null];
     }
     this.applyParams(params);
     if (fill === 'approach') this.initialFill();
   }
 
-  /** Apply live parameter changes (anchor angle only takes effect while stowed). */
+  /** Apply live parameter changes. */
   applyParams(params: SimParams): void {
     this.params = { ...params };
     this.flow.setCurrent(params.currentSpeed, params.currentBearing);
-    for (const c of this.lines) {
-      c.jetTarget = params.activeFlow ? Math.min(1, Math.max(0, params.jetLevel)) : 0;
-      if (c.layout.angle !== params.anchorAngle && c.mode === 'STOWED') {
-        c.setLayout(getCurtainLayout(params.anchorAngle, c.layout.side));
-        this.flow.throats[c.layout.side] = c.layout.throat;
-      }
-      c.skirtTarget = skirtSetpoint(params, c.clearanceLimitedMax);
-      // A stowed pop-up curtain lies on the seabed; a workboat curtain is stowed aboard.
-      if (c.mode === 'STOWED') c.deployMode = params.deployMode;
-    }
+    this.flow.plantFlow = ASSUMPTIONS.plant.unitFlowM3s * params.unitsRunning;
+    this.kgPerAgent = (ASSUMPTIONS.agent.kgPerAgent * ASSUMPTIONS.agent.referenceBudget) / params.agentBudget;
+    this.holdCapacity = Math.max(8, Math.round(ASSUMPTIONS.collector.holdKg / this.kgPerAgent));
+    for (const net of this.nets) net.setFouling(params.foulingWeeks);
+    if (this.nets.length === 2) this.nets[1].active = params.secondNet;
     if (this.transfer) {
-      this.transfer.capacityFraction = params.transferCapacity;
       this.transfer.standbyEnabled = params.standbyEnabled;
-      this.transfer.designRate = (ASSUMPTIONS.transfer.designRatePerThousand * params.agentBudget) / 1000;
+      this.transfer.designRate = (TRANSFER_TPH * 1000) / 3600 / this.kgPerAgent;
     }
   }
 
@@ -298,116 +219,64 @@ export class SimulationEngine {
     this.flow.setCurrent(speed, bearing);
   }
 
-  // ---------------------------------------------------------------- spawning
-  //
-  // Positions here are given in the side-0 frame (the bloom arriving from −x) and mapped onto the
-  // side the current comes from, so a reversed tide brings the bloom in from the other end.
+  /** Bell area blocking the mesh, per kg, for this species. */
+  get blockPerKg(): number {
+    return SPECIES[this.params.species].blockPerKg;
+  }
 
-  /** Bloom arrival rate (agents/s): density × budget held over the traverse, × flux (current speed). */
+  // ---------------------------------------------------------------- spawning
+
+  /** Side of the site the current brings the bloom from: −1 from −x, +1 from +x. */
+  private upstreamSign(): number {
+    return this.flow.dirX >= 0 ? -1 : 1;
+  }
+
+  /** Bloom arrival rate (agents/s) along the supply line. */
   spawnRate(): number {
     const P = this.params;
-    const U = Math.max(0.05, P.currentSpeed);
-    const base = (P.bloomDensity * P.agentBudget * U) / SITE.spawn.traverseLength;
-    const v = ASSUMPTIONS.bloom.rateVariation * (2 * fbm1(P.seed * 13 + 5, this.time / 120) - 1);
-    return Math.max(0, base * (1 + v));
+    const base = (P.bloomRate * 1000) / 3600 / this.kgPerAgent;
+    const v = ASSUMPTIONS.bloom.rateVariation * (2 * fbm1(P.seed * 13 + 5, this.time / 400) - 1);
+    return Math.max(0, base * this.surge * (1 + v));
   }
 
   private patchCenter(): number {
     const w = ASSUMPTIONS.bloom.patchWander;
-    return SITE.spawn.zCenter + w * (2 * fbm1(this.params.seed * 7 + 3, this.time / 300) - 1);
+    return SITE.spawn.zCenter + w * (2 * fbm1(this.params.seed * 7 + 3, this.time / 600) - 1);
   }
 
   /** Cross-shore position of a new agent (mostly the main patch, the rest a broad background), folded into the spawn band. */
-  private lateralZ(u1: number, u2: number, n1: number, zOverride: number | null): number {
+  private lateralZ(u1: number, u2: number, n1: number): number {
     const sp = SITE.spawn;
     let z: number;
-    if (zOverride !== null) z = zOverride;
-    else if (u1 < ASSUMPTIONS.bloom.mainPatchFraction) z = this.patchCenter() + n1 * sp.zSigma;
+    if (u1 < ASSUMPTIONS.bloom.mainPatchFraction) z = this.patchCenter() + n1 * sp.zSigma;
     else z = sp.zMin + u2 * (sp.zMax - sp.zMin);
     if (z < sp.zMin) z = Math.min(sp.zMax, 2 * sp.zMin - z);
     if (z > sp.zMax) z = sp.zMax - (z - sp.zMax) * 0.5;
     return z;
   }
 
-  /** The bloom already on its way when a run starts, from the spawn line up to its leading edge. */
+  /** The bloom already on its way when a run starts, from the supply line up to its leading edge. */
   private initialFill(): void {
-    const B = ASSUMPTIONS.bloom;
-    const span = this.bloomStartX() - B.approachFillFrom;
-    const U = Math.max(0.05, this.params.currentSpeed);
-    const count = Math.round((this.spawnRate() * span) / (U * 0.85));
-    for (let i = 0; i < count; i++) {
-      const x = B.approachFillFrom + this.rng.next() * span;
-      this.spawnOne(x, null);
-    }
-    // Ahead of a bloom timed to a pop-up deployment, its ragged leading edge (see `leadingScatter`).
-    if (this.params.deployMode === 'popup' && this.params.autoDeploy) {
-      const S = B.leadingScatter;
-      const layout = getCurtainLayout(this.params.anchorAngle);
-      for (let i = 0; i < S.count; i++) {
-        const z = S.zMin + this.rng.next() * (S.zMax - S.zMin);
-        const x = curtainXAt(layout, z) - (S.leadMin + this.rng.next() * (S.leadMax - S.leadMin));
-        this.spawnOne(x, z);
-      }
-    }
+    const S = SITE.spawn;
+    const sign = this.upstreamSign();
+    const U = Math.max(0.08, this.params.currentSpeed);
+    const span = S.supplyX - S.leadX;
+    const count = Math.round((this.spawnRate() * span) / U);
+    for (let i = 0; i < count; i++) this.spawnOne(sign * (S.leadX + this.rng.next() * span));
+  }
+
+  /** Spawn a concentrated surge (stress test) behind the bloom's leading edge. */
+  spawnSurge(count: number): void {
+    const S = SITE.spawn;
+    const sign = this.upstreamSign();
+    for (let i = 0; i < count; i++) this.spawnOne(sign * (S.leadX + this.rng.next() * 160), false);
   }
 
   /**
-   * Leading edge (x) of the bloom when a run starts. With an automatic pop-up deployment it lies
-   * just upstream of the curtain's upstream anchor: set back from every section by the drift until
-   * that section has surfaced (early warning, deployment confirmation and its pop-up time, at the
-   * local drift speed — slower near the revetment — plus the fastest swimming, × popUpFrontMargin,
-   * plus popUpFrontGap), so the curtain is up before the bloom reaches it. Otherwise (workboat or
-   * manual deployment) upstream of every anchor layout. Computed from the parameters only, so both
-   * engines place the same bloom.
+   * Spawn one agent (`visible`: drawn at once rather than fading in). Always consumes the same
+   * number of random draws so the baseline and SweepLine engines stay synchronised.
    */
-  bloomStartX(): number {
-    const B = ASSUMPTIONS.bloom;
-    if (this.params.deployMode !== 'popup' || !this.params.autoDeploy) return B.approachFillTo;
-    const S = ASSUMPTIONS.sequence;
-    const side = this.flowSide();
-    const layout = getCurtainLayout(this.params.anchorAngle);
-    const actual = getCurtainLayout(this.params.anchorAngle, side);
-    const v = this.tmp;
-    let front = Infinity;
-    for (let k = 0; k < layout.segCount; k++) {
-      const x = Math.min(layout.px[k], layout.px[k + 1]);
-      this.flow.sample(onSide(x, side), layout.midZ[k], this.params.bloomMeanDepth, v);
-      const drift = Math.max(0, side === 0 ? v.x : -v.x) + ASSUMPTIONS.agent.swimSpeedMax;
-      const lead = drift * (S.warningAt + S.deployConfirm + popUpSurfaceTime(actual, k)) * B.popUpFrontMargin + B.popUpFrontGap;
-      front = Math.min(front, x - lead);
-    }
-    return Math.max(B.approachFillFrom + 20, front);
-  }
-
-  /**
-   * Leading edge (side-0 frame x by lateral position) for a bloom surge: just upstream of a guiding
-   * curtain laid for the current, so it reaches the curtain within moments, otherwise where a run's bloom starts.
-   */
-  surgeEdge(): (z: number) => number {
-    const c = this.curtain;
-    if (c && (c.mode === 'DEPLOYED' || c.mode === 'UNREEFING') && c.layout.side === this.flowSide()) {
-      const L = getCurtainLayout(c.layout.angle);
-      return (z) => curtainXAt(L, z) - ASSUMPTIONS.bloom.surgeGap;
-    }
-    const x = this.bloomStartX();
-    return () => x;
-  }
-
-  /** Spawn a concentrated bloom surge (stress test: high bloom density) in a band behind `edge`; it fades in. */
-  spawnSurge(count: number, edge: (z: number) => number): void {
-    const B = ASSUMPTIONS.bloom;
-    for (let i = 0; i < count; i++) {
-      const z = this.lateralZ(0, 0, 0, this.patchCenter() + (this.rng.next() - 0.5) * 50);
-      this.spawnOne(edge(z) - this.rng.next() * B.surgeDepth, z, false);
-    }
-  }
-
-  /**
-   * Spawn one agent (`visible`: drawn at once rather than fading in) at a side-0 frame position on
-   * the side the current comes from. Always consumes the same number of random draws so the
-   * baseline and SweepLine engines stay synchronised.
-   */
-  private spawnOne(xOverride: number | null, zOverride: number | null, visible = xOverride !== null): void {
+  private spawnOne(xOverride: number | null = null, visible = xOverride !== null): void {
     const r = this.rng;
     const u1 = r.next();
     const u2 = r.next();
@@ -423,9 +292,9 @@ export class SimulationEngine {
     this.counters.spawned++;
 
     const sp = SITE.spawn;
-    const side = this.flowSide();
-    const z = this.lateralZ(u1, u2, n1, zOverride);
-    const x = onSide(xOverride !== null ? xOverride : sp.x - u3 * sp.jitterX, side);
+    const sign = this.upstreamSign();
+    const z = this.lateralZ(u1, u2, n1);
+    const x = xOverride !== null ? xOverride : sign * (sp.supplyX + u3 * sp.jitterX);
 
     const slot = this.pool.alloc();
     if (slot < 0) {
@@ -434,6 +303,7 @@ export class SimulationEngine {
     }
     const A = ASSUMPTIONS.agent;
     const P = this.params;
+    const S = SPECIES[P.species];
     const p = this.pool;
     const seabed = seabedDepth(x, z);
     let pref = P.bloomMeanDepth + P.bloomDepthSD * n2;
@@ -441,7 +311,7 @@ export class SimulationEngine {
 
     p.id[slot] = agentId;
     p.state[slot] = S_APPROACHING;
-    p.flags[slot] = side === 1 ? F_FROM_EAST : 0;
+    p.flags[slot] = x > 0 ? F_FROM_EAST : 0;
     p.side[slot] = 0;
     p.lane[slot] = 0;
     p.px[slot] = x;
@@ -451,11 +321,11 @@ export class SimulationEngine {
     p.vx[slot] = this.tmp.x;
     p.vy[slot] = 0;
     p.vz[slot] = this.tmp.z;
-    p.size[slot] = A.bellDiameterMin + u4 * (A.bellDiameterMax - A.bellDiameterMin);
+    p.size[slot] = S.bellMin + u4 * (S.bellMax - S.bellMin);
     p.phase[slot] = u5;
     p.tint[slot] = u6;
     p.depthZ[slot] = n2;
-    p.swimSpeed[slot] = A.swimSpeedMin + u7 * (A.swimSpeedMax - A.swimSpeedMin);
+    p.swimSpeed[slot] = S.swimMin + u7 * (S.swimMax - S.swimMin);
     p.heading[slot] = (u8 - 0.5) * Math.PI * 2;
     p.stateTime[slot] = 0;
     p.contactStart[slot] = -1;
@@ -468,100 +338,68 @@ export class SimulationEngine {
 
   step(dt: number): void {
     this.time += dt;
-    const P = this.params;
-    this.arrivalsThisStep = 0;
     this.releasesThisStep = 0;
+    this.collectsThisStep = 0;
+    this.entersThisStep = 0;
 
-    for (const c of this.lines) {
-      // Only a current running along the line's design direction loads its skirt.
-      const side = c.layout.side;
-      const attack = this.flow.attackAngle(c.layout.angle, P.currentBearing, side);
-      const un = Math.abs(attack - c.layout.angle) < 90 ? P.currentSpeed * Math.sin(Math.max(0, attack) * DEG) : 0;
-      c.update(dt, { normalVelocity: un, waveHeight: P.waveHeight, time: this.time });
-    }
-    if (this.transfer) {
-      this.transfer.update(dt);
-      const avail = this.transfer.throatOpen ? this.transfer.availability() : 0;
-      for (const c of this.lines) {
-        const side = c.layout.side;
-        this.flow.throatFlow[side] = c.activeCount > 0 || this.transfer.queues[side].length > 0 ? avail : 0;
-      }
-      this.updateHandover();
-    }
-    for (let k = 0; k < 2; k++) this.flow.releaseJet[k] = Math.min(1, this.outletEMA[k] * 12);
+    const Q = this.flow.plantFlow;
+    const block = this.blockPerKg;
+    for (const net of this.nets) net.update(dt, Q, block);
+    if (this.transfer) this.transfer.update(dt);
+    this.flow.releaseJet = Math.min(1, this.releaseEMA * 8);
 
     if (this.bloomActive) {
       this.spawnAcc += this.spawnRate() * dt;
       while (this.spawnAcc >= 1) {
         this.spawnAcc -= 1;
-        this.spawnOne(null, null);
+        this.spawnOne();
       }
     }
 
     this.updateAgents(dt);
     if (this.transfer) this.processTransfer(dt);
+    this.screens.update(dt);
 
-    const a = 1 - Math.exp(-dt / 45);
-    if (this.transfer) this.transfer.arrivalEMA += (this.arrivalsThisStep / dt - this.transfer.arrivalEMA) * a;
-    const r = 1 - Math.exp(-dt / 20);
+    const r = 1 - Math.exp(-dt / 30);
     this.releaseEMA += (this.releasesThisStep / dt - this.releaseEMA) * r;
-    for (let k = 0; k < 2; k++) {
-      this.outletEMA[k] += (this.outletThisStep[k] / dt - this.outletEMA[k]) * r;
-      this.outletThisStep[k] = 0;
-    }
-    this.updateLoad(dt);
-    this.pruneIntakeTimes();
-  }
-
-  /**
-   * After a handover the previous duty line keeps guiding the traffic already on it (its jets
-   * still run) and its throat keeps feeding the manifold; once that traffic has cleared, or after
-   * `handoverMax`, it vents and settles back onto the seabed.
-   */
-  private updateHandover(): void {
-    if (this.handoverAt < 0) return;
-    const prev = this.lines[this.duty === 0 ? 1 : 0];
-    if (!prev || prev.mode === 'STOWED' || prev.mode === 'STOWING') {
-      if (!prev || prev.mode === 'STOWED') this.handoverAt = -1;
-      return;
-    }
-    const side = prev.layout.side;
-    const clear = this.guidedByLine[side] <= ASSUMPTIONS.twin.handoverClearThreshold && this.transfer!.queues[side].length === 0;
-    if ((clear && this.time - this.handoverAt >= ASSUMPTIONS.twin.handoverMin) || this.time - this.handoverAt >= ASSUMPTIONS.twin.handoverMax) prev.stow();
+    this.collectEMA += (this.collectsThisStep / dt - this.collectEMA) * r;
+    this.enterEMA += (this.entersThisStep / dt - this.enterEMA) * r;
   }
 
   private updateAgents(dt: number): void {
     const pool = this.pool;
-    const { state, flags, side, px, py, pz, vx, vy, vz, id, depthZ, swimSpeed, heading, stateTime, contactStart, timer, fade } =
-      pool;
+    const { state, flags, px, py, pz, vx, vy, vz, id, depthZ, swimSpeed, heading, stateTime, contactStart, timer, fade, lane } = pool;
     const P = this.params;
     const A = ASSUMPTIONS.agent;
-    const CA = ASSUMPTIONS.curtain;
+    const S = SPECIES[P.species];
     const t = this.time;
     const relax = 1 - Math.exp(-dt / A.tau);
-    // Lines with guiding sections (the duty line, and the previous one during a handover).
-    const live = this.lines.filter((c) => c.activeCount > 0);
-    const transfer = this.transfer;
-    const accepting = !!transfer && transfer.throatOpen && transfer.acceptingNew;
     const flow = this.flow;
     const tmp = this.tmp;
-    const hit = this.hit;
     const dom = SITE.domain;
+    const C = SITE.channel;
+    const hw = C.halfWidth;
+    const mouth = C.mouthZ;
+    const headZ = mouth + SITE.breakwater.headRadius;
+    const toe = SITE.breakwater.outerToe;
     const intake = SITE.intake;
-    // Intake reference lines: agents from −x pass at the east one, agents from +x at the west one.
-    const passE = intake.x1 + 15;
-    const passW = intake.x0 - 15;
+    const nets = this.nets;
+    const transfer = this.transfer;
     const counters = this.counters;
+    const kg = this.kgPerAgent;
     const mean = P.bloomMeanDepth;
     const sd = P.bloomDepthSD;
-    const overtopRate =
-      P.waveHeight > CA.overtopThreshold ? CA.overtopGain * (P.waveHeight - CA.overtopThreshold) ** 2 : 0;
-    // Active flow: conveyor wall jet along the bloom face and upward foot jets at the skirt edge.
-    const J = ASSUMPTIONS.jets;
-    let guided = 0;
-    let underNow = 0;
-    this.guidedByLine.fill(0);
-    this.backedUpCount = 0;
+    // Depth an agent on the mesh takes up, along the net, in a full stack.
+    const stackSpacing = this.blockPerKg * kg / C.depth;
+    const stepNo = Math.floor(t / dt);
+    let sonar = 0;
+
+    this.tally[0].fill(0);
+    this.tally[1].fill(0);
+    this.onNet[0] = 0;
+    this.onNet[1] = 0;
+    this.backedNext[0] = 0;
+    this.backedNext[1] = 0;
 
     for (let i = 0; i < pool.capacity; i++) {
       const st = state[i];
@@ -579,8 +417,8 @@ export class SimulationEngine {
         continue;
       }
       stateTime[i] += dt;
-      if (st === S_TRANSFER_QUEUE && this.lines.length > 0) {
-        this.queueDynamics(i, dt, relax, this.lines[pool.lane[i]].layout);
+      if (st === S_TRANSFER_QUEUE) {
+        this.queueDynamics(i, dt, relax, NETS[lane[i] as NetIndex]);
         continue;
       }
 
@@ -588,6 +426,7 @@ export class SimulationEngine {
       let z = pz[i];
       let depth = -py[i];
       const aid = id[i];
+      const wasInside = Math.abs(x) < hw && z < mouth + 4;
 
       flow.sample(x, z, depth, tmp);
       let dvx = tmp.x;
@@ -600,7 +439,6 @@ export class SimulationEngine {
       const sw = swimSpeed[i] * pulse;
       dvx += Math.cos(hd) * sw;
       dvz += Math.sin(hd) * sw;
-      // Small-scale stochastic motion.
       dvx += (valueNoise(aid * 5 + 2, t * 0.07) - 0.5) * 2 * A.turbulence;
       dvz += (valueNoise(aid * 5 + 3, t * 0.07) - 0.5) * 2 * A.turbulence;
 
@@ -615,158 +453,117 @@ export class SimulationEngine {
       dvy += (valueNoise(aid * 5 + 4, t * 0.05) - 0.5) * 2 * A.verticalNoise;
 
       let ns = st;
-      let guideSeg = -1;
       let fl = flags[i];
+      let guided = false;
 
-      if (fl & F_OVERTOPPING) {
-        timer[i] -= dt;
-        if (timer[i] <= 0) fl &= ~F_OVERTOPPING;
+      if (!(fl & F_ENTERED) && wasInside && z < mouth - 8) {
+        fl |= F_ENTERED;
+        counters.entered++;
+        this.entersThisStep++;
       }
 
-      // ---------------------------------------------------- curtain interaction
-      // The lines lie well apart, so an agent is near at most one of them.
-      let curtain: CurtainState | null = null;
-      for (let li = 0; li < live.length; li++) {
-        if (nearestSegment(live[li].layout, x, z, hit) && hit.within && hit.dist < CA.interactionRange + 1) {
-          curtain = live[li];
+      // ---------------------------------------------------- nets
+      if (wasInside) {
+        for (let ni = 0; ni < nets.length; ni++) {
+          const net = nets[ni];
+          if (!net.active) continue;
+          const L = net.line;
+          const d = (x - L.ax) * L.nx + (z - L.az) * L.nz;
+          if (d < -0.2 || d > N.guideDistance) continue;
+          const s = (x - L.ax) * L.tx + (z - L.az) * L.tz;
+          if (s < 0 || s > L.length) continue;
+          const k = Math.min(net.n - 1, Math.floor(s / L.panelLength));
+          if (net.drop[k] < 1) continue;
+          if (net.torn[k]) {
+            // Straight through the hole.
+            const bit = ni === 0 ? F_LEAKED : F_LEAKED_B;
+            if (!(fl & bit)) this.noteLeak(ni, x, depth, z);
+            fl |= bit;
+            ns = S_PAST_NET;
+            continue;
+          }
+          if (net.relief[k] > 0 && depth < net.relief[k] * N.reliefDip) {
+            // Over the dipped float line.
+            const bit = ni === 0 ? F_LEAKED : F_LEAKED_B;
+            if (!(fl & bit)) this.noteLeak(ni, x, depth, z);
+            fl |= bit;
+            ns = S_PAST_NET;
+            continue;
+          }
+          if (!(fl & F_ENCOUNTERED)) {
+            fl |= F_ENCOUNTERED;
+            contactStart[i] = t;
+            counters.encountered++;
+          }
+          guided = true;
+          ns = S_GUIDED;
+          lane[i] = ni;
+          this.onNet[ni]++;
+          this.tally[ni][k] += kg;
+
+          // The net stops the part of the flow that would carry the animal through it, and the rest sweeps it along.
+          const vn = dvx * L.nx + dvz * L.nz;
+          const vt = dvx * L.tx + dvz * L.tz;
+          const press = d > N.standoff ? vn : Math.max(0, vn);
+          let sweep = Math.max(vt, 0) * N.slide;
+
+          // A snagged animal stays put until the flow works it free.
+          if (fl & F_SNAGGED) {
+            timer[i] -= dt;
+            if (timer[i] <= 0) fl &= ~F_SNAGGED;
+            sweep = 0;
+          } else {
+            const u = net.through[k] / ASSUMPTIONS.screenCriteria.approachMax;
+            if (hash01(aid, stepNo) < N.snagRate * u * u * dt) {
+              fl |= F_SNAGGED;
+              timer[i] = N.snagTime * (0.4 + 1.2 * hash01(aid, 3));
+            }
+          }
+
+          // Behind a full pocket the animals stack up along the net.
+          if (transfer) {
+            const full = transfer.queues[ni as NetIndex].length >= this.holdCapacity;
+            const stop = L.pocketS - this.backed[ni] * stackSpacing;
+            if (full && s >= stop) {
+              sweep = 0;
+              this.backedNext[ni]++;
+            }
+          }
+
+          dvx = L.tx * sweep + L.nx * press;
+          dvz = L.tz * sweep + L.nz * press;
+
+          // Some work through the mesh or a joint on the way along.
+          const travelled = (sweep * dt) / L.panelLength;
+          const nearBed = depth > seabed - N.jointBand;
+          const leak = travelled * (S.leakPerPanel + (nearBed ? N.jointLeak : 0));
+          if (leak > 0 && hash01(aid + ni * 7, stepNo) < leak) {
+            x -= L.nx * (d + 0.6);
+            z -= L.nz * (d + 0.6);
+            fl |= ni === 0 ? F_LEAKED : F_LEAKED_B;
+            ns = S_PAST_NET;
+            guided = false;
+            this.onNet[ni]--;
+            this.noteLeak(ni, x, depth, z);
+            break;
+          }
+
+          // Into the pocket.
+          if (transfer && s >= L.pocketS && transfer.queues[ni as NetIndex].length < this.holdCapacity) {
+            flags[i] = fl;
+            px[i] = x;
+            pz[i] = z;
+            py[i] = -depth;
+            this.enqueue(i, ni as NetIndex);
+            guided = false;
+            ns = S_TRANSFER_QUEUE;
+          }
           break;
         }
+        if (ns === S_TRANSFER_QUEUE) continue;
       }
-      const layout = curtain ? curtain.layout : null;
-      if (curtain && layout) {
-        const reefingCurtain = curtain.mode === 'REEFING' || curtain.mode === 'REEFED';
-        const jet = curtain.jetOutput;
-        const conveyor = jet * J.conveyorSpeed;
-        const uplift = jet * J.footUplift;
-        const k = hit.seg;
-        const d = hit.d;
-        const nX = layout.nx[k];
-        const nZ = layout.nz[k];
-        const skirt = curtain.segSkirt[k];
-        if (curtain.segActive[k] === 0) {
-          if (st === S_GUIDED) {
-            ns = S_FREE_DRIFT;
-            if (reefingCurtain && !(fl & F_REEF_RELEASED)) {
-              fl |= F_REEF_RELEASED;
-              counters.reefReleased++;
-            }
-          }
-          side[i] = d > 0 ? 1 : -1;
-        } else {
-          if (jet > 0) {
-            if (d > 0 && d < J.conveyorBand && depth < skirt + 0.5) {
-              const w0 = 1 - d / J.conveyorBand;
-              dvx += layout.tx[k] * conveyor * w0 * w0;
-              dvz += layout.tz[k] * conveyor * w0 * w0;
-            }
-            if (d > -0.5 && d < J.footBand) {
-              // Strongest at the hem, fading above it and down to the jets' reach below it.
-              const below = depth - skirt;
-              const wz = below < 0 ? 1 + below / 0.6 : 1 - below / J.footReach;
-              if (wz > 0) dvy += uplift * wz * (1 - Math.abs(d) / J.footBand);
-            }
-          }
-          if (d > 0) {
-            if (depth < skirt) {
-              if (d < CA.interactionRange) {
-                const vin = -(dvx * nX + dvz * nZ);
-                const g0 = 1 - d / CA.interactionRange;
-                const g = g0 * g0 * (3 - 2 * g0);
-                if (vin > 0) {
-                  // Normal component is blocked and redirected along the curtain; some becomes downward entrainment.
-                  dvx += nX * vin * g + layout.tx[k] * vin * g * CA.redirectGain;
-                  dvz += nZ * vin * g + layout.tz[k] * vin * g * CA.redirectGain;
-                  dvy -= vin * g * CA.entrainmentGain;
-                }
-                if (d < CA.guideDistance && !(fl & F_OVERTOPPING)) {
-                  if (st !== S_GUIDED) {
-                    ns = S_GUIDED;
-                    if (!(fl & F_ENCOUNTERED)) {
-                      fl |= F_ENCOUNTERED;
-                      contactStart[i] = t;
-                      counters.encountered++;
-                    }
-                  }
-                  guideSeg = k;
-                  // Wave overtopping of the float line by near-surface agents in high sea states.
-                  if (overtopRate > 0 && depth < 0.6 && vin > 0) {
-                    const p = overtopRate * (vin / 0.1) * dt;
-                    if (hash01(aid, Math.floor(t * 10)) < p) {
-                      fl |= F_OVERTOPPING | F_OVERTOPPED;
-                      timer[i] = 8;
-                      ns = S_FREE_DRIFT;
-                      guideSeg = -1;
-                      counters.overtopped++;
-                      this.pushMarker(x, -depth, z, 'overtop');
-                    }
-                  }
-                }
-              }
-            } else {
-              // Deeper than the skirt's lower edge: the agent passes beneath.
-              if (d < CA.guideDistance && !(fl & F_ENCOUNTERED)) {
-                fl |= F_ENCOUNTERED;
-                contactStart[i] = t;
-                counters.encountered++;
-              }
-              if (st === S_GUIDED) ns = S_UNDER_SKIRT;
-            }
-            side[i] = 1;
-          } else {
-            let blocked = false;
-            if (side[i] === 1 && !(fl & F_OVERTOPPING)) {
-              // Crossed the curtain plane during the last step.
-              if (depth >= skirt - 0.02) {
-                if (curtain.segReefing[k]) {
-                  if (!(fl & F_REEF_RELEASED)) {
-                    fl |= F_REEF_RELEASED;
-                    counters.reefReleased++;
-                  }
-                } else if (!(fl & F_UNDER_COUNTED)) {
-                  fl |= F_UNDER_COUNTED;
-                  counters.underSkirt++;
-                  this.pushMarker(x, -depth, z, 'under');
-                }
-                ns = S_UNDER_SKIRT;
-              } else {
-                // Above the skirt edge the curtain is impermeable: restore to the bloom face.
-                x += nX * (CA.minStandoff - d);
-                z += nZ * (CA.minStandoff - d);
-                blocked = true;
-              }
-            }
-            if (!blocked) side[i] = -1;
-            if (ns === S_UNDER_SKIRT && d < -2.5) ns = S_FREE_DRIFT;
-          }
-        }
-      } else if (st === S_GUIDED || st === S_UNDER_SKIRT) {
-        ns = S_FREE_DRIFT;
-        side[i] = 0;
-      } else {
-        side[i] = 0;
-      }
-
-      // ---------------------------------------------------- recovery throat capture
-      if (accepting && ns !== S_UNDER_SKIRT) {
-        let captured = false;
-        for (let li = 0; li < live.length && !captured; li++) {
-          const th = live[li].layout.throat;
-          const rx = x - th.mx;
-          const rz = z - th.mz;
-          const q = rx * th.ax + rz * th.az;
-          if (q > -0.8 && q < th.length * 0.6) {
-            const lat = rx * th.lx + rz * th.lz;
-            if (Math.abs(lat) < throatHalfWidthAt(th, q) && depth < th.centerDepth + throatHalfHeightAt(th, q)) {
-              flags[i] = fl;
-              px[i] = x;
-              pz[i] = z;
-              this.enqueue(i, live[li].layout.side);
-              captured = true;
-            }
-          }
-        }
-        if (captured) continue;
-      }
+      if (!guided && st === S_GUIDED && ns === S_GUIDED) ns = S_FREE_DRIFT;
+      if (st === S_PAST_NET && ns === S_PAST_NET && stateTime[i] > 40) ns = S_FREE_DRIFT;
 
       // ---------------------------------------------------- integrate
       vx[i] += (dvx - vx[i]) * relax;
@@ -784,35 +581,27 @@ export class SimulationEngine {
         if (vy[i] < 0) vy[i] = 0;
       }
 
-      // Guided agents cannot pass through the impermeable skirt above its lower edge.
-      if (ns === S_GUIDED && guideSeg >= 0 && layout) {
-        const nX = layout.nx[guideSeg];
-        const nZ = layout.nz[guideSeg];
-        const dNew = (x - layout.px[guideSeg]) * nX + (z - layout.pz[guideSeg]) * nZ;
-        if (dNew < CA.minStandoff) {
-          const push = CA.minStandoff - dNew;
-          x += nX * push;
-          z += nZ * push;
-          const vn = vx[i] * nX + vz[i] * nZ;
-          if (vn < 0) {
-            vx[i] -= nX * vn;
-            vz[i] -= nZ * vn;
-          }
+      // Walls and rock.
+      const ax = Math.abs(x);
+      if (wasInside) {
+        if (ax > hw - 1.2 && z < mouth) x = (x < 0 ? -1 : 1) * (hw - 1.2);
+      } else if (z < headZ && ax < toe + 0.5 && ax > hw - 1 && z >= SITE.shore.toeZ) {
+        if (z <= mouth + 2) {
+          x = (x < 0 ? -1 : 1) * (toe + 0.5);
+          if (vx[i] * x < 0) vx[i] = 0;
+        } else if (ax > hw) {
+          z = headZ;
+          if (vz[i] < 0) vz[i] = 0;
         }
-        guided++;
-        this.guidedByLine[layout.side]++;
       }
-      if (ns === S_UNDER_SKIRT) underNow++;
-
-      // Revetment.
       if (z < SITE.shore.toeZ - 1) {
         z = SITE.shore.toeZ - 1;
         if (vz[i] < 0) vz[i] = 0;
       }
 
-      // Intake structure and screens.
-      if (x > intake.x0 - 0.4 && x < intake.x1 + 0.4 && z < intake.mouthZ + 0.8) {
-        if (x >= intake.x0 && x <= intake.x1 && depth < intake.sillDepth) {
+      // Screens.
+      if (z < intake.mouthZ + 0.8) {
+        if (Math.abs(x) <= intake.x1) {
           px[i] = x;
           pz[i] = intake.mouthZ + 0.3;
           py[i] = -depth;
@@ -820,17 +609,8 @@ export class SimulationEngine {
           this.intakeContact(i);
           continue;
         }
-        if (z < intake.mouthZ) {
-          const toW = x - (intake.x0 - 0.4);
-          const toE = intake.x1 + 0.4 - x;
-          if (toW < toE) {
-            x = intake.x0 - 0.4;
-            if (vx[i] > 0) vx[i] = 0;
-          } else {
-            x = intake.x1 + 0.4;
-            if (vx[i] < 0) vx[i] = 0;
-          }
-        }
+        z = intake.mouthZ + 0.8;
+        if (vz[i] < 0) vz[i] = 0;
       }
 
       px[i] = x;
@@ -842,20 +622,23 @@ export class SimulationEngine {
         stateTime[i] = 0;
       }
 
-      // Fate resolves as "passed" once an agent clears the intake reference line on the far side from
-      // where it arrived, without contact, so passes and contacts are counted at the same place (no in-flight bias).
-      const past = fl & F_FROM_EAST ? passW - x : x - passE;
-      if (past > 0 && !(fl & F_RESOLVED)) {
+      // Sonar: biomass in range of the mouth, not yet inside.
+      if (!(fl & F_ENTERED)) {
+        const dx = x;
+        const dz = z - mouth;
+        if (dx * dx + dz * dz < ASSUMPTIONS.sonar.range * ASSUMPTIONS.sonar.range) sonar += kg;
+      }
+
+      // Went on past the site.
+      const past = fl & F_FROM_EAST ? -x - PASS_X : x - PASS_X;
+      if (past > 0 && !(fl & F_ENTERED) && !(fl & F_RESOLVED)) {
         fl |= F_RESOLVED;
         flags[i] = fl;
         counters.exited++;
       }
-      // Agents whose outcome is settled stop being tracked: released jellyfish once they have
-      // cleared the outlet plume, and passers once they are past the intake line. They fade out
-      // and leave the simulation (already counted, so no metric changes).
       let keep = 1;
       if (ns === S_RELEASED) keep = 1 - (stateTime[i] - ASSUMPTIONS.release.trackTime) / ASSUMPTIONS.release.fadeTime;
-      else if (fl & F_RESOLVED && !(fl & F_DIVERTED) && past > 0) keep = 1 - past / ASSUMPTIONS.bloom.passedFadeDistance;
+      else if (fl & F_RESOLVED && !(fl & F_DIVERTED) && past > 0) keep = 1 - past / 80;
       if (keep <= 0) {
         pool.free(i);
         continue;
@@ -869,77 +652,64 @@ export class SimulationEngine {
         pool.free(i);
       }
     }
-    this.guidedCount = guided;
-    this.underSkirtNow = underNow;
+
+    this.sonarKg = sonar;
+    for (let ni = 0; ni < nets.length; ni++) {
+      nets[ni].bioKg.set(this.tally[ni]);
+      this.backed[ni] = this.backedNext[ni];
+    }
   }
 
-  private enqueue(i: number, side: LineSide): void {
+  private noteLeak(net: number, x: number, depth: number, z: number): void {
+    this.counters.leaked[net]++;
+    this.pushMarker(x, -depth, z, 'leak');
+  }
+
+  private enqueue(i: number, net: NetIndex): void {
     const p = this.pool;
     const tr = this.transfer!;
-    const queue = tr.queues[side];
+    const queue = tr.queues[net];
     const c = this.counters;
     let fl = p.flags[i];
-    if (!(fl & F_ENCOUNTERED)) {
-      fl |= F_ENCOUNTERED;
-      c.encountered++;
-    }
     if (!(fl & F_RESOLVED)) {
       fl |= F_RESOLVED | F_DIVERTED;
       c.diverted++;
-      if (p.contactStart[i] >= 0) {
-        c.contactTimeSum += this.time - p.contactStart[i];
-        c.contactTimeN++;
-      }
     }
     p.flags[i] = fl;
     p.state[i] = S_TRANSFER_QUEUE;
     p.stateTime[i] = 0;
-    p.lane[i] = side;
+    p.lane[i] = net;
     p.queueIndex[i] = queue.length;
     queue.push(i);
-    this.arrivalsThisStep++;
+    this.collectsThisStep++;
   }
 
-  /** Motion inside the bellmouth and, when it is full, along the curtain face upstream of the mouth. */
-  private queueDynamics(i: number, dt: number, relax: number, layout: CurtainLayout): void {
+  /** Motion through the pocket toward the suction: the funnel narrows, the animals close up and rise to it. */
+  private queueDynamics(i: number, dt: number, relax: number, L: NetLine): void {
     const p = this.pool;
-    const th = layout.throat;
-    const tr = this.transfer!;
     const aid = p.id[i];
-    const k = p.queueIndex[i];
-    const spacing = (th.length - 0.6) / this.holdCapacity;
-    const q = th.length - 0.5 - k * spacing;
-    let tx: number;
-    let tz: number;
-    let tdepth: number;
-    const depth = -p.py[i];
-    if (q >= -0.3) {
-      const hw = throatHalfWidthAt(th, q) * 0.55;
-      const hh = throatHalfHeightAt(th, q) * 0.45;
-      const lat = (hash01(aid, 11) - 0.5) * 2 * hw;
-      const vert = (hash01(aid, 13) - 0.5) * 2 * hh;
-      tx = th.mx + th.ax * q + th.lx * lat;
-      tz = th.mz + th.az * q + th.lz * lat;
-      tdepth = th.centerDepth + vert;
-    } else {
-      this.arcPoint(layout, layout.length + q);
-      const off = 0.7 + hash01(aid, 17) * 0.9;
-      tx = this.arc.x + this.arc.nx * off;
-      tz = this.arc.z + this.arc.nz * off;
-      tdepth = Math.min(Math.max(depth, 0.4), th.centerDepth + th.halfHeight - 0.4);
-    }
-    const vf = ASSUMPTIONS.throat.funnelSpeedBase + ASSUMPTIONS.throat.funnelSpeedFlow * (tr.throatOpen ? tr.availability() : 0);
-    let dvx = (tx - p.px[i]) * 0.35;
-    let dvz = (tz - p.pz[i]) * 0.35;
+    const K = SITE.collector;
+    const end = collectorPoint(L);
+    const rx = p.px[i] - end.x;
+    const rz = p.pz[i] - end.z;
+    const q = Math.min(1, Math.hypot(rx, rz) / K.pocketLength);
+    const lat = (hash01(aid, 11) - 0.5) * 2 * (K.throatHalfWidth + (K.mouthHalfWidth - K.throatHalfWidth) * q) * 0.7;
+    const ahead = 1 + q * K.pocketLength * 0.5;
+    const tx = end.x - L.tx * ahead + L.nx * (lat + 2);
+    const tz = end.z - L.tz * ahead + L.nz * (lat + 2);
+    const tdepth = 2.2 + hash01(aid, 13) * 4;
+    const vf = ASSUMPTIONS.collector.funnelSpeed;
+    let dvx = (tx - p.px[i]) * 0.2 + L.tx * vf;
+    let dvz = (tz - p.pz[i]) * 0.2 + L.tz * vf;
     const m = Math.hypot(dvx, dvz);
     if (m > vf) {
       dvx *= vf / m;
       dvz *= vf / m;
     }
+    const depth = -p.py[i];
     let dvy = (depth - tdepth) * 0.3;
     if (dvy > 0.08) dvy = 0.08;
     else if (dvy < -0.08) dvy = -0.08;
-    // Gentle pulsing jitter so congested agents do not look frozen.
     dvx += (valueNoise(aid * 5 + 2, this.time * 0.3) - 0.5) * 0.03;
     dvz += (valueNoise(aid * 5 + 3, this.time * 0.3) - 0.5) * 0.03;
     p.vx[i] += (dvx - p.vx[i]) * relax * 2;
@@ -948,52 +718,22 @@ export class SimulationEngine {
     p.px[i] += p.vx[i] * dt;
     p.pz[i] += p.vz[i] * dt;
     p.py[i] += p.vy[i] * dt;
-    if (q < -0.3) this.backedUpCount++;
-  }
-
-  private arcPoint(L: CurtainLayout, s: number): void {
-    const n = L.n;
-    let k: number;
-    let t: number;
-    if (s <= 0) {
-      k = 0;
-      t = 0;
-    } else if (s >= L.ps[n - 1]) {
-      k = n - 2;
-      t = 1;
-    } else {
-      let lo = 0;
-      let hi = n - 1;
-      while (hi - lo > 1) {
-        const mid = (lo + hi) >> 1;
-        if (L.ps[mid] <= s) lo = mid;
-        else hi = mid;
-      }
-      k = lo;
-      t = (s - L.ps[lo]) / (L.ps[lo + 1] - L.ps[lo]);
-    }
-    this.arc.x = L.px[k] + (L.px[k + 1] - L.px[k]) * t;
-    this.arc.z = L.pz[k] + (L.pz[k + 1] - L.pz[k]) * t;
-    this.arc.nx = L.nx[k];
-    this.arc.nz = L.nz[k];
   }
 
   private processTransfer(dt: number): void {
     const tr = this.transfer!;
     const p = this.pool;
-    const rate = tr.throatOpen ? tr.capacityRate() : 0;
-    tr.tokens = Math.min(tr.tokens + rate * dt, 2);
+    const rate = tr.capacityRate();
+    tr.tokens = Math.min(tr.tokens + rate * dt, 4);
     let processed = 0;
-    // Both throats share the manifold; the previous duty line's throat is cleared first after a handover.
-    for (const side of this.duty === 0 ? [1, 0] : [0, 1]) {
-      const queue = tr.queues[side];
+    for (const ni of [0, 1] as const) {
+      const queue = tr.queues[ni];
       if (queue.length === 0) continue;
-      const th = this.lines[side].layout.throat;
+      const end = collectorPoint(NETS[ni]);
       let n = 0;
       while (tr.tokens >= 1 && queue.length > 0) {
         const i = queue[0];
-        const q = (p.px[i] - th.mx) * th.ax + (p.pz[i] - th.mz) * th.az;
-        if (q < th.length - 1.6) break;
+        if (Math.hypot(p.px[i] - end.x, p.pz[i] - end.z) > 9) break;
         queue.shift();
         tr.tokens -= 1;
         n++;
@@ -1008,22 +748,17 @@ export class SimulationEngine {
 
   private transferAgent(i: number): void {
     const p = this.pool;
+    const T = ASSUMPTIONS.transfer;
     p.state[i] = S_TRANSFERRED;
     p.stateTime[i] = 0;
     p.queueIndex[i] = -1;
-    // The release line goes down-drift; with a down-tide valve instead, to the outlet down-current now.
-    p.lane[i] = ASSUMPTIONS.release.design.side === 'down-tide' ? this.flowSide() : 0;
-    const T = ASSUMPTIONS.transfer;
-    p.timer[i] = (this.params.releaseDistance / T.pipeVelocity) * (0.95 + 0.1 * hash01(p.id[i], 23));
+    p.timer[i] = (T.length / T.pipeVelocity) * (0.95 + 0.1 * hash01(p.id[i], 23));
     this.counters.transferred++;
   }
 
   private releaseAgent(i: number): void {
     const p = this.pool;
-    const outlet = p.lane[i];
-    const r = OUTLETS[outlet];
-    this.outletThisStep[outlet]++;
-    this.outletReleased[outlet]++;
+    const r = SITE.release;
     const aid = p.id[i];
     const lat = (hash01(aid, 29) - 0.5) * 3;
     p.px[i] = r.x + r.dirX * 1.5 - r.dirZ * lat;
@@ -1045,38 +780,16 @@ export class SimulationEngine {
     const p = this.pool;
     p.state[i] = S_INTAKE_CONTACT;
     p.stateTime[i] = 0;
-    p.timer[i] = ASSUMPTIONS.intake.impingementDwell;
+    p.timer[i] = ASSUMPTIONS.screens.dwell;
     p.vx[i] = 0;
     p.vy[i] = 0;
     p.vz[i] = 0;
     if (!(p.flags[i] & F_RESOLVED)) {
       p.flags[i] |= F_RESOLVED;
       this.counters.intakeContacts++;
-      this.intakeTimes.push(this.time);
+      this.screens.add(this.kgPerAgent);
     }
     this.pushMarker(p.px[i], p.py[i], p.pz[i], 'intake');
-  }
-
-  /**
-   * Release everything still waiting in the throat (SafeOpen with no transfer
-   * capacity left). These agents are no longer counted as diverted.
-   */
-  releaseQueue(): number {
-    const tr = this.transfer;
-    if (!tr) return 0;
-    const p = this.pool;
-    const n = tr.queueLength;
-    for (const queue of tr.queues) {
-      for (const i of queue) {
-        p.state[i] = S_FREE_DRIFT;
-        p.queueIndex[i] = -1;
-        p.flags[i] = (p.flags[i] & ~(F_RESOLVED | F_DIVERTED)) | F_REEF_RELEASED;
-        this.counters.diverted--;
-        this.counters.reefReleased++;
-      }
-      queue.length = 0;
-    }
-    return n;
   }
 
   private pushMarker(x: number, y: number, z: number, kind: MarkerKind): void {
@@ -1086,40 +799,27 @@ export class SimulationEngine {
     this.markerSeq++;
   }
 
-  /** Structural load on the most loaded guiding line, as a fraction of design. */
-  private updateLoad(dt: number): void {
-    this.debrisLoad += (this.debrisTarget - this.debrisLoad) * (1 - Math.exp(-dt / 12));
-    const Ld = ASSUMPTIONS.loads;
-    const P = this.params;
-    const wave = (P.waveHeight / Ld.designWave) ** 2;
-    let raw = -1;
-    for (const c of this.lines) {
-      if (c.activeCount === 0) continue;
-      const activeFrac = c.activeCount / c.layout.segCount;
-      const hydro = (c.normalVelocity / Ld.designNormalVelocity) ** 2 * (c.skirtActual / Ld.designSkirt);
-      const onLine = this.guidedByLine[c.layout.side] + (c === this.curtain ? this.backedUpCount : 0);
-      const bio = onLine / ((Ld.designGuidedPerThousand * P.agentBudget) / 1000);
-      raw = Math.max(raw, (Ld.hydroWeight * hydro + Ld.waveWeight * wave + Ld.biomassWeight * bio) * activeFrac + this.debrisLoad * activeFrac);
-    }
-    this.curtainLoad += (Math.max(0, raw) - this.curtainLoad) * (1 - Math.exp(-dt / 5));
+  /** Tear out one panel of a net (stress test). */
+  tearPanel(net: NetIndex, panel: number): void {
+    const n = this.nets[net];
+    if (n) n.torn[Math.min(n.n - 1, panel)] = 1;
   }
 
-  private pruneIntakeTimes(): void {
-    const cutoff = this.time - ASSUMPTIONS.metrics.rateWindow;
-    let n = 0;
-    while (n < this.intakeTimes.length && this.intakeTimes[n] < cutoff) n++;
-    if (n > 0) this.intakeTimes.splice(0, n);
+  /** Repair every torn panel. */
+  repairPanels(): void {
+    for (const n of this.nets) n.torn.fill(0);
   }
 
-  /** Intake contacts per minute over the rolling window. */
-  intakeRatePerMin(): number {
-    const w = Math.min(ASSUMPTIONS.metrics.rateWindow, Math.max(this.time, 1));
-    return (this.intakeTimes.length / w) * 60;
+  /** Wave height (Hs) that reaches the net line, after the breakwaters (m). */
+  get channelWave(): number {
+    const L = NETS[0];
+    const mid = pointOnNet(L, L.length / 2);
+    return this.params.waveHeight * waveExposure(mid.x, mid.z);
   }
 
   /**
    * Mass balance: every jellyfish that entered the site has exactly one fate so far — reached the
-   * screens, guided into a throat, passed the site — or is still in the water with none yet.
+   * screens, went into a pocket, passed the site — or is still in the water with none yet.
    */
   balance(): Balance {
     const c = this.counters;
@@ -1138,12 +838,6 @@ export class SimulationEngine {
     return n;
   }
 
-  /** Bloom depth percentile (normal approximation of the configured distribution). */
-  bloomDepthPercentile(p: 0.5 | 0.9 | 0.95): number {
-    const z = p === 0.5 ? 0 : p === 0.9 ? 1.2816 : 1.6449;
-    return this.params.bloomMeanDepth + z * this.params.bloomDepthSD;
-  }
-
   agentInfo(slot: number): AgentInfo | null {
     const p = this.pool;
     if (slot < 0 || slot >= p.capacity || p.state[slot] === S_INACTIVE) return null;
@@ -1157,7 +851,6 @@ export class SimulationEngine {
       x: p.px[slot],
       z: p.pz[slot],
       size: p.size[slot],
-      contactTime: p.contactStart[slot] >= 0 ? this.time - p.contactStart[slot] : null,
       transitRemaining: s === S_TRANSFERRED ? p.timer[slot] : null,
     };
   }

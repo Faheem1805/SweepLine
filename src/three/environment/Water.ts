@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { SEABED_DEPTH_GLSL } from '../../config/site';
+import { SEABED_DEPTH_GLSL, WAVE_EXPOSURE_GLSL } from '../../config/site';
 import { WAVES_GLSL } from '../../simulation/waves';
 import { MEDIUM_GLSL, SHARED } from './shaderChunks';
 import { makeFoamNoise } from './textures';
@@ -22,8 +22,8 @@ function axisCoords(core: number, spacing: number, outer: number, outerSegs: num
 }
 
 function buildGrid(): THREE.BufferGeometry {
-  const xs = axisCoords(380, 2.5, 7000, 26);
-  const zs = axisCoords(320, 2.5, 7000, 26);
+  const xs = axisCoords(900, 4, 9000, 26);
+  const zs = axisCoords(760, 4, 9000, 26);
   const nx = xs.length;
   const nz = zs.length;
   const pos = new Float32Array(nx * nz * 3);
@@ -58,11 +58,12 @@ function buildGrid(): THREE.BufferGeometry {
   return g;
 }
 
-const CENTER = new THREE.Vector2(-10, 40);
+const CENTER = new THREE.Vector2(0, 300);
 
 /** Surface displacement shared by the water and its depth cap. */
 const SURFACE_VERTEX = /* glsl */ `
   ${WAVES_GLSL}
+  ${WAVE_EXPOSURE_GLSL}
   uniform vec2 uCenter;
   varying vec3 vWorld;
   varying vec3 vView;
@@ -70,7 +71,8 @@ const SURFACE_VERTEX = /* glsl */ `
   varying float vElev;
   void main() {
     vec4 wp = modelMatrix * vec4(position, 1.0);
-    float fade = 1.0 - smoothstep(380.0, 900.0, length(wp.xz - uCenter));
+    // The breakwaters calm the channel; far out the swell fades into the distance.
+    float fade = (1.0 - smoothstep(900.0, 1900.0, length(wp.xz - uCenter))) * waveExposure(wp.xz);
     vec2 slope;
     float e = waveElevation(wp.xz, slope) * fade;
     wp.y += e;
