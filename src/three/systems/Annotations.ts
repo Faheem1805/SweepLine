@@ -1,9 +1,11 @@
 import * as THREE from 'three';
 import { SITE } from '../../config/site';
+import type { FlowField } from '../../simulation/flowField';
 import type { Marker, SimulationEngine } from '../../simulation/SimulationEngine';
 import type { EngineKind } from '../../simulation/types';
-import { pointAtArc, type CurtainLayout } from '../../simulation/geometry';
 import { makeRingSprite, makeSoftSprite } from '../environment/textures';
+
+const CAPTURE_POINTS = 240;
 
 interface Flash {
   sprite: THREE.Sprite;
@@ -13,17 +15,14 @@ interface Flash {
 }
 
 const FLASH_COLORS: Record<Marker['kind'], number> = {
-  under: 0xff6a4d,
-  overtop: 0xffb347,
+  leak: 0xffb347,
   intake: 0xf87171,
   release: 0x5eead4,
 };
 
 /**
- * Engineering annotations in the 3D scene: event flashes (under-skirt escapes,
- * intake contacts, releases), the skirt-depth dimension line, a translucent
- * bloom P90-depth plane, the modelled intake capture zone and the selection
- * marker for a picked jellyfish.
+ * Annotations in the 3D scene: event flashes (animals past a net, screen contacts, releases), the
+ * band of passing water the plant draws in, and the selection marker for a picked jellyfish.
  */
 export class Annotations {
   readonly group = new THREE.Group();
@@ -33,11 +32,8 @@ export class Annotations {
   private readonly flashTex = makeSoftSprite(64, 1.6);
   private readonly lastSeq = new Map<SimulationEngine, number>();
   readonly selection: THREE.Sprite;
-  private readonly dimension: THREE.LineSegments;
-  private readonly dimMat: THREE.LineBasicMaterial;
-  readonly bloomPlane: THREE.Mesh;
-  readonly captureZone: THREE.Mesh;
-  private dimAnchor = new THREE.Vector3();
+  /** Band of water the plant draws in: two lines traced through the flow, refreshed as the tide changes. */
+  readonly captureLine: THREE.Line;
 
   constructor() {
     this.group.name = 'annotations';
@@ -48,7 +44,7 @@ export class Annotations {
         sprite.visible = false;
         sprite.renderOrder = 40;
         this.flashGroups[world].add(sprite);
-        this.flashes[world].push({ sprite, born: -1e9, life: 3, kind: 'under' });
+        this.flashes[world].push({ sprite, born: -1e9, life: 3, kind: 'leak' });
       }
       this.group.add(this.flashGroups[world]);
     }
@@ -59,55 +55,36 @@ export class Annotations {
     this.selection.renderOrder = 50;
     this.group.add(this.selection);
 
-    // Skirt depth dimension line (vertical, with end ticks).
-    this.dimMat = new THREE.LineBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.9, depthTest: false });
-    const dg = new THREE.BufferGeometry();
-    dg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6 * 3), 3));
-    this.dimension = new THREE.LineSegments(dg, this.dimMat);
-    this.dimension.frustumCulled = false;
-    this.dimension.renderOrder = 45;
-    this.dimension.visible = false;
-    this.group.add(this.dimension);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(CAPTURE_POINTS * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    this.captureLine = new THREE.LineLoop(g, new THREE.LineDashedMaterial({ color: 0xf87171, dashSize: 16, gapSize: 12, transparent: true, opacity: 0.9, depthWrite: false }));
+    this.captureLine.frustumCulled = false;
+    this.captureLine.renderOrder = 22;
+    this.captureLine.visible = false;
+    this.group.add(this.captureLine);
+  }
 
-    // Bloom P90 depth plane (shown underwater).
-    this.bloomPlane = new THREE.Mesh(
-      new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
-      new THREE.MeshBasicMaterial({ color: 0x7dd3fc, transparent: true, opacity: 0.08, depthWrite: false, side: THREE.DoubleSide }),
-    );
-    this.bloomPlane.visible = false;
-    this.bloomPlane.renderOrder = 15;
-    this.group.add(this.bloomPlane);
-
-    // Modelled intake capture zone (Flow View).
-    const zoneMat = new THREE.ShaderMaterial({
-      uniforms: {},
-      vertexShader: /* glsl */ `
-        varying vec2 vUv;
-        void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
-      `,
-      fragmentShader: /* glsl */ `
-        varying vec2 vUv;
-        void main() {
-          vec2 p = vec2(vUv.x - 0.5, vUv.y) * vec2(2.0, 1.0);
-          float r = length(p);
-          float fill = smoothstep(1.0, 0.0, r) * 0.13;
-          float edge = smoothstep(0.04, 0.0, abs(r - 0.92)) * 0.35;
-          float a = (fill + edge) * step(0.0, vUv.y);
-          gl_FragColor = vec4(vec3(0.97, 0.45, 0.42) * a, 1.0);
-        }
-      `,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    });
-    const I = SITE.intake;
-    const width = (I.x1 - I.x0) + 2 * 30;
-    this.captureZone = new THREE.Mesh(new THREE.PlaneGeometry(width, 34).rotateX(-Math.PI / 2), zoneMat);
-    this.captureZone.geometry.translate(0, 0, 17);
-    this.captureZone.position.set((I.x0 + I.x1) / 2, 0.22, I.mouthZ);
-    this.captureZone.visible = false;
-    this.captureZone.renderOrder = 19;
-    this.group.add(this.captureZone);
+  /** Trace the edges of the water that ends up at the plant, back upstream from the channel mouth. */
+  updateCaptureLine(flow: FlowField): void {
+    const arr = this.captureLine.geometry.attributes.position.array as Float32Array;
+    const half = Math.floor(CAPTURE_POINTS / 2);
+    const v = { x: 0, z: 0 };
+    const M = SITE.channel.mouthZ;
+    const hw = SITE.channel.halfWidth;
+    for (const side of [-1, 1]) {
+      let x = side * (hw - 2);
+      let z = M + 4;
+      for (let i = 0; i < half; i++) {
+        const k = side < 0 ? i : CAPTURE_POINTS - 1 - i;
+        arr.set([x, 0.9, z], k * 3);
+        flow.sample(x, z, 2, v);
+        x -= v.x * 26;
+        z -= v.z * 26;
+        if (z < M + 10 && Math.abs(x) > SITE.breakwater.outerToe - 10) z = M + 10;
+      }
+    }
+    this.captureLine.geometry.attributes.position.needsUpdate = true;
+    this.captureLine.computeLineDistances();
   }
 
   /** Spawn flashes for an engine's new markers (in that engine's world). */
@@ -174,38 +151,5 @@ export class Annotations {
     const d = camera.position.distanceTo(pos);
     this.selection.scale.setScalar(Math.max(0.9, d * 0.06));
     (this.selection.material as THREE.SpriteMaterial).rotation += 0.01;
-  }
-
-  /** Dimension line from the float line to the skirt's weighted lower edge at a curtain arc position. */
-  updateDimension(layout: CurtainLayout | null, arcFraction: number, skirt: number, visible: boolean): THREE.Vector3 | null {
-    if (!layout || !visible || skirt <= 0.05) {
-      this.dimension.visible = false;
-      return null;
-    }
-    const p = pointAtArc(layout, layout.length * arcFraction);
-    const off = 0.9;
-    const x = p.x + p.nx * off;
-    const z = p.z + p.nz * off;
-    const tick = 0.35;
-    const arr = this.dimension.geometry.attributes.position.array as Float32Array;
-    const tx = p.tx * tick;
-    const tz = p.tz * tick;
-    arr.set([x, 0, z, x, -skirt, z, x - tx, 0, z - tz, x + tx, 0, z + tz, x - tx, -skirt, z - tz, x + tx, -skirt, z + tz]);
-    this.dimension.geometry.attributes.position.needsUpdate = true;
-    this.dimension.visible = true;
-    this.dimAnchor.set(x + p.nx * 0.2, -skirt / 2, z + p.nz * 0.2);
-    return this.dimAnchor;
-  }
-
-  updateBloomPlane(layout: CurtainLayout | null, p90: number, visible: boolean): void {
-    if (!layout || !visible) {
-      this.bloomPlane.visible = false;
-      return;
-    }
-    const mid = pointAtArc(layout, layout.length * 0.5);
-    this.bloomPlane.visible = true;
-    this.bloomPlane.position.set(mid.x + mid.nx * 8, -p90, mid.z + mid.nz * 8);
-    this.bloomPlane.rotation.y = -Math.atan2(mid.tz, mid.tx);
-    this.bloomPlane.scale.set(layout.length * 0.9, 1, 22);
   }
 }

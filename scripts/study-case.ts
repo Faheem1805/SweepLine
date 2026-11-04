@@ -1,9 +1,9 @@
-/** Runs one poster case on the channel-net engine and writes its numbers as JSON. */
+/** Runs one study case on the engine and writes its numbers as JSON. See scripts/study-all.sh. */
 import { writeFileSync } from 'node:fs';
 import { ASSUMPTIONS, SPECIES } from '../src/config/assumptions';
 import { tideCurrent, tideCurrentVector, TIDE } from '../src/simulation/tide';
 import type { SimParams } from '../src/simulation/types';
-import { run } from './_v2probe';
+import { run } from './study-core';
 
 const arg = (k: string) => process.argv.find((a) => a.startsWith(`${k}=`))?.split('=')[1];
 const name = arg('case') ?? 'reference';
@@ -63,6 +63,12 @@ const cases: Record<string, { over: Partial<SimParams>; hook?: Parameters<typeof
     },
     hours: 5,
   },
+  debris: {
+    over: {},
+    hook: (t, s) => {
+      if (t >= 40 * 60) s.nets[0].debrisTarget = 0.975;
+    },
+  },
   overload: {
     over: { foulingWeeks: 6 },
     hook: (t, s, b) => {
@@ -79,10 +85,44 @@ const cases: Record<string, { over: Partial<SimParams>; hook?: Parameters<typeof
   },
 };
 
-const c = cases[name];
+// One-at-a-time changes to an assumption: `sens:<key>:<low|high>`.
+const mutable = ASSUMPTIONS.net as unknown as Record<string, number>;
+const species = SPECIES.catostylus as unknown as Record<string, number>;
+const plant = ASSUMPTIONS.plant as unknown as Record<string, number>;
+const SENS: Record<string, { low: () => void; high: () => void }> = {
+  slide: { low: () => (mutable.slide = 0.5), high: () => (mutable.slide = 0.9) },
+  leak: {
+    low: () => {
+      species.leakPerPanel *= 0.2;
+      mutable.jointLeak *= 0.2;
+    },
+    high: () => {
+      species.leakPerPanel *= 10;
+      mutable.jointLeak *= 10;
+    },
+  },
+  snag: { low: () => (mutable.snagRate *= 0.2), high: () => (mutable.snagRate *= 5) },
+  swim: {
+    low: () => {
+      species.swimMin *= 0.5;
+      species.swimMax *= 0.5;
+    },
+    high: () => {
+      species.swimMin *= 2.5;
+      species.swimMax *= 2.5;
+    },
+  },
+  flow: { low: () => (plant.unitFlowM3s = 100), high: () => (plant.unitFlowM3s = 160) },
+};
+let c = cases[name];
+if (name.startsWith('sens:')) {
+  const [, key, side] = name.split(':');
+  SENS[key][side as 'low' | 'high']();
+  c = cases.reference;
+}
 if (name.startsWith('leak10')) {
-  (SPECIES.catostylus as { leakPerPanel: number }).leakPerPanel *= 10;
-  (ASSUMPTIONS.net as { jointLeak: number }).jointLeak *= 10;
+  species.leakPerPanel *= 10;
+  mutable.jointLeak *= 10;
 }
 let reliefAt: number | null = null;
 let peakOnNet = 0;

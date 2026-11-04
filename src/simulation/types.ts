@@ -64,7 +64,7 @@ export const DEFAULT_PARAMS: SimParams = {
 export type ModuleStatus = 'ONLINE' | 'STANDBY' | 'ACTIVATING' | 'FAULT' | 'DISABLED' | 'OFF';
 
 /** Faults and conditions an operator (or a judge) can inject while the twin runs. */
-export type FailureKey = 'pumpPrimary' | 'pumpStandby' | 'panelTear' | 'unitTrip' | 'storm' | 'surge' | 'sonarLoss';
+export type FailureKey = 'pumpPrimary' | 'pumpStandby' | 'panelTear' | 'debris' | 'unitTrip' | 'storm' | 'surge' | 'sonarLoss';
 
 export type StatusCode = 'READY' | 'WARNING' | 'ARMING' | 'NOMINAL' | 'ELEVATED' | 'RELIEF' | 'OVERLOAD' | 'STANDBY';
 

@@ -1,14 +1,15 @@
 /**
  * Builds the 1200 × 1600 mm poster as HTML from the twin's own outputs, then prints it to PDF.
+ * Light on purpose: it is printed and mounted, so it stays a white page with dark ink.
  *
  *   node poster/build.mjs            # writes poster/poster.html and poster/54.ENEC.SweepLine.pdf
  *
- * Inputs: poster/content.json (text), poster/data/frame.json (a frame of the simulation, flow lines,
- * recorded tide) and poster/data/results.json (one summary per test run). Every number on the
- * poster comes from those two data files or from the arithmetic in this script.
+ * Inputs: poster/content.json (text), poster/data/results.json (one summary per model run),
+ * poster/data/frame.json (flow, tide) and poster/images (renders captured from the running twin,
+ * with hero.json holding where each labelled thing falls in the hero image).
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -18,413 +19,287 @@ const read = (p) => JSON.parse(readFileSync(resolve(here, p), 'utf8'));
 const C = read('content.json');
 const F = read('data/frame.json');
 const R = read('data/results.json');
+const H = read('images/hero.json');
 const font = (p) => pathToFileURL(resolve(root, 'node_modules', p)).href;
+const img = (p) => pathToFileURL(resolve(here, 'images', p)).href;
 
-const INK = '#EAF3F7';
-const INK2 = '#B9CBD3';
-const MUTED = '#86A0AE';
-const BG = '#071420';
-const CYAN = '#22D3EE';
-const TEAL = '#2DD4BF';
-const AMBER = '#F5B94C';
-const RED = '#F87171';
+const INK = '#0B2B3D';
+const INK2 = '#2F4B59';
+const MUTED = '#5A7482';
+const LINE = '#D3E0E6';
+const PALE = '#EDF6F8';
+const CYAN = '#0B7FA8';
+const TEAL = '#07877B';
+const AMBER = '#D97F0E';
+const RED = '#D2433B';
 
-// ------------------------------------------------------------------ hero projection (mm on the poster)
+// ------------------------------------------------------------------ hero overlay (mm on the poster)
 const HERO_W = 1200;
-const HERO_H = 385;
-const S = 0.8;
-const K = 0.72;
-const HS = 1.5;
-const sx = (z) => 1058 - z * S;
-const sy = (x, y = 0) => HERO_H * 0.5 + x * S * K - y * HS;
-const pt = (x, z, y = 0) => `${sx(z).toFixed(1)},${sy(x, y).toFixed(1)}`;
-const poly = (pts, attrs) => `<polygon points="${pts.join(' ')}" ${attrs}/>`;
+const HERO_H = (1200 * H.size[1]) / H.size[0];
+const at = (k) => [H.points[k][0] * HERO_W, H.points[k][1] * HERO_H];
 
-function rng(seed) {
-  let s = seed;
-  return () => ((s = (s * 16807) % 2147483647) - 1) / 2147483646;
+function callout(n, key, tx, ty, text, opts = {}) {
+  const [x, y] = Array.isArray(key) ? key : at(key);
+  const w = text.length * 7.95 + 46;
+  const left = opts.end ? tx - w : tx;
+  const cx = left + 15;
+  return `<line x1="${x}" y1="${y}" x2="${opts.end ? tx - 15 : cx}" y2="${ty}" stroke="#fff" stroke-width="1.5"/>
+    <circle cx="${x}" cy="${y}" r="3.4" fill="#fff" stroke="${INK}" stroke-width="1"/>
+    <g transform="translate(${left} ${ty - 15})"><rect width="${w}" height="30" rx="15" fill="#fff" fill-opacity="0.95"/>
+    <circle cx="15" cy="15" r="11.5" fill="${INK}"/><text x="15" y="20.4" text-anchor="middle" font-size="15.5" font-weight="800" fill="#fff">${n}</text>
+    <text x="33" y="21" font-size="16" font-weight="700" fill="${INK}">${text}</text></g>`;
 }
 
-function rocks(side, z0, z1, n, seed) {
-  // Armour stone scattered over the mound, lit from the sea.
-  const r = rng(seed);
-  let out = '';
-  for (let i = 0; i < n; i++) {
-    const z = z0 + r() * (z1 - z0);
-    const a = 70 + r() * 55;
-    const crest = a > 89 && a < 100;
-    const y = crest ? 4.2 : a < 89 ? ((a - 70) / 19.5) * 4.2 : ((125 - a) / 25) * 4.2;
-    const rad = 0.7 + r() * 1.5;
-    const c = 92 + Math.round(r() * 70);
-    out += `<ellipse cx="${sx(z).toFixed(1)}" cy="${sy(side * a, y).toFixed(1)}" rx="${(rad * 1.25).toFixed(2)}" ry="${(rad * 0.8).toFixed(2)}" fill="rgb(${c},${c - 7},${c - 18})"/>`;
-  }
-  return out;
-}
-
-function breakwater(side) {
-  const m = 540;
-  const toe = 125;
-  const top = [pt(side * 70, m), pt(side * 89.5, m, 4.2), pt(side * 99.5, m, 4.2), pt(side * toe, m), pt(side * toe, -50), pt(side * 99.5, -62, 4.2), pt(side * 89.5, -62, 4.2), pt(side * 70, -50)];
-  // Rounded head.
-  let head = '';
-  for (let i = 0; i <= 14; i++) {
-    const t = (i / 14) * Math.PI;
-    const x = 97.5 - 27.5 * Math.cos(t);
-    const z = m + 26 * Math.sin(t);
-    head += `${pt(side * x, z)} `;
-  }
-  return `<polygon points="${top.join(' ')}" fill="#4A4A43"/><polygon points="${head}" fill="#4A4A43"/>
-    <polygon points="${pt(side * 89.5, m + 8, 4.2)} ${pt(side * 99.5, m + 8, 4.2)} ${pt(side * 99.5, -62, 4.2)} ${pt(side * 89.5, -62, 4.2)}" fill="#8C8878"/>
-    ${rocks(side, -50, m + 20, 2600, side > 0 ? 7 : 19)}
-    <polygon points="${pt(side * 91.5, m + 6, 4.3)} ${pt(side * 97.5, m + 6, 4.3)} ${pt(side * 97.5, -62, 4.3)} ${pt(side * 91.5, -62, 4.3)}" fill="#A8A594"/>`;
-}
-
-function netRibbon(N, color, opacity) {
-  // Shown x-ray, from the float line down to the seabed.
-  let out = '';
-  const n = N.panels;
-  const dx = (N.bx - N.ax) / n;
-  const dz = (N.bz - N.az) / n;
-  out += poly([pt(N.ax, N.az, 0.6), pt(N.bx, N.bz, 0.6), pt(N.bx, N.bz, -9), pt(N.ax, N.az, -9)], `fill="url(#netFill)" opacity="${opacity}"`);
-  // Mesh hatching.
-  let mesh = '';
-  for (let i = 0; i <= n * 3; i++) {
-    const x = N.ax + (dx * i) / 3;
-    const z = N.az + (dz * i) / 3;
-    mesh += `<line x1="${sx(z).toFixed(1)}" y1="${sy(x, 0.6).toFixed(1)}" x2="${sx(z).toFixed(1)}" y2="${sy(x, -9).toFixed(1)}"/>`;
-  }
-  out += `<g stroke="${color}" stroke-width="0.14" opacity="${opacity * 0.5}">${mesh}</g>`;
-  // Piles.
-  for (let i = 0; i <= n; i++) {
-    const x = N.ax + dx * i;
-    const z = N.az + dz * i;
-    out += `<line x1="${sx(z).toFixed(1)}" y1="${sy(x, 4.4).toFixed(1)}" x2="${sx(z).toFixed(1)}" y2="${sy(x, -9).toFixed(1)}" stroke="#C7D3D9" stroke-width="0.8" opacity="${0.5 + opacity * 0.4}"/>`;
-    out += `<circle cx="${sx(z).toFixed(1)}" cy="${sy(x, 4.4).toFixed(1)}" r="0.85" fill="#E8EEF1"/>`;
-  }
-  // Float line, glowing.
-  out += `<line x1="${sx(N.az)}" y1="${sy(N.ax, 0.6)}" x2="${sx(N.bz)}" y2="${sy(N.bx, 0.6)}" stroke="${color}" stroke-width="5" opacity="0.2" stroke-linecap="round"/>`;
-  out += `<line x1="${sx(N.az)}" y1="${sy(N.ax, 0.6)}" x2="${sx(N.bz)}" y2="${sy(N.bx, 0.6)}" stroke="${color}" stroke-width="1.7" stroke-linecap="round"/>`;
-  return out;
-}
-
-function flowLines() {
-  let out = '';
-  for (const line of F.lines) {
-    const inside = Math.abs(line[0][0]) < 70 && line[0][1] < 540;
-    const d = line.map(([x, z]) => pt(x, z)).join(' ');
-    out += `<polyline points="${d}" fill="none" stroke="${CYAN}" stroke-width="${inside ? 0.5 : 0.42}" opacity="${inside ? 0.5 : 0.3}"/>`;
-    // Arrowheads along the line.
-    for (let i = 12; i < line.length - 2; i += 26) {
-      const [x0, z0] = line[i];
-      const [x1, z1] = line[i + 1];
-      const ax = sx(z0);
-      const ay = sy(x0);
-      const bx = sx(z1);
-      const by = sy(x1);
-      const a = Math.atan2(by - ay, bx - ax);
-      if (ax < -5 || ax > 1205 || ay < 0 || ay > HERO_H) continue;
-      const s = 4.6;
-      const p1 = `${(ax + Math.cos(a) * s).toFixed(1)},${(ay + Math.sin(a) * s).toFixed(1)}`;
-      const p2 = `${(ax + Math.cos(a + 2.5) * s * 0.75).toFixed(1)},${(ay + Math.sin(a + 2.5) * s * 0.75).toFixed(1)}`;
-      const p3 = `${(ax + Math.cos(a - 2.5) * s * 0.75).toFixed(1)},${(ay + Math.sin(a - 2.5) * s * 0.75).toFixed(1)}`;
-      out += `<polygon points="${p1} ${p2} ${p3}" fill="${CYAN}" opacity="0.55"/>`;
-    }
-  }
-  return out;
-}
-
-function agents() {
-  let out = '';
-  for (const [x, z, y, st] of F.agents) {
-    const cx = sx(z);
-    const cy = sy(x, y * 0.5);
-    if (cx < -4 || cx > 1204 || cy < -4 || cy > HERO_H + 4) continue;
-    if (st === 1) out += `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="2" fill="${AMBER}" opacity="0.22"/><circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="0.9" fill="#FFF3D6"/>`;
-    else if (st === 2) out += `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="2.2" fill="${TEAL}" opacity="0.3"/><circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="1" fill="#D5FFF7"/>`;
-    else out += `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="1.9" fill="#9FD8FF" opacity="0.16"/><circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="0.75" fill="#E2F4FF" opacity="0.9"/>`;
-  }
-  return out;
-}
-
-function callout(n, x, y, tx, ty, text, anchor = 'start') {
-  const w = text.length * 5.45 + 24;
-  const left = anchor === 'end' ? tx - w : tx;
-  return `<line x1="${x}" y1="${y}" x2="${tx + (anchor === 'end' ? 0 : 0)}" y2="${ty}" stroke="#fff" stroke-width="0.7" opacity="0.85"/>
-    <circle cx="${x}" cy="${y}" r="1.6" fill="#fff"/>
-    <g transform="translate(${left} ${ty - 10})"><rect width="${w}" height="20" rx="10" fill="#07141F" fill-opacity="0.88" stroke="#fff" stroke-opacity="0.4" stroke-width="0.5"/>
-    <circle cx="10.5" cy="10" r="7" fill="${AMBER}"/><text x="10.5" y="13.6" text-anchor="middle" font-size="10.4" font-weight="800" fill="#07141F">${n}</text>
-    <text x="21" y="14" font-size="10.8" font-weight="600" fill="#fff">${text}</text></g>`;
-}
-
-function hero() {
-  const [A, B] = F.nets;
-  const land = sx(-62);
-  // Depth lines of the natural seabed.
-  let depth = '';
-  for (const d of [6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10, 10.5, 11, 11.5, 12, 12.5, 13]) {
-    const z = (d - 6) / 0.0065 - 50;
-    const xp = sx(z);
-    if (xp < 0 || xp > 1200) continue;
-    depth += `<line x1="${xp.toFixed(1)}" y1="0" x2="${xp.toFixed(1)}" y2="${HERO_H}" stroke="#9FD8FF" stroke-width="0.3" stroke-dasharray="1.6 3.4" opacity="0.2"/>`;
-    if (Number.isInteger(d)) depth += `<text x="${(xp + 2).toFixed(1)}" y="${HERO_H - 7}" font-size="7.5" fill="#9FD8FF" opacity="0.55" font-family="JetBrains Mono">${d} m</text>`;
-  }
-  const pipe = [
-    [70, 66],
-    [98, 66],
-    [130, 72],
-    [620, 150],
-  ];
-  const cA = { x: A.bx - 4, z: A.bz + 12 };
-  return `<svg viewBox="0 0 ${HERO_W} ${HERO_H}" width="100%" style="display:block" font-family="Inter Variable">
-  <defs>
-    <linearGradient id="sea" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#062033"/><stop offset="0.6" stop-color="#0A3345"/><stop offset="0.88" stop-color="#11505C"/></linearGradient>
-    <linearGradient id="chan" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#0D3E50"/><stop offset="1" stop-color="#165E68"/></linearGradient>
-    <linearGradient id="netFill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${AMBER}" stop-opacity="0.34"/><stop offset="1" stop-color="${AMBER}" stop-opacity="0.04"/></linearGradient>
-    <linearGradient id="landG" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#6B5D42"/><stop offset="1" stop-color="#3A3427"/></linearGradient>
-    <clipPath id="heroClip"><rect width="${HERO_W}" height="${HERO_H}"/></clipPath>
-  </defs>
-  <g clip-path="url(#heroClip)">
-    <rect width="${HERO_W}" height="${HERO_H}" fill="url(#sea)"/>
-    ${depth}
-    ${flowLines()}
-    ${breakwater(-1)}
-    <polygon points="${pt(-70, 540)} ${pt(70, 540)} ${pt(70, -40)} ${pt(-70, -40)}" fill="url(#chan)"/>
-    <g opacity="1">${F.lines.filter((l) => Math.abs(l[0][0]) < 70 && l[0][1] < 540).map((l) => `<polyline points="${l.map(([x, z]) => pt(x, z)).join(' ')}" fill="none" stroke="${CYAN}" stroke-width="0.5" opacity="0.5"/>`).join('')}</g>
-    ${netRibbon(A, AMBER, 1)}
-    ${netRibbon(B, AMBER, 0.6)}
-    ${agents()}
-    ${breakwater(1)}
-    <!-- Collector platform and pipe -->
-    <polyline points="${pipe.map(([x, z]) => pt(x, z, x < 110 ? 4.6 : 0)).join(' ')}" fill="none" stroke="${TEAL}" stroke-width="2.4" stroke-linecap="round"/>
-    ${poly([pt(60, 80, 4.6), pt(78, 80, 4.6), pt(78, 52, 4.6), pt(60, 52, 4.6)], `fill="#C9D4D8" stroke="#E8EEF1" stroke-width="0.4"`)}
-    ${poly([pt(64, 76, 9), pt(74, 76, 9), pt(74, 58, 9), pt(64, 58, 9)], `fill="${TEAL}" stroke="#D5FFF7" stroke-width="0.4"`)}
-    ${poly([pt(74, 76, 9), pt(74, 58, 9), pt(74, 58, 4.6), pt(74, 76, 4.6)], `fill="#1E9C8E"`)}
-    <!-- Land, intake and plant massing -->
-    <rect x="${land}" y="0" width="${HERO_W - land}" height="${HERO_H}" fill="url(#landG)"/>
-    ${poly([pt(-66, -28, 3.8), pt(66, -28, 3.8), pt(66, -84, 3.8), pt(-66, -84, 3.8)], `fill="#C9CCC6"`)}
-    ${poly([pt(66, -28, 3.8), pt(66, -84, 3.8), pt(66, -84, -2), pt(66, -28, -2)], `fill="#7F837F"`)}
-    ${Array.from({ length: 12 }, (_, i) => {
-      const x = -60 + 10 * i + 5;
-      return `<line x1="${sx(-29)}" y1="${sy(x - 4, 3.8)}" x2="${sx(-29)}" y2="${sy(x + 4, 3.8)}" stroke="#20323B" stroke-width="2.6"/>`;
-    }).join('')}
-    ${[[-150, -70], [-46, -70], [58, -70]].map(([x, w]) => {
-      const z0 = -92;
-      const z1 = -150;
-      const h = 20;
-      return `${poly([pt(x, z0, h), pt(x + 92, z0, h), pt(x + 92, z1, h), pt(x, z1, h)], `fill="#B7BDBB"`)}${poly([pt(x + 92, z0, h), pt(x + 92, z1, h), pt(x + 92, z1, 3), pt(x + 92, z0, 3)], `fill="#737B7C"`)}${poly([pt(x, z0, h), pt(x + 92, z0, h), pt(x + 92, z0, 3), pt(x, z0, 3)], `fill="#8F9796"`)}`;
-    }).join('')}
-    <!-- Callouts -->
-    ${callout(1, sx(860), sy(-190), 40, 30, 'Bloom drifts along the coast on the tide')}
-    ${callout(2, sx(600), sy(10), 330, 30, 'The plant’s own flow draws it into the channel')}
-    ${callout(3, sx(300), sy(-12, 0.6), 640, 30, 'Net A sweeps it along its face', 'start')}
-    ${callout(4, sx(190), sy(30, 0.6), 640, HERO_H - 28, 'Net B catches what gets past', 'start')}
-    ${callout(5, sx(66), sy(70, 9), 880, HERO_H - 28, 'Collector and gentle pump', 'start')}
-    ${callout(6, sx(-29), sy(-40, 3.8), 925, 30, 'Plant’s screens unchanged', 'start')}
-    <rect x="16" y="${HERO_H - 56}" width="566" height="46" rx="8" fill="#07141F" fill-opacity="0.86"/>
-    <text x="28" y="${HERO_H - 36}" font-size="14" font-weight="700" fill="#fff">A frame from the digital twin: minute ${F.atMin} of a 25 t/h bloom</text>
-    <text x="28" y="${HERO_H - 19}" font-size="10.4" fill="${INK2}">Each dot is a simulated jellyfish, about ${Math.round(F.kgPerAgent)} kg of bloom. Thin lines: the model’s flow. Teal line: release pipe.</text>
-  </g></svg>`;
-}
-
-// ------------------------------------------------------------------ charts
-function bloomChart() {
-  const r = R.reference;
-  const W = 340;
-  const H = 190;
-  const L = 34;
-  const B = 28;
-  const T = 12;
-  const s = r.series;
-  const maxT = s[s.length - 1].t / 60;
-  const maxY = Math.ceil(Math.max(...s.map((p) => p.b)) / 10) * 10;
-  const x = (m) => L + (m / maxT) * (W - L - 8);
-  const y = (v) => H - B - (v / maxY) * (H - B - T);
-  const path = (k) => s.map((p) => `${x(p.t / 60).toFixed(1)},${y(p[k]).toFixed(1)}`).join(' ');
-  let g = '';
-  for (let v = 0; v <= maxY; v += 10) g += `<line x1="${L}" x2="${W - 8}" y1="${y(v)}" y2="${y(v)}" stroke="#fff" stroke-opacity="0.1" stroke-width="0.4"/><text x="${L - 4}" y="${y(v) + 3.5}" text-anchor="end" font-size="9.5" fill="${MUTED}">${v}</text>`;
-  for (let m = 0; m <= maxT; m += 60) g += `<text x="${x(m)}" y="${H - B + 13}" text-anchor="middle" font-size="9.5" fill="${MUTED}">${m / 60} h</text>`;
-  const mark = (m, label) => `<line x1="${x(m)}" x2="${x(m)}" y1="${T}" y2="${H - B}" stroke="${RED}" stroke-width="0.6" stroke-dasharray="2 2"/><text x="${x(m) - 2}" y="${T + 9}" text-anchor="end" font-size="9.5" font-weight="600" fill="${RED}">${label}</text>`;
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%" font-family="Inter Variable">${g}
-    ${r.bDerate ? mark(r.bDerate / 60, 'Screens at capacity') : ''}
-    <polyline points="${path('b')}" fill="none" stroke="${RED}" stroke-width="2.6"/>
-    <polyline points="${path('s')}" fill="none" stroke="${TEAL}" stroke-width="2.6"/>
-    <text x="${x(maxT * 0.7)}" y="${y(maxY * 0.74)}" text-anchor="end" font-size="11.5" font-weight="700" fill="${RED}">Without SweepLine: ${r.bScreens.toFixed(0)} t</text>
-    <text x="${x(maxT) - 2}" y="${y(0) - 6}" text-anchor="end" font-size="11" font-weight="700" fill="${TEAL}">With SweepLine: under 0.1 t</text>
-    <text x="${L}" y="${T - 3}" font-size="9.5" fill="${MUTED}">Tonnes on the screens</text>
-    </svg>`;
-}
-
-function tideChart() {
-  const W = 340;
-  const H = 190;
-  const L = 34;
-  const B = 28;
-  const T = 12;
-  const U = F.channelSpeed;
-  const x = (h) => L + ((h + 18) / 36) * (W - L - 8);
-  const y = (v) => T + ((0.4 - v) / 0.7) * (H - B - T);
-  let g = '';
-  for (const v of [-0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3, 0.4]) g += `<line x1="${L}" x2="${W - 8}" y1="${y(v)}" y2="${y(v)}" stroke="#fff" stroke-opacity="${v === 0 ? 0.32 : 0.09}" stroke-width="0.4"/>${Math.abs((v * 10) % 2) < 0.01 ? `<text x="${L - 4}" y="${y(v) + 3.5}" text-anchor="end" font-size="9.5" fill="${MUTED}">${v.toFixed(1)}</text>` : ''}`;
-  for (const h of [-12, 0, 12]) g += `<text x="${x(h)}" y="${H - B + 13}" text-anchor="middle" font-size="9.5" fill="${MUTED}">${h === 0 ? 'tide turn' : `${h > 0 ? '+' : ''}${h} h`}</text>`;
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%" font-family="Inter Variable">${g}
-    <line x1="${x(-18)}" x2="${x(18)}" y1="${y(U)}" y2="${y(U)}" stroke="${CYAN}" stroke-width="2.8"/>
-    <polyline points="${F.tide.map(([h, u]) => `${x(h).toFixed(1)},${y(u).toFixed(1)}`).join(' ')}" fill="none" stroke="${AMBER}" stroke-width="2.2"/>
-    <text x="${x(18) - 2}" y="${y(U) - 5}" text-anchor="end" font-size="11" font-weight="700" fill="${CYAN}">Inside the channel: steady, one way</text>
-    <text x="${x(18) - 2}" y="${y(-0.3)}" text-anchor="end" font-size="11" font-weight="700" fill="${AMBER}">Outside: the recorded tide</text>
-    <text x="${L}" y="${T - 3}" font-size="9.5" fill="${MUTED}">Current (m/s)</text></svg>`;
-}
-
-function speedDiagram() {
-  // Velocity triangle at the net, then a section through it.
-  const W = 340;
-  const H = 208;
-  const a = (20 * Math.PI) / 180;
-  const ox = 62;
-  const oy = 38;
-  const L = 196;
-  const et = [Math.cos(a), Math.sin(a)];
-  const P = (s) => [ox + et[0] * s, oy + et[1] * s];
-  const A = P(L * Math.cos(a));
-  const Fx = ox + L;
-  const arrow = (x0, y0, x1, y1, c, w = 2.8) => {
-    const th = Math.atan2(y1 - y0, x1 - x0);
-    const s = 9;
-    return `<line x1="${x0}" y1="${y0}" x2="${x1 - Math.cos(th) * 5}" y2="${y1 - Math.sin(th) * 5}" stroke="${c}" stroke-width="${w}"/><polygon points="${x1},${y1} ${x1 - Math.cos(th - 0.42) * s},${y1 - Math.sin(th - 0.42) * s} ${x1 - Math.cos(th + 0.42) * s},${y1 - Math.sin(th + 0.42) * s}" fill="${c}"/>`;
-  };
-  const [n0x, n0y] = P(-44);
-  const [n1x, n1y] = P(258);
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%" font-family="Inter Variable">
-    <line x1="${n0x}" y1="${n0y}" x2="${n1x}" y2="${n1y}" stroke="${AMBER}" stroke-width="6" opacity="0.28" stroke-linecap="round"/>
-    <line x1="${n0x}" y1="${n0y}" x2="${n1x}" y2="${n1y}" stroke="${AMBER}" stroke-width="2.2" stroke-linecap="round"/>
-    <text x="${n1x - 74}" y="${n1y + 6}" font-size="11.5" font-weight="700" fill="${AMBER}" text-anchor="end">Net</text>
-    ${arrow(ox, oy, Fx, oy, CYAN, 3.2)}
-    ${arrow(ox, oy, A[0], A[1], TEAL, 3.2)}
-    ${arrow(A[0], A[1], Fx, oy, '#fff', 2.4)}
-    <path d="M ${ox + 46} ${oy} A 46 46 0 0 1 ${ox + 46 * Math.cos(a)} ${oy + 46 * Math.sin(a)}" fill="none" stroke="#fff" stroke-width="0.8"/>
-    <text x="${ox + 52}" y="${oy + 13}" font-size="10.5" font-weight="700" fill="#fff">20°</text>
-    <text x="${ox + 2}" y="${oy - 10}" font-size="12" font-weight="700" fill="${CYAN}">Channel flow 0.32 m/s</text>
-    <text x="${ox - 2}" y="${A[1] + 16}" font-size="12" font-weight="700" fill="${TEAL}">Along the net 0.30 m/s</text>
-    <text x="${Fx + 8}" y="${oy + 26}" font-size="12" font-weight="700" fill="#fff">Through</text>
-    <text x="${Fx + 8}" y="${oy + 41}" font-size="12" font-weight="700" fill="#fff">0.11 m/s</text>
-    <text x="${Fx + 8}" y="${oy + 54}" font-size="9.5" fill="${MUTED}">limit 0.12</text>
-    <g transform="translate(0 134)">
-      <rect x="8" y="10" width="324" height="52" fill="#0F4250"/>
-      <rect x="8" y="62" width="324" height="7" fill="#6B5D42"/>
-      <line x1="8" x2="332" y1="10" y2="10" stroke="#9FD8FF" stroke-width="0.8"/>
-      <line x1="118" x2="118" y1="-5" y2="69" stroke="#C7D3D9" stroke-width="3"/>
-      <line x1="125" x2="125" y1="9" y2="62" stroke="${AMBER}" stroke-width="1.8" stroke-dasharray="2.4 1.8"/>
-      <ellipse cx="125" cy="8.6" rx="5.5" ry="3.4" fill="${AMBER}"/>
-      <rect x="119" y="60" width="12" height="3.6" fill="#C7D3D9"/>
-      <text x="136" y="26" font-size="10.5" fill="${INK}">Float line to seabed, 9 m</text>
-      <text x="136" y="41" font-size="10.5" fill="${INK2}">Nothing swims underneath</text>
-      <text x="136" y="56" font-size="10.5" fill="${INK2}">Weighted ground line</text>
-      <text x="16" y="26" font-size="10.5" fill="${INK2}">Piles 20 m apart</text>
-    </g>
+function heroOverlay() {
+  const route = ['r0', 'r1', 'r2', 'r3', 'r4'].map((k) => at(k).map((v) => v.toFixed(1)).join(',')).join(' ');
+  return `<svg viewBox="0 0 ${HERO_W} ${HERO_H}" class="over" font-family="Inter Variable">
+    <polyline points="${route}" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-opacity="0.9"/>
+    <polyline points="${route}" fill="none" stroke="${TEAL}" stroke-width="2.6" stroke-linecap="round"/>
+    ${callout(1, [150, HERO_H - 120], 44, HERO_H - 58, 'A bloom drifts in on the tide')}
+    ${callout(2, 'mouth', 740, 380, 'The plant’s own flow draws it in')}
+    ${callout(3, 'netA', 118, 350, 'Net A sweeps it along')}
+    ${callout(4, 'netB', 118, 306, 'Net B catches what gets past')}
+    ${callout(5, 'collector', 690, 262, 'Screw lift, no impeller')}
+    ${callout(6, 'intake', 118, 262, 'All four intakes untouched')}
+    ${callout(7, [H.points.r3[0] * HERO_W + 60, H.points.r3[1] * HERO_H - 1.6], 1156, 300, 'Released 2 km along the coast', { end: true })}
   </svg>`;
 }
 
-function failureTable() {
-  const rows = R.failures
-    .map(
-      (r) => `<tr><td class="f">${r.failure}</td><td>${r.response}</td><td class="n"><b>${r.with}</b><span> / ${r.without} t</span></td></tr>`,
-    )
-    .join('');
-  return `<table class="fail"><thead><tr><th>What goes wrong</th><th>What happens</th><th class="n">At the screens</th></tr></thead><tbody>${rows}</tbody></table>`;
+// ------------------------------------------------------------------ charts
+const axisText = (x, y, t, a = 'end') => `<text x="${x}" y="${y}" text-anchor="${a}" font-size="11.5" fill="${MUTED}">${t}</text>`;
+
+function bloomChart() {
+  const r = R.reference;
+  const W = 368;
+  const H2 = 152;
+  const L = 30;
+  const B = 22;
+  const T = 8;
+  const s = r.series;
+  const maxT = s[s.length - 1].t / 60;
+  const maxY = Math.ceil(Math.max(...s.map((p) => p.b)) / 10) * 10;
+  const x = (m) => L + (m / maxT) * (W - L - 6);
+  const y = (v) => H2 - B - (v / maxY) * (H2 - B - T);
+  const path = (k) => s.map((p) => `${x(p.t / 60).toFixed(1)},${y(p[k]).toFixed(1)}`).join(' ');
+  let g = '';
+  for (let v = 0; v <= maxY; v += 25) g += `<line x1="${L}" x2="${W - 6}" y1="${y(v)}" y2="${y(v)}" stroke="${LINE}" stroke-width="0.7"/>${axisText(L - 5, y(v) + 4, v)}`;
+  for (let m = 0; m <= maxT; m += 60) g += axisText(x(m), H2 - B + 15, `${m / 60} h`, Math.abs(m - maxT) < 2 ? 'end' : 'middle');
+  return `<svg viewBox="0 0 ${W} ${H2}" width="100%" font-family="Inter Variable">${g}
+    <polyline points="${path('b')}" fill="none" stroke="${RED}" stroke-width="4" stroke-linejoin="round"/>
+    <polyline points="${path('s')}" fill="none" stroke="${TEAL}" stroke-width="4"/>
+    <text x="${x(maxT * 0.66)}" y="${y(maxY * 0.8)}" text-anchor="end" font-size="15" font-weight="800" fill="${RED}">Without: ${r.bScreens.toFixed(0)} t</text>
+    <text x="${x(maxT)}" y="${y(0) - 8}" text-anchor="end" font-size="15" font-weight="800" fill="${TEAL}">With SweepLine: under 0.1 t</text></svg>`;
 }
 
-const section = (n, title, body) => `<section><h2><span>${n}</span>${title}</h2>${body}</section>`;
+function tideChart() {
+  const W = 368;
+  const H2 = 152;
+  const L = 30;
+  const B = 22;
+  const T = 8;
+  const U = F.channelSpeed;
+  const x = (h) => L + ((h + 18) / 36) * (W - L - 6);
+  const y = (v) => T + ((0.42 - v) / 0.7) * (H2 - B - T);
+  let g = '';
+  for (const v of [-0.2, 0, 0.2, 0.4]) g += `<line x1="${L}" x2="${W - 6}" y1="${y(v)}" y2="${y(v)}" stroke="${v === 0 ? '#AFC3CC' : LINE}" stroke-width="0.7"/>${axisText(L - 5, y(v) + 4, v.toFixed(1))}`;
+  for (const h of [-12, 0, 12]) g += axisText(x(h), H2 - B + 15, h === 0 ? 'tide turn' : `${h > 0 ? '+' : ''}${h} h`, 'middle');
+  return `<svg viewBox="0 0 ${W} ${H2}" width="100%" font-family="Inter Variable">${g}
+    <line x1="${x(-18)}" x2="${x(18)}" y1="${y(U)}" y2="${y(U)}" stroke="${CYAN}" stroke-width="4.4"/>
+    <polyline points="${F.tide.map(([h, u]) => `${x(h).toFixed(1)},${y(u).toFixed(1)}`).join(' ')}" fill="none" stroke="${AMBER}" stroke-width="3.4" stroke-linejoin="round"/>
+    <text x="${x(18)}" y="${y(U) - 8}" text-anchor="end" font-size="15" font-weight="800" fill="${CYAN}">Inside the channel: steady, one way</text>
+    <text x="${x(18)}" y="${y(-0.235)}" text-anchor="end" font-size="15" font-weight="800" fill="${AMBER}">Outside: the recorded tide</text></svg>`;
+}
 
-const stats = R.stats.map((s) => `<div class="stat"><b style="color:${s.color}">${s.value}</b><span>${s.label}</span></div>`).join('');
+function faultChart() {
+  const rows = R.failures;
+  const W = 368;
+  const rowH = 24.6;
+  const H2 = rows.length * rowH + 6;
+  const X = 150;
+  const max = Math.max(...rows.map((r) => Number(r.without)));
+  const bar = (v) => ((W - X - 76) * v) / max;
+  const g = rows
+    .map((r, i) => {
+      const y = i * rowH + 4;
+      const w = bar(Number(r.without));
+      return `<text x="0" y="${y + 16}" font-size="13.2" font-weight="700" fill="${INK}">${r.failure}</text>
+        <rect x="${X}" y="${y + 3}" width="${w}" height="9" rx="2" fill="${RED}" fill-opacity="0.85"/>
+        <text x="${X + w + 5}" y="${y + 12}" font-size="12" font-weight="700" fill="${RED}">${r.without} t</text>
+        <rect x="${X}" y="${y + 14}" width="3" height="9" rx="1" fill="${TEAL}"/>
+        <text x="${X + 8}" y="${y + 23}" font-size="12" font-weight="800" fill="${TEAL}">${r.with === 'under 0.1' ? 'under 0.1 t' : `${r.with} t`}</text>`;
+    })
+    .join('');
+  return `<svg viewBox="0 0 ${W} ${H2}" width="100%" font-family="Inter Variable">${g}</svg>`;
+}
+
+function speedDiagram() {
+  const W = 340;
+  const H2 = 146;
+  const a = (20 * Math.PI) / 180;
+  const ox = 30;
+  const oy = 30;
+  const L = 200;
+  const P = (s) => [ox + Math.cos(a) * s, oy + Math.sin(a) * s];
+  const A = P(L * Math.cos(a));
+  const Fx = ox + L;
+  const arrow = (x0, y0, x1, y1, c, w = 4) => {
+    const th = Math.atan2(y1 - y0, x1 - x0);
+    const s = 13;
+    return `<line x1="${x0}" y1="${y0}" x2="${x1 - Math.cos(th) * 8}" y2="${y1 - Math.sin(th) * 8}" stroke="${c}" stroke-width="${w}"/><polygon points="${x1},${y1} ${x1 - Math.cos(th - 0.42) * s},${y1 - Math.sin(th - 0.42) * s} ${x1 - Math.cos(th + 0.42) * s},${y1 - Math.sin(th + 0.42) * s}" fill="${c}"/>`;
+  };
+  const [n0x, n0y] = P(-26);
+  const [n1x, n1y] = P(262);
+  return `<svg viewBox="0 0 ${W} ${H2}" width="100%" font-family="Inter Variable">
+    <line x1="${n0x}" y1="${n0y}" x2="${n1x}" y2="${n1y}" stroke="${AMBER}" stroke-width="6" stroke-linecap="round"/>
+    ${arrow(ox, oy, Fx, oy, CYAN)}
+    ${arrow(ox, oy, A[0], A[1], TEAL)}
+    ${arrow(A[0], A[1], Fx, oy, INK, 3.4)}
+    <text x="${ox + 2}" y="${oy - 12}" font-size="15" font-weight="800" fill="${CYAN}">Channel 0.33 m/s</text>
+    <text x="${ox + 8}" y="${A[1] + 26}" font-size="15" font-weight="800" fill="${TEAL}">Along the net 0.31 m/s</text>
+    <text x="${Fx + 12}" y="${oy + 22}" font-size="15" font-weight="800" fill="${INK}">Through</text>
+    <text x="${Fx + 12}" y="${oy + 40}" font-size="15" font-weight="800" fill="${INK}">0.11 m/s</text>
+    <text x="${n1x + 2}" y="${n1y + 21}" font-size="15" font-weight="800" fill="${AMBER}" text-anchor="end">Net at 20°</text>
+  </svg>`;
+}
+
+// ------------------------------------------------------------------ icons (24-unit stroke pictograms, own drawings)
+const ICON = {
+  tide: 'M2 8c3-3 5-3 8 0s5 3 8 0 3-2 4-1M2 16c3-3 5-3 8 0s5 3 8 0 3-2 4-1',
+  under: 'M12 3v13M7 11l5 5 5-5M3 21h18',
+  tear: 'M3 5h18M3 11h18M3 17h18M6 2v20M12 2v6M12 14v8M18 2v20M10 9l2 2-1 2 2 2',
+  clog: 'M3 8h7l2 4 2-4h7M12 21V12M8 17l4 4 4-4',
+  power: 'M13 2 4 14h7l-1 8 9-12h-7l1-8zM3 3l18 18',
+  waves: 'M4 15a5 5 0 0 1 2-9.6A6 6 0 0 1 17.6 7 4.5 4.5 0 0 1 20 15M13 11l-3 5h4l-3 5',
+  dark: 'M20 14A8 8 0 1 1 10 4a7 7 0 0 0 10 10z',
+  foul: 'M4 12a8 8 0 0 1 14-5l2 2M20 12a8 8 0 0 1-14 5l-2-2M20 4v5h-5M4 20v-5h5',
+  screw: 'M12 2v20M6 6c4-3 8-2 12 0M6 11c4-3 8-2 12 0M6 16c4-3 8-2 12 0M6 21c4-3 8-2 12 0',
+  species: 'M12 3a8 8 0 0 0-8 8v1h16v-1a8 8 0 0 0-8-8zM7 12c0 4-1 6-2 8M12 12v9M17 12c0 4 1 6 2 8',
+};
+const icon = (k) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="${ICON[k]}"/></svg>`;
+
+const mark = `<svg viewBox="0 0 40 40" class="mark">
+  <path d="M4 14c4.2-4.4 8.4-4.4 12.6 0s8.4 4.4 12.6 0 6.3-3.3 6.8-1.2" fill="none" stroke="${CYAN}" stroke-width="3.6" stroke-linecap="round"/>
+  <path d="M4 22c4.2-4.4 8.4-4.4 12.6 0s8.4 4.4 12.6 0 6.3-3.3 6.8-1.2" fill="none" stroke="${TEAL}" stroke-width="3.6" stroke-linecap="round"/>
+  <path d="M6 32.5 34 27" fill="none" stroke="${AMBER}" stroke-width="3" stroke-linecap="round"/></svg>`;
+
+/** Plan of the system, to scale, light for print. */
+function planSvg() {
+  const W = 270;
+  const H2 = 122;
+  const k = 0.108;
+  const px = (x) => 30 + x * k;
+  const py = (z) => 97 - z * k;
+  const ch = 70;
+  const land = py(-62);
+  const [A, B] = F.nets;
+  const route = [[76, 88], [100, 89], [132, 94], [620, 150], [2040, 300]].map(([x, z]) => `${px(x).toFixed(1)},${py(z).toFixed(1)}`).join(' ');
+  const units = [0, 1, 2, 3].map((i) => `<rect x="${px(-60 + i * 30) + 0.25}" y="${py(-30)}" width="${30 * k - 0.5}" height="5" fill="${INK}"/>`).join('');
+  return `<svg viewBox="0 0 ${W} ${H2}" preserveAspectRatio="xMidYMid slice" style="display:block;width:100%;height:122mm;border-radius:5mm" font-family="Inter Variable">
+    <rect width="${W}" height="${H2}" fill="#D8EEF4"/>
+    <rect y="${land}" width="${W}" height="${H2 - land}" fill="#F1E6CC"/>
+    <circle cx="${px(0)}" cy="${py(540)}" r="${300 * k}" fill="${RED}" fill-opacity="0.09" stroke="${RED}" stroke-width="0.5" stroke-dasharray="2 1.5"/>
+    <rect x="${px(-ch - 9)}" y="${py(548)}" width="9" height="${land - py(548)}" fill="#7C7A70"/>
+    <rect x="${px(ch)}" y="${py(548)}" width="9" height="${land - py(548)}" fill="#7C7A70"/>
+    <rect x="${px(-ch)}" y="${py(548)}" width="${2 * ch * k}" height="${land - py(548)}" fill="#A9DCE9"/>
+    ${units}
+    <line x1="${px(A.ax)}" y1="${py(A.az)}" x2="${px(A.bx)}" y2="${py(A.bz)}" stroke="${AMBER}" stroke-width="1.5"/>
+    <line x1="${px(B.ax)}" y1="${py(B.az)}" x2="${px(B.bx)}" y2="${py(B.bz)}" stroke="${AMBER}" stroke-width="1.5" stroke-dasharray="2.4 1.2"/>
+    <polyline points="${route}" fill="none" stroke="${TEAL}" stroke-width="1.5"/>
+    <circle cx="${px(2040)}" cy="${py(300)}" r="3" fill="${TEAL}"/>
+    <text x="${px(2040) + 3}" y="${py(300) - 6}" font-size="10.5" font-weight="800" fill="${TEAL}" text-anchor="end">Release, 2 km along</text>
+    <text x="${px(1150)}" y="${py(190) + 19}" font-size="10.5" font-weight="700" fill="${TEAL}" text-anchor="middle">1 m line over the breakwater</text>
+    <text x="${px(0) + 300 * k + 4}" y="${py(640)}" font-size="10.5" font-weight="700" fill="${RED}">Water the plant draws in</text>
+    <text x="${px(ch + 20)}" y="${land + 13}" font-size="10.5" font-weight="700" fill="${INK}">Four intakes</text>
+    
+    <line x1="${W - 66}" y1="20" x2="${W - 66 + 500 * k}" y2="20" stroke="${INK}" stroke-width="1.2"/><text x="${W - 66 + 250 * k}" y="14" font-size="10" fill="${INK}" text-anchor="middle">500 m</text>
+  </svg>`;
+}
+
+const tile = (src, title, text) => `<figure class="tile"><img class="ph" src="${src}" alt=""><figcaption><b>${title}</b>${text}</figcaption></figure>`;
 
 const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>SweepLine poster</title><style>
 @font-face{font-family:'Inter Variable';src:url('${font('@fontsource-variable/inter/files/inter-latin-wght-normal.woff2')}') format('woff2');font-weight:100 900}
-@font-face{font-family:'JetBrains Mono';src:url('${font('@fontsource/jetbrains-mono/files/jetbrains-mono-latin-500-normal.woff2')}') format('woff2');font-weight:500}
 @page{size:1200mm 1600mm;margin:0}
 *{box-sizing:border-box;margin:0;padding:0}
-html,body{width:1200mm;height:1600mm;background:${BG};-webkit-print-color-adjust:exact;print-color-adjust:exact}
-body{font-family:'Inter Variable',sans-serif;color:${INK};font-size:11.2mm;line-height:1.37;position:relative;overflow:hidden}
-.page{position:absolute;inset:0;display:flex;flex-direction:column;background:radial-gradient(1200mm 700mm at 15% 0%,#0D2B3C 0%,${BG} 70%)}
-header{display:grid;grid-template-columns:1fr auto;align-items:center;padding:28mm 44mm 14mm;gap:30mm}
-.brand{display:flex;align-items:center;gap:20mm}
-.brand svg{width:88mm;height:88mm}
-.brand h1{font-size:92mm;font-weight:800;letter-spacing:-2.8mm;line-height:.98}
-.brand p{font-size:23mm;font-weight:500;color:${AMBER};letter-spacing:-.3mm;margin-top:2mm}
+html,body{width:1200mm;height:1600mm;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{font-family:'Inter Variable',sans-serif;color:${INK};font-size:13.6mm;line-height:1.36;position:relative;overflow:hidden}
+.page{position:absolute;inset:0;display:flex;flex-direction:column;background:#fff}
+header{position:relative;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:30mm;padding:30mm 44mm 0}
+.brand{display:flex;align-items:center;gap:16mm}
+.mark{width:92mm;height:92mm}
+.brand h1{font-size:106mm;font-weight:850;letter-spacing:-4mm;line-height:.96;color:${INK}}
+.brand p{font-size:25mm;font-weight:600;color:${TEAL};letter-spacing:-.4mm;margin-top:3mm}
 .who{text-align:right}
-.who .tag{font-size:17mm;font-weight:700;color:${CYAN}}
-.who .names{font-size:17mm;font-weight:600;margin-top:5mm;line-height:1.24}
-.who .uni{font-size:15mm;color:${INK2};margin-top:3mm}
-.problem{display:grid;grid-template-columns:1fr 1.1fr;gap:26mm;padding:0 44mm 15mm;align-items:center}
-.problem .q{font-size:25mm;font-weight:700;line-height:1.14;letter-spacing:-.7mm}
-.problem .k{font-size:9.6mm;font-weight:700;letter-spacing:.9mm;text-transform:uppercase;color:${AMBER};margin-bottom:4mm}
-.problem p.c{font-size:11.4mm;line-height:1.34;color:${INK2}}
-.hero{position:relative;border-top:.5mm solid rgba(255,255,255,.14);border-bottom:.5mm solid rgba(255,255,255,.14)}
-.stats{display:grid;grid-template-columns:1.34fr 1fr 1fr 1fr;gap:0;padding:11mm 44mm 9mm}
-.stat{padding:0 10mm;border-left:.5mm solid rgba(255,255,255,.16)}
+.who .tag{font-size:18mm;font-weight:800;color:${CYAN}}
+.who .names{font-size:17.5mm;font-weight:700;margin-top:4mm;line-height:1.2}
+.who .uni{font-size:16mm;color:${INK2};margin-top:3mm;font-weight:600}
+.problem{position:relative;z-index:2;display:grid;grid-template-columns:1.28fr 1fr;gap:26mm;padding:16mm 44mm 0;align-items:start}
+.problem .k{font-size:11mm;font-weight:800;letter-spacing:1mm;text-transform:uppercase;color:${AMBER};margin-bottom:2mm}
+.problem .q{font-size:29mm;font-weight:800;line-height:1.1;letter-spacing:-.9mm}
+.problem p{font-size:14.4mm;line-height:1.3;color:${INK2};padding-top:13mm}
+.hero{position:relative;width:1200mm;height:${HERO_H}mm;margin-top:-142mm;z-index:1}
+.hero img{position:absolute;inset:0;width:100%;height:100%;display:block}
+.hero .fade{position:absolute;inset:0;background:linear-gradient(#fff 0%,#fff 26%,rgba(255,255,255,.86) 32%,rgba(255,255,255,.4) 37%,rgba(255,255,255,.12) 41%,rgba(255,255,255,0) 45%)}
+.hero .over{position:absolute;inset:0;width:100%;height:100%}
+.hero .cap{position:absolute;left:44mm;bottom:9mm;background:rgba(255,255,255,.95);border-radius:4mm;padding:2.6mm 6mm;font-size:11mm;font-weight:600;color:${INK2}}
+.stats{display:grid;grid-template-columns:1.62fr 1fr 1fr 1fr;padding:12mm 44mm 10mm}
+.stat{padding:0 11mm;border-left:.7mm solid ${LINE}}
 .stat:first-child{padding-left:0;border-left:0}
-.stat b{display:block;font-size:32mm;line-height:1.02;font-weight:800;letter-spacing:-1.4mm}
-.stat span{display:block;font-size:9.8mm;line-height:1.26;color:${INK2};margin-top:2mm}
-.rows{flex:1;display:flex;flex-direction:column;justify-content:space-between;gap:8mm;padding:0 44mm 8mm}
-.row{display:grid;gap:22mm}
-.r1{grid-template-columns:1fr 1fr 1fr}
-.r2{grid-template-columns:1fr 1fr 1.12fr}
-.r3{grid-template-columns:1.72fr 1fr}
-section h2{display:flex;align-items:center;gap:4.5mm;font-size:15mm;font-weight:800;letter-spacing:-.4mm;margin-bottom:3.4mm;color:#fff}
-section h2 span{display:inline-flex;align-items:center;justify-content:center;width:12mm;height:12mm;border-radius:3mm;background:${AMBER};color:#07141F;font-size:9mm;font-weight:800}
-figure figcaption{font-size:9mm;line-height:1.28;color:${MUTED};margin-top:2mm}
-.feat{display:grid;grid-template-columns:1fr 1fr;gap:2.6mm 14mm}
-.feat div b{display:block;font-size:11mm;font-weight:700;color:${TEAL};line-height:1.2}
-.feat div{font-size:10mm;line-height:1.27;color:${INK2}}
-ol.next{list-style:none;counter-reset:n}
-ol.next li{counter-increment:n;position:relative;padding-left:10mm;font-size:10.4mm;line-height:1.28;margin-bottom:2.4mm;color:${INK2}}
-ol.next li:before{content:counter(n);position:absolute;left:0;top:.5mm;font-weight:800;color:${AMBER}}
-table.fail{width:100%;border-collapse:collapse;font-size:10mm;line-height:1.22}
-table.fail th{text-align:left;font-size:8.4mm;font-weight:600;color:${MUTED};padding:0 3mm 2mm 0;border-bottom:.4mm solid rgba(255,255,255,.2)}
-table.fail td{padding:2mm 3mm 2mm 0;border-bottom:.3mm solid rgba(255,255,255,.1);vertical-align:top;color:${INK2}}
-table.fail td.f{color:#fff;font-weight:700;width:31%}
-table.fail .n{text-align:right;white-space:nowrap}
-table.fail td.n b{color:${TEAL};font-weight:800}
-table.fail td.n span{color:${MUTED}}
-.bsn{display:grid;grid-template-columns:1fr 1.25fr .8fr;gap:0;border:.5mm solid rgba(255,255,255,.18);border-radius:5mm;overflow:hidden}
-.bsn div{padding:5mm 8mm;font-size:9.8mm;line-height:1.3;color:${INK2};border-left:.5mm solid rgba(255,255,255,.14)}
-.bsn div:first-child{border-left:0}
-.bsn b{display:block;font-size:10.4mm;letter-spacing:.3mm;margin-bottom:1mm}
-footer{padding:0 44mm 14mm;font-size:8.4mm;color:${MUTED}}
+.stat b{display:block;font-size:40mm;line-height:1;font-weight:850;letter-spacing:-1.9mm;white-space:nowrap}
+.stat span{display:block;font-size:12.4mm;line-height:1.24;color:${INK2};margin-top:2.6mm}
+.rows{flex:1;display:flex;flex-direction:column;justify-content:space-between;gap:9mm;padding:0 44mm 45mm}
+.row{display:grid;gap:24mm}
+.r1{grid-template-columns:1fr 1.06fr .94fr}
+.r3{grid-template-columns:1fr 1fr 1fr}
+h2{font-size:20.5mm;font-weight:850;letter-spacing:-.7mm;line-height:1.05;margin-bottom:4mm;color:${INK}}
+h2 i{font-style:normal;color:${TEAL}}
+.tiles{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12mm}
+.tile .ph{display:block;width:100%;height:122mm;object-fit:cover;border-radius:5mm}
+.tile figcaption{font-size:11.6mm;line-height:1.24;color:${INK2};margin-top:2.6mm}
+.tile figcaption b{display:block;font-size:13.6mm;color:${INK};font-weight:800}
+.plan{height:128mm;border-radius:5mm;overflow:hidden;background:${PALE}}
+.note{font-size:10.6mm;line-height:1.25;color:${MUTED};margin-top:2mm}
+.feat{display:grid;grid-template-columns:repeat(5,1fr);gap:7mm 12mm}
+.feat div{display:grid;grid-template-columns:20mm 1fr;gap:0 4.5mm;align-items:start}
+.feat svg{width:20mm;height:20mm;color:${TEAL}}
+.feat b{display:block;font-size:13.2mm;line-height:1.14;font-weight:800;color:${INK}}
+.feat span{display:block;font-size:11.2mm;line-height:1.22;color:${INK2};margin-top:1mm}
+.steps{display:grid;grid-template-columns:repeat(5,1fr);gap:0}
+.step{position:relative;padding:4mm 16mm 4mm 15mm;background:${PALE};clip-path:polygon(0 0,calc(100% - 10mm) 0,100% 50%,calc(100% - 10mm) 100%,0 100%,10mm 50%)}
+.step:first-child{clip-path:polygon(0 0,calc(100% - 10mm) 0,100% 50%,calc(100% - 10mm) 100%,0 100%);padding-left:9mm}
+.step b{display:block;font-size:13.4mm;line-height:1.15;font-weight:800;color:${TEAL}}
+.step span{display:block;font-size:11mm;line-height:1.2;color:${INK2}}
+footer{position:absolute;left:44mm;right:44mm;bottom:12mm;display:flex;justify-content:space-between;gap:20mm;font-size:10mm;line-height:1.22;color:${MUTED};border-top:.6mm solid ${LINE};padding-top:3.4mm}
+footer b{color:${INK}}
 </style></head><body><div class="page">
 <header>
-  <div class="brand">
-    <svg viewBox="0 0 40 40"><defs><linearGradient id="lg" x1="0" x2="1"><stop offset="0" stop-color="${CYAN}"/><stop offset="1" stop-color="${TEAL}"/></linearGradient></defs>
-      <path d="M4 14c4.2-4.4 8.4-4.4 12.6 0s8.4 4.4 12.6 0 6.3-3.3 6.8-1.2" fill="none" stroke="url(#lg)" stroke-width="3.4" stroke-linecap="round"/>
-      <path d="M4 22c4.2-4.4 8.4-4.4 12.6 0s8.4 4.4 12.6 0 6.3-3.3 6.8-1.2" fill="none" stroke="url(#lg)" stroke-width="3.4" stroke-linecap="round" opacity=".72"/>
-      <path d="M6 32.5 34 27" fill="none" stroke="#F59E0B" stroke-width="2.6" stroke-linecap="round"/></svg>
-    <div><h1>${C.team}</h1><p>${C.tagline}</p></div>
-  </div>
+  <div class="brand">${mark}<div><h1>${C.team}</h1><p>${C.tagline}</p></div></div>
   <div class="who"><div class="tag">${C.stand} · ${C.track}</div><div class="names">${C.students.join('<br>')}</div><div class="uni">${C.university}</div></div>
 </header>
-<div class="problem"><div class="q">${C.problem.question}</div><div><div class="k">Problem statement</div><p class="c">${C.problem.context}</p></div></div>
-<div class="hero">${hero()}</div>
-<div class="stats">${stats}</div>
+<div class="problem"><div><div class="k">Problem statement</div><div class="q">${C.problem.question}</div></div><p>${C.problem.context}</p></div>
+<div class="hero"><img src="${img('hero.jpg')}" alt=""><div class="fade"></div>${heroOverlay()}<div class="cap">${C.heroCaption}</div></div>
+<div class="stats">${R.stats.map((s) => `<div class="stat"><b style="color:${s.color}">${s.value}</b><span>${s.label}</span></div>`).join('')}</div>
 <div class="rows">
   <div class="row r1">
-    ${section('A', 'Proposed solution', `<p>${C.solution}</p>`)}
-    ${section('B', 'Technical explanation', `<p>${C.technical}</p>`)}
-    <section><h2><span>C</span>Why the angle works</h2><figure>${speedDiagram()}</figure></section>
+    <section><h2>Proposed solution</h2><p>${C.solution}</p></section>
+    <section><h2>Technical explanation</h2><p>${C.technical}</p></section>
+    <section><h2>Why 20° works</h2>${speedDiagram()}</section>
   </div>
-  <div class="row r2">
-    <section><h2><span>D</span>Same bloom, both ways</h2><figure>${bloomChart()}<figcaption>${R.captions.bloom}</figcaption></figure></section>
-    <section><h2><span>E</span>The tide doesn’t matter</h2><figure>${tideChart()}<figcaption>${R.captions.tide}</figcaption></figure></section>
-    <section><h2><span>F</span>When something fails</h2>${failureTable()}<figure><figcaption style="margin-top:2.4mm">${R.captions.failures}</figcaption></figure></section>
+  <div class="tiles">
+    ${tile(img('net.jpg'), 'At the nets', 'The bloom on the face of net A')}
+    ${tile(img('collector.jpg'), 'Screw lift', 'Duty and standby, over the breakwater')}
+    <figure class="tile">${planSvg()}<figcaption><b>Where it sits</b>To scale: nets ahead of every intake</figcaption></figure>
+    ${tile(img('under.jpg'), 'Under water', 'Mesh from surface to seabed')}
   </div>
   <div class="row r3">
-    ${section('G', 'Solution features', `<div class="feat">${C.features.map(([a, b]) => `<div><b>${a}</b>${b}</div>`).join('')}</div>`)}
-    ${section('H', 'Future improvements', `<ol class="next">${C.future.map((x) => `<li>${x}</li>`).join('')}</ol>`)}
+    <section><h2>Same bloom, <i>both ways</i></h2>${bloomChart()}<p class="note">${R.captions.bloom}</p></section>
+    <section><h2>The tide <i>doesn’t matter</i></h2>${tideChart()}<p class="note">${R.captions.tide}</p></section>
+    <section><h2>When something <i>fails</i></h2>${faultChart()}<p class="note">${R.captions.failures}</p></section>
   </div>
-  <div class="bsn">
-    <div><b style="color:${TEAL}">Built</b>${C.builtSimulatedNext.built}</div>
-    <div><b style="color:${AMBER}">Simulated</b>${C.builtSimulatedNext.simulated}</div>
-    <div><b style="color:${CYAN}">Next</b>${C.builtSimulatedNext.next}</div>
-  </div>
+  <section><h2>Solution features: <i>what goes wrong, and what we did</i></h2><div class="feat">${C.features.map(([k, a, b]) => `<div>${icon(k)}<p><b>${a}</b><span>${b}</span></p></div>`).join('')}</div></section>
+  <section><h2>Future improvements</h2><div class="steps">${C.future.map(([a, b]) => `<div class="step"><b>${a}</b><span>${b}</span></div>`).join('')}</div></section>
 </div>
-<footer>${C.footnote}</footer>
+<footer><span><b>Built:</b> ${C.builtSimulatedNext.built}</span><span><b>Simulated:</b> ${C.builtSimulatedNext.simulated} ${C.footnote}</span></footer>
 </div></body></html>`;
 
 const out = resolve(here, 'poster.html');
@@ -433,6 +308,5 @@ writeFileSync(out, html);
 const browsers = ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'];
 const chrome = browsers.find((b) => existsSync(b));
 const pdf = resolve(here, '54.ENEC.SweepLine.pdf');
-mkdirSync(here, { recursive: true });
-execFileSync(chrome, ['--headless=new', '--disable-gpu', '--no-pdf-header-footer', '--run-all-compositor-stages-before-draw', '--virtual-time-budget=6000', '--allow-file-access-from-files', `--print-to-pdf=${pdf}`, pathToFileURL(out).href], { stdio: 'ignore', timeout: 180000 });
+execFileSync(chrome, ['--headless=new', '--disable-gpu', '--no-pdf-header-footer', '--run-all-compositor-stages-before-draw', '--virtual-time-budget=9000', '--allow-file-access-from-files', `--print-to-pdf=${pdf}`, pathToFileURL(out).href], { stdio: 'ignore', timeout: 240000 });
 console.log('wrote', pdf);

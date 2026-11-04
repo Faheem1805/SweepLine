@@ -191,18 +191,16 @@ export class IntroPlayer {
   private updateSlice(): void {
     const animating = this.mode === 'play' && !this.finished && document.visibilityState === 'visible';
     controller.preRollSliceMs = animating ? PREROLL_SLICE_ANIMATING : this.savedSlice;
-    controller.preRollIdle = animating;
   }
 
   /** Undo every side effect on the app (also on an early unmount). */
   private restore(resetCamera: boolean): void {
     const sm = getScene();
     controller.preRollSliceMs = this.savedSlice;
-    controller.preRollIdle = false;
     sm.renderSuspended = false;
     sm.controls.maxDistance = this.savedMaxDistance || sm.controls.maxDistance;
     this.releaseRun();
-    if (resetCamera && this.handoff) sm.rig.snap('aerial', controller.sweepline.curtain!.layout);
+    if (resetCamera && this.handoff) sm.rig.snap('aerial');
     this.setHud(null);
   }
 
@@ -418,8 +416,7 @@ export class IntroPlayer {
   private renderStory(st: IntroState, a: number): void {
     const o = (k: string, v: number) => setOpacity(this.els[k], v, this.opacity);
     if (!this.schematic) {
-      const layout = controller.sweepline.curtain!.layout;
-      this.schematic = buildSchematic(layout);
+      this.schematic = buildSchematic();
       const sc = this.schematic;
       const pts: Array<[number, number]> = [];
       for (let i = 0; i < sc.curtain.x.length; i++) pts.push([sc.curtain.x[i], sc.curtain.z[i]]);
@@ -528,7 +525,7 @@ export class IntroPlayer {
     o('cap-coast', st.captionCoast);
     o('eyebrow', st.eyebrow);
     if (st.eyebrow > 0) {
-      const b = approachingBloom(controller.params.bloomDensity);
+      const b = approachingBloom(controller.params.bloomRate / 30);
       const eb = this.els.eyebrow as HTMLElement;
       if (eb.dataset.text !== b.text) {
         eb.dataset.text = b.text;
@@ -603,7 +600,7 @@ export class IntroPlayer {
       }
       return;
     }
-    const aerial = sm.rig.pose('aerial', controller.sweepline.curtain!.layout);
+    const aerial = sm.rig.pose('aerial');
     if (this.mode === 'frozen') {
       const pose = orbitPose(this.handoff, aerial, flightProgress(t), { pos: this.handoff.pos.clone(), target: this.handoff.target.clone() });
       sm.rig.setPose(pose);
@@ -626,7 +623,7 @@ export class IntroPlayer {
     this.finished = true;
     cancelAnimationFrame(this.raf);
     const sm = getScene();
-    if (immediate && this.handoff) sm.rig.snap('aerial', controller.sweepline.curtain!.layout);
+    if (immediate && this.handoff) sm.rig.snap('aerial');
     for (const c of this.cleanups.splice(0)) c();
     this.restore(false);
     this.onDone();
@@ -640,7 +637,7 @@ export class IntroPlayer {
     cancelAnimationFrame(this.raf);
     const sm = getScene();
     // Whatever the 3D camera was doing for the hand-off, the Live view opens on its normal perspective.
-    if (this.handoff) sm.rig.snap('aerial', controller.sweepline.curtain!.layout);
+    if (this.handoff) sm.rig.snap('aerial');
     sm.renderSuspended = false;
     this.setHud(1);
     this.root.style.transition = 'opacity 320ms ease';

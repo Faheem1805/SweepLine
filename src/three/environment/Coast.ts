@@ -62,9 +62,9 @@ export function buildCoast(): CoastParts {
   };
 
   // ------------------------------------------------------------ land + crown wall
-  (mats.land.map as THREE.Texture).repeat.set(9000 / 90, 3000 / 90);
-  const landMesh = new THREE.Mesh(new THREE.PlaneGeometry(9000, 3000).rotateX(-Math.PI / 2), mats.land);
-  landMesh.position.set(0, SITE.shore.landY, SITE.shore.crestZ - 1500 - 2);
+  (mats.land.map as THREE.Texture).repeat.set(24000 / 90, 14000 / 90);
+  const landMesh = new THREE.Mesh(new THREE.PlaneGeometry(24000, 14000).rotateX(-Math.PI / 2), mats.land);
+  landMesh.position.set(0, SITE.shore.landY, SITE.shore.crestZ - 7000 - 2);
   landMesh.receiveShadow = true;
   group.add(landMesh);
   const mb = new MergeBuilder();
@@ -165,20 +165,24 @@ function buildBreakwaters(mats: Record<string, THREE.Material>, rockMat: THREE.M
   const B = SITE.breakwater;
   const hw = C.halfWidth;
   const crestY = B.crestY;
-  const crestIn = hw + (crestY + C.depth) * B.slope * 0.72;
+  // The armour meets still water at the channel wall; its toe runs on under the water.
+  const crestIn = hw + crestY * B.slope;
   const crestOut = crestIn + B.crestWidth;
   const toe = B.outerToe;
   const z0 = SITE.shore.crestZ;
   const z1 = C.mouthZ;
   const bottom = -C.depth - 1.5;
-  const headX = (crestIn + crestOut) / 2;
   const headTop = B.crestWidth / 2;
-  const headBase = (toe - hw) / 2;
+  const headX = (crestIn + crestOut) / 2;
+  const headBase = 24;
+  const innerToe = crestIn - (crestY - bottom) * B.slope;
+  // Where the armour stone stops, 3 m under water.
+  const armourOut = crestOut + ((crestY + 3) / (crestY - bottom)) * (toe + 3 - crestOut);
   const mb = new MergeBuilder();
   for (const side of [-1, 1]) {
     // Core mound: two armour slopes and the crest, extruded along the channel.
     const prof: Array<[number, number]> = [
-      [hw - 2, bottom],
+      [innerToe, bottom],
       [crestIn, crestY],
       [crestOut, crestY],
       [toe + 3, bottom],
@@ -208,7 +212,7 @@ function buildBreakwaters(mats: Record<string, THREE.Material>, rockMat: THREE.M
     // Rounded head.
     const head = new THREE.CylinderGeometry(headTop, headBase + 3, crestY - bottom, 40, 1, false);
     head.scale(1, 1, B.headRadius / headBase);
-    head.translate(side * ((hw + toe) / 2), (crestY + bottom) / 2, z1);
+    head.translate(side * headX, (crestY + bottom) / 2, z1);
     mb.add('rockCore', head);
     // Crest road.
     mb.box('concrete', side > 0 ? crestIn + 0.8 : -crestOut + 0.8, side > 0 ? crestOut - 0.8 : -crestIn - 0.8, crestY - 0.1, crestY + 0.22, z0, z1 + 4);
@@ -216,10 +220,10 @@ function buildBreakwaters(mats: Record<string, THREE.Material>, rockMat: THREE.M
     for (let z = 0; z <= z1; z += 60) {
       const x = side * (crestIn + 1.6);
       mb.box('steel', x - 0.1, x + 0.1, crestY, crestY + 7, z - 0.1, z + 0.1);
-      mb.box('steel', x - 0.1, x + 0.1 + (side > 0 ? 1.4 : -1.4) * 0 , crestY + 6.9, crestY + 7.05, z - 0.8, z + 0.8);
+      mb.box('steel', x - 0.1, x + 0.1, crestY + 6.9, crestY + 7.05, z - 0.8, z + 0.8);
     }
     // Harbour light on the head.
-    const lx = side * ((hw + toe) / 2);
+    const lx = side * headX;
     mb.add('concrete', new THREE.CylinderGeometry(1.6, 2.2, 9, 20).translate(lx, crestY + 4.5, z1));
     mb.add(side > 0 ? 'lightGreen' : 'lightRed', new THREE.CylinderGeometry(0.9, 0.9, 1.6, 16).translate(lx, crestY + 9.8, z1));
     mb.add('steel', new THREE.CylinderGeometry(1.2, 1.0, 0.5, 16).translate(lx, crestY + 10.9, z1));
@@ -249,15 +253,17 @@ function buildBreakwaters(mats: Record<string, THREE.Material>, rockMat: THREE.M
       if (onHead) {
         const a = rng.next() * Math.PI;
         const r = headTop + (1 - t) * 0 + t * headBase;
-        x = side * ((hw + toe) / 2) + Math.cos(a) * r;
+        x = side * headX + Math.cos(a) * r * 0.55;
         z = z1 + Math.sin(a) * r * (B.headRadius / headBase);
         y = crestY - t * (crestY + 3);
       } else {
         z = rng.range(SITE.shore.toeZ, z1);
         const inner = rng.next() < 0.45;
-        const a = inner ? THREE.MathUtils.lerp(crestIn, hw, t) : THREE.MathUtils.lerp(crestOut, toe, t);
+        const a = inner ? THREE.MathUtils.lerp(crestIn, hw, t) : THREE.MathUtils.lerp(crestOut, armourOut, t);
         x = side * a;
         y = crestY - t * (crestY + 3);
+        // Keep the slope clear under the collector platform.
+        if (side > 0 && z > 54 && z < 96) y -= 9;
       }
       const sc = rng.range(1.1, 2.3) * (vi === 2 ? 0.85 : 1);
       p.set(x, y + sc * 0.3, z);

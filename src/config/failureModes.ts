@@ -1,30 +1,33 @@
 /**
- * What can go wrong, what SweepLine does about it, and where the result comes from. The simulated
- * rows are run by scripts/failure-study.ts: the same blooms with and without SweepLine, counting
- * intake contacts over the run, to check that no failure leaves the intake worse off than today.
+ * What can go wrong, what SweepLine does about it, and where the result comes from. A row with a
+ * `run` is measured in the same bloom with and without SweepLine (scripts/study-all.sh); a row
+ * without one is true by design and is said to be.
  */
 
-export type FailureSource = 'sim' | 'tide' | 'design';
-
 export interface FailureMode {
-  key: 'transfer' | 'transferBoth' | 'jets' | 'fouling' | 'waves' | 'current' | 'deep' | 'slack' | 'tide' | 'late' | 'air';
-  /** What fails or goes outside the envelope. */
+  key: string;
+  /** What fails or goes outside the design case. */
   failure: string;
   /** What SweepLine does. */
   response: string;
-  source: FailureSource;
+  /** Study case that measures it. */
+  run?: string;
+  /** The same fault with only one net, when that is the point of the row. */
+  single?: string;
 }
 
 export const FAILURE_MODES: readonly FailureMode[] = [
-  { key: 'transfer', failure: 'Transfer pump fails', response: 'The standby transfer path takes over automatically', source: 'sim' },
-  { key: 'transferBoth', failure: 'Both transfer paths fail', response: 'SafeOpen: the curtain clears its traffic and retracts, upstream end first', source: 'sim' },
-  { key: 'jets', failure: 'Conveyor jets fail', response: 'The angled curtain keeps guiding on the current alone', source: 'sim' },
-  { key: 'fouling', failure: 'Debris and fouling load the curtain', response: 'Load is monitored; past the limit SafeOpen retracts it', source: 'sim' },
-  { key: 'waves', failure: 'Waves build past Hs 1.5 m', response: 'SafeOpen retracts the curtain', source: 'sim' },
-  { key: 'current', failure: 'Current above 0.6 m/s', response: 'Deployment refused; the plant runs as today', source: 'sim' },
-  { key: 'deep', failure: 'Bloom deeper than the skirt', response: 'The winches lower the skirt to the seabed-clearance limit; foot jets lift animals at the hem', source: 'sim' },
-  { key: 'slack', failure: 'Current dies away (slack water)', response: 'The conveyor jets keep the bloom moving to the throat', source: 'sim' },
-  { key: 'tide', failure: 'Tide turns mid-bloom', response: 'Line B pops up for the new direction; Line A clears and stows', source: 'tide' },
-  { key: 'late', failure: 'Deployed late (laid by workboat)', response: 'Guides once laid; the leading edge of the bloom gets through first, the leak pop-up deployment avoids', source: 'sim' },
-  { key: 'air', failure: 'Air or power lost', response: 'The curtain sinks onto its seabed anchors, away from the intake; the screens carry on as today', source: 'design' },
+  { key: 'tear', failure: 'A busy panel tears out', response: 'Net B, 60 m behind, catches what comes through', run: 'tearBusy', single: 'tearBusySingle' },
+  { key: 'leak', failure: 'Mesh and joints leak 10× more than assumed', response: 'Net B catches nearly all of it', run: 'leak10', single: 'leak10Single' },
+  { key: 'pumps', failure: 'Both screw lifts stop for over four hours', response: 'The bloom stacks on the net, which goes on holding it', run: 'pumps' },
+  { key: 'overload', failure: 'Lifts down, panels 6 weeks old, and a bloom surge of 3×', response: 'The net holds it. Head stays near 16 mm, far below relief', run: 'overload' },
+  { key: 'debris', failure: 'A debris mat blinds net A', response: 'At 0.12 m of head the float line dips and water spills over. Net B takes what crosses', run: 'debris' },
+  { key: 'fouled', failure: 'Panels left in 10 weeks', response: 'Head rises, still far below relief. Load cells flag it', run: 'fouled' },
+  { key: 'storm', failure: 'Biggest waves on record, Hs 1.82 m', response: 'A fifth of that reaches the net behind the breakwaters', run: 'storm' },
+  { key: 'tide', failure: 'The tide turns mid-bloom', response: 'Nothing happens: the plant sets the flow in the channel', run: 'tide' },
+  { key: 'moon', failure: 'Soft moon jellyfish instead', response: 'More leak past net A. Net B catches them', run: 'moon' },
+  { key: 'deep', failure: 'A deep-living species', response: 'The nets run to the seabed', run: 'deep' },
+  { key: 'duty', failure: 'The duty lift stops', response: 'The standby takes over in 12 seconds' },
+  { key: 'power', failure: 'Site power is lost', response: 'The nets need none. They hold the bloom until the lifts are back' },
+  { key: 'sonar', failure: 'Sonar is lost', response: 'Warning only. The net works without it' },
 ];

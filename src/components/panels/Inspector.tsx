@@ -1,183 +1,96 @@
-import { LocateFixed, X } from 'lucide-react';
-import type { ReactNode } from 'react';
-import { useSnap } from '../../app/hooks';
+import { X } from 'lucide-react';
 import { useApp } from '../../app/store';
-import { ASSUMPTIONS } from '../../config/assumptions';
-import { SITE } from '../../config/site';
-import { DRIFT_DATA } from '../../data/drift.generated';
-import { controller } from '../../simulation/SimController';
-import { cn, mmss, num, pct } from '../../utils/format';
+import { ASSUMPTIONS, SPECIES } from '../../config/assumptions';
+import { cn } from '../../utils/format';
 
-/** The design release point's drift-study outcome. */
-const DRIFT_DESIGN = DRIFT_DATA.outcomes.find((o) => o.id === DRIFT_DATA.design)!;
-
-function Row({ k, v, tone }: { k: string; v: ReactNode; tone?: string }) {
+function Row({ k, v, tone }: { k: string; v: string; tone?: string }) {
   return (
-    <div className="flex items-center justify-between gap-4 py-[2px] text-[11.5px]">
+    <div className="flex items-baseline justify-between gap-3 py-0.5 text-[12.5px]">
       <span className="text-muted">{k}</span>
-      <span className={cn('num text-ink', tone)}>{v}</span>
+      <span className={cn('num text-right text-ink', tone)}>{v}</span>
     </div>
   );
 }
 
-const STATE_TONE: Record<string, string> = {
-  GUIDED: 'text-cyan',
-  UNDER_SKIRT: 'text-red',
-  TRANSFER_QUEUE: 'text-amber',
-  TRANSFERRED: 'text-teal',
-  RELEASED: 'text-teal',
-  INTAKE_CONTACT: 'text-red',
-};
-
-/** Inspector for the selected 3D object — values are live from the simulation. */
+/** Details of what was clicked in the 3D view. */
 export function Inspector() {
   const sel = useApp((s) => s.ui.selection);
-  const follow = useApp((s) => s.ui.follow);
+  const snap = useApp((s) => s.snap);
   const setUI = useApp((s) => s.setUI);
-  const snap = useSnap();
   if (!sel || !snap) return null;
-  const close = () => {
-    controller.select('sweepline', null);
-    setUI({ selection: null, follow: false });
-  };
-  const s = snap.sweepline;
+  const close = () => setUI({ selection: null, follow: false });
   let title = '';
-  let body: ReactNode = null;
-  switch (sel.kind) {
-    case 'jelly': {
-      const a = snap.selectedAgent;
-      title = a ? `Jelly #${a.id}` : 'Jellyfish';
-      body = a ? (
-        <>
-          <Row k="World" v={a.engine === 'baseline' ? 'Baseline' : 'SweepLine'} />
-          <Row k="State" v={a.state.replace('_', ' ')} tone={STATE_TONE[a.state]} />
-          <Row k="Depth" v={a.state === 'TRANSFERRED' ? 'in transfer line' : `${num(a.depth)} m`} />
-          <Row k="Velocity" v={`${num(a.speed, 2)} m/s`} />
-          <Row k="Bell diameter" v={`${Math.round(a.size * 100)} cm`} />
-          {a.contactTime !== null && <Row k="Curtain contact" v={mmss(a.contactTime)} />}
-          {a.transitRemaining !== null && <Row k="Release in" v={mmss(a.transitRemaining)} tone="text-teal" />}
-        </>
-      ) : (
-        <div className="text-[11.5px] text-muted">This agent has left the simulated site.</div>
-      );
-      break;
-    }
-    case 'curtain':
-      title = 'Angled Guide Curtain';
-      body = (
-        <>
-          <Row k="Anchor layout" v={`${snap.curtain.angle}° (pre-engineered)`} />
-          <Row k="Angle to current" v={`${num(snap.curtain.attackAngle, 0)}°`} />
-          <Row k="Skirt depth" v={`${num(snap.curtain.skirtActual)} m`} />
-          <Row k="Length" v={`${num(snap.curtain.length, 0)} m (sim. assumption)`} />
-          <Row k="Mode" v={snap.curtain.mode} tone={snap.curtain.mode === 'REEFING' ? 'text-amber' : undefined} />
-          <Row k="Load" v={`${s.curtainLoadLabel} · ${(s.curtainLoad * 100).toFixed(0)}%`} />
-          <Row k="Guided now" v={s.guided} tone="text-cyan" />
-          <Row k="Skirt blow-back" v={`${num(snap.curtain.liftAngle, 1)}°`} />
-          <Row k="Normal velocity" v={`${num(snap.curtain.normalVelocity, 2)} m/s`} />
-          <Row k="Modules" v={`${Math.ceil(snap.curtain.length / ASSUMPTIONS.curtain.moduleLength)} × ${ASSUMPTIONS.curtain.moduleLength} m`} />
-        </>
-      );
-      break;
-    case 'throat':
-      title = 'Recovery Throat';
-      body = (
-        <>
-          <Row k="Type" v="Continuous bellmouth (no storage)" />
-          <Row k="Mouth" v={`${(SITE.throat.halfWidth * 2).toFixed(1)} × ${(SITE.throat.halfHeight * 2).toFixed(1)} m`} />
-          <Row k="Occupancy" v={pct(Math.min(s.throatOccupancy, 1.5))} tone={s.throatOccupancy >= 0.85 ? 'text-red' : s.throatOccupancy >= 0.6 ? 'text-amber' : 'text-teal'} />
-          <Row k="In throat" v={`${snap.transfer.queue} / ${snap.transfer.holdCapacity}`} />
-          <Row k="Diverted (total)" v={s.diverted} />
-          <Row k="Avg contact time" v={s.avgContactTime === null ? '—' : mmss(s.avgContactTime)} />
-        </>
-      );
-      break;
-    case 'transfer':
-      title = 'Transfer Module';
-      body = (
-        <>
-          <div className="mb-1 text-[10.5px] text-muted">Large-aperture low-shear transfer module (generic)</div>
-          <Row k="Primary" v={snap.transfer.primary} tone={snap.transfer.primary === 'FAULT' ? 'text-red' : snap.transfer.primary === 'ONLINE' ? 'text-teal' : undefined} />
-          <Row
-            k="Standby"
-            v={snap.transfer.standby}
-            tone={snap.transfer.standby === 'ONLINE' ? 'text-teal' : snap.transfer.standby === 'ACTIVATING' ? 'text-amber' : snap.transfer.standby === 'FAULT' ? 'text-red' : undefined}
-          />
-          <Row k="Active path" v={snap.transfer.path} />
-          <Row k="Capacity" v={`${pct(snap.transfer.availability)} · ${Math.round(snap.transfer.flowM3h)} m³/h`} />
-          <Row k="Utilisation" v={s.transferUtilisation === null ? 'Idle' : pct(Math.min(1, s.transferUtilisation))} />
-          <Row k="Transferred" v={s.transferred} />
-          <Row k="In transit" v={s.inTransit} />
-          <div className="mt-1 text-[10px] text-dim">Final hardware selected through bell-damage testing.</div>
-        </>
-      );
-      break;
-    case 'intake': {
-      const b = snap.baseline;
-      title = 'Intake Screens';
-      body = (
-        <>
-          <div className="mb-1 text-[10.5px] text-muted">Existing protection — unchanged by SweepLine (Layer 3)</div>
-          <Row k="Baseline contact" v={pct(b.intakeContactPct)} tone="text-red" />
-          <Row k="SweepLine contact" v={pct(s.intakeContactPct)} tone="text-teal" />
-          <Row k="Baseline load" v={`${b.screenLoad} · ${b.intakeRatePerMin.toFixed(1)}/min`} />
-          <Row k="SweepLine load" v={`${s.screenLoad} · ${s.intakeRatePerMin.toFixed(1)}/min`} />
-          <Row k="Bays" v={`${SITE.intake.bays} (schematic)`} />
-        </>
-      );
-      break;
-    }
-    case 'release':
-      title = 'Safe Release';
-      body = (
-        <>
-          <Row k="Design location" v={`${ASSUMPTIONS.release.design.along / 1000} km along the shore, down-drift`} />
-          <Row k="Back at the plant" v={`${pct(DRIFT_DESIGN.backAtSite)} within ${DRIFT_DATA.horizonDays} days (drift study)`} tone="text-teal" />
-          <Row k="Transfer line" v={`${snap.params.releaseDistance} m (assumption)`} />
-          <Row k="Released (total)" v={s.released} tone="text-teal" />
-          <Row k="In transit" v={s.inTransit} />
-          <div className="mt-1 text-[10px] text-dim">Release position shown schematically, close to the site. See Evidence for the drift study.</div>
-        </>
-      );
-      break;
-    case 'bloom':
-      title = 'Jellyfish Bloom';
-      body = (
-        <>
-          <Row k="Species" v="Catostylus mosaicus" />
-          <Row k="Density" v={pct(snap.params.bloomDensity)} />
-          <Row k="Mean / P90 depth" v={`${num(snap.params.bloomMeanDepth)} / ${num(snap.bloom.p90)} m`} />
-          <Row k="Arrival rate" v={`${snap.bloom.arrivalsPerMin.toFixed(1)} / min`} />
-          <Row k="Active agents" v={`${snap.sweepline.active}`} />
-          <Row k="Bell diameter" v="30–45 cm" />
-        </>
-      );
-      break;
-  }
+  let rows: Array<{ k: string; v: string; tone?: string }> = [];
+  let note = '';
+  const a = snap.nets[0];
+  const b = snap.nets[1];
+  const w = snap.sweepline;
+  if (sel.kind === 'net') {
+    title = 'Guide nets';
+    rows = [
+      { k: 'Length, each', v: `${a.length.toFixed(0)} m, ${a.panels} panels` },
+      { k: 'Mesh', v: `${ASSUMPTIONS.net.meshBar * 1000} mm bar` },
+      { k: 'Through the mesh', v: `${a.through.toFixed(3)} m/s` },
+      { k: 'Along the face', v: `${a.sweep.toFixed(2)} m/s` },
+      { k: 'Head, net A', v: `${(a.head * 1000).toFixed(1)} mm` },
+      { k: 'Load on a panel', v: `${a.panelLoadKN.toFixed(1)} kN` },
+      { k: 'Marine growth', v: `${a.foulPct.toFixed(0)} % added solidity` },
+      { k: 'On net A / net B', v: `${a.onNetT.toFixed(1)} / ${b.onNetT.toFixed(1)} t` },
+      { k: 'Margin to relief', v: `${a.marginT.toFixed(0)} t` },
+    ];
+    note = 'Water passes through the mesh. Animals cannot, so the flow sweeps them along the face.';
+  } else if (sel.kind === 'collector') {
+    const t = snap.transfer;
+    title = 'Collector';
+    rows = [
+      { k: 'Duty screw', v: t.primary, tone: t.primary === 'FAULT' ? 'text-red' : 'text-teal' },
+      { k: 'Standby screw', v: t.standby, tone: t.standby === 'FAULT' ? 'text-red' : undefined },
+      { k: 'Capacity now', v: `${t.capacityTph.toFixed(0)} t/h` },
+      { k: 'Collecting', v: `${w.collectTph.toFixed(1)} t/h` },
+      { k: 'Pockets', v: `${Math.round(t.pocketFill * 100)} %` },
+    ];
+    note = 'Screw lifts have no impeller to cut the animals. Capacity is the line’s water flow at 5 % jellyfish by volume.';
+  } else if (sel.kind === 'intake') {
+    title = 'Plant screens';
+    rows = [
+      { k: 'With SweepLine', v: `${w.screenTph.toFixed(1)} t/h, ${w.screenStatus.toLowerCase()}` },
+      { k: 'Without', v: `${snap.baseline.screenTph.toFixed(1)} t/h, ${snap.baseline.screenStatus.toLowerCase()}` },
+      { k: 'Channel flow', v: `${snap.channel.flow.toFixed(0)} m³/s` },
+      { k: 'Units behind the nets', v: 'All four' },
+    ];
+    note = 'Unchanged by SweepLine. The screens stay the last line of defence.';
+  } else if (sel.kind === 'release') {
+    title = 'Release';
+    rows = [
+      { k: 'Released', v: `${w.releasedT.toFixed(1)} t` },
+      { k: 'In the line', v: `${w.inPipeT.toFixed(1)} t` },
+      { k: 'Line length', v: `${(ASSUMPTIONS.transfer.length / 1000).toFixed(1)} km` },
+      { k: 'Time in the line', v: `${Math.round(ASSUMPTIONS.transfer.length / ASSUMPTIONS.transfer.pipeVelocity / 60)} min` },
+    ];
+  } else if (sel.kind === 'jelly' && snap.selectedAgent) {
+    const g = snap.selectedAgent;
+    title = SPECIES[snap.params.species].name;
+    rows = [
+      { k: 'State', v: g.state.replaceAll('_', ' ').toLowerCase() },
+      { k: 'Depth', v: `${g.depth.toFixed(1)} m` },
+      { k: 'Speed', v: `${g.speed.toFixed(2)} m/s` },
+      { k: 'Bell', v: `${Math.round(g.size * 100)} cm` },
+    ];
+  } else return null;
   return (
-    <div data-hud className="glass pointer-events-auto w-[256px] animate-fade-in px-3.5 py-3 shadow-2xl">
-      <div className="mb-1.5 flex items-center justify-between gap-2">
-        <div>
-          <div className="eyebrow !text-[9.5px]">Inspector</div>
-          <div className="text-[13px] font-semibold text-ink">{title}</div>
-        </div>
-        <div className="flex items-center gap-1">
-          {sel.kind === 'jelly' && snap.selectedAgent && (
-            <button
-              type="button"
-              title={follow ? 'Stop following' : 'Follow with camera'}
-              onClick={() => setUI({ follow: !follow })}
-              className={cn('rounded-md p-1 transition-colors', follow ? 'bg-cyan/20 text-cyan' : 'text-muted hover:text-ink')}
-            >
-              <LocateFixed size={14} />
-            </button>
-          )}
-          <button type="button" title="Close inspector" onClick={close} className="rounded-md p-1 text-muted hover:text-ink">
-            <X size={14} />
-          </button>
-        </div>
+    <div data-hud className="glass pointer-events-auto w-[300px] animate-fade-in !rounded-xl px-3.5 py-2.5">
+      <div className="flex items-center justify-between">
+        <span className="text-[13.5px] font-semibold text-white">{title}</span>
+        <button type="button" onClick={close} aria-label="Close" className="text-muted hover:text-white">
+          <X size={14} />
+        </button>
       </div>
-      {body}
+      <div className="mt-1">
+        {rows.map((r) => (
+          <Row key={r.k} {...r} />
+        ))}
+      </div>
+      {note && <p className="mt-1.5 text-[11.5px] leading-snug text-pretty text-muted">{note}</p>}
     </div>
   );
 }

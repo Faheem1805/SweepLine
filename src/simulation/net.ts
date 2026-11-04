@@ -37,6 +37,9 @@ export class NetState {
   readonly through: Float32Array;
   /** Head difference across the net (m). */
   head = 0;
+  /** Share of the mesh blinded by a debris mat, and where it is heading (0..1). */
+  debris = 0;
+  debrisTarget = 0;
   /** The net is installed (the second net can be switched off in a what-if). */
   active = true;
   /** Seconds since the installation sequence began (Infinity once it is done). */
@@ -126,6 +129,7 @@ export class NetState {
       }
       if (all) this.armClock = Infinity;
     }
+    this.debris += (this.debrisTarget - this.debris) * Math.min(1, dt / 240);
     const area = this.panelArea;
     let conductance = 0;
     for (let k = 0; k < this.n; k++) {
@@ -135,7 +139,7 @@ export class NetState {
         K = N.tornK;
       } else {
         const blocked = Math.min(0.97, (this.bioKg[k] * blockPerKg) / area);
-        open = (1 - MESH_SOLIDITY) * (1 - this.foul[k]) * (1 - blocked);
+        open = (1 - MESH_SOLIDITY) * (1 - this.foul[k]) * (1 - blocked) * (1 - this.debris);
         K = lossAt(open);
       }
       this.open[k] = open;
@@ -173,6 +177,8 @@ export class NetState {
   }
 
   reset(): void {
+    this.debris = 0;
+    this.debrisTarget = 0;
     this.drop.fill(1);
     this.bioKg.fill(0);
     this.torn.fill(0);

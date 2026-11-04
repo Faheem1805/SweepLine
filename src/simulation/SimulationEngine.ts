@@ -161,7 +161,7 @@ export class SimulationEngine {
   }
 
   static poolSize(budget: number): number {
-    return Math.ceil(budget * 2) + 64;
+    return budget * 8 + 64;
   }
 
   reset(params: SimParams, fill: 'approach' | 'none'): void {

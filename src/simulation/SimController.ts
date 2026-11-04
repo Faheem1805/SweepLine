@@ -131,9 +131,10 @@ const STAGES: Array<{ key: StageKey; label: string }> = [
 ];
 
 export const FAILURE_LABELS: Record<FailureKey, string> = {
-  pumpPrimary: 'Duty pump fails',
-  pumpStandby: 'Standby pump fails',
+  pumpPrimary: 'Duty lift stops',
+  pumpStandby: 'Standby lift stops',
   panelTear: 'Panel tears out',
+  debris: 'Debris mat blinds net A',
   unitTrip: 'One unit offline',
   storm: 'Storm, Hs 1.82 m',
   surge: 'Bloom surge, ×3',
@@ -144,6 +145,7 @@ const noFailures = (): Record<FailureKey, boolean> => ({
   pumpPrimary: false,
   pumpStandby: false,
   panelTear: false,
+  debris: false,
   unitTrip: false,
   storm: false,
   surge: false,
@@ -152,6 +154,8 @@ const noFailures = (): Record<FailureKey, boolean> => ({
 
 /** The busiest panel of net A, torn out in the stress test. */
 const TEAR_PANEL = 17;
+/** Share of net A a debris mat blinds in the stress test. */
+const DEBRIS_COVER = 0.975;
 /** Highest wave recorded at the site, 2022–2025 (m). */
 const STORM_HS = 1.82;
 
@@ -348,7 +352,7 @@ export class SimController {
     if (tr.running) return;
     tr.running = true;
     this.stage('warning');
-    this.log('warn', 'Early warning received — collector pumps started');
+    this.log('warn', 'Early warning received: screw lifts started');
   }
 
   // ------------------------------------------------------------------ failure injection
@@ -366,6 +370,9 @@ export class SimController {
         break;
       case 'panelTear':
         s.tearPanel(0, TEAR_PANEL);
+        break;
+      case 'debris':
+        s.nets[0].debrisTarget = DEBRIS_COVER;
         break;
       case 'unitTrip':
         this.savedParams.unitsRunning ??= this.params.unitsRunning;
@@ -404,6 +411,9 @@ export class SimController {
         break;
       case 'panelTear':
         s.repairPanels();
+        break;
+      case 'debris':
+        s.nets[0].debrisTarget = 0;
         break;
       case 'unitTrip':
         this.restoreSaved('unitsRunning');
@@ -536,7 +546,7 @@ export class SimController {
       this.log(pFull ? 'warn' : 'ok', pFull ? 'Pocket full — the bloom is stacking up along the net' : 'Pocket clearing');
     }
     if (tr.primaryStatus !== this.prevPrimary || tr.standbyStatus !== this.prevStandby) {
-      if (this.prevStandby !== 'ONLINE' && tr.standbyStatus === 'ONLINE') this.log('ok', 'Standby pump carrying the load');
+      if (this.prevStandby !== 'ONLINE' && tr.standbyStatus === 'ONLINE') this.log('ok', 'Standby lift carrying the load');
       this.prevPrimary = tr.primaryStatus;
       this.prevStandby = tr.standbyStatus;
     }
@@ -629,13 +639,13 @@ export class SimController {
     const tr = s.transfer!;
     if (s.nets.some((n) => n.arming)) return { code: 'ARMING', label: 'Panels going in', detail: `${Math.round(s.nets[0].inPlace * 100)} % in place`, tone: 'info' };
     if (s.nets.some((n) => n.reliefFraction > 0)) return { code: 'RELIEF', label: 'Relief open', detail: 'Float line dipped: cooling flow first', tone: 'alarm' };
-    if (tr.running && !tr.poweredPathAvailable) return { code: 'OVERLOAD', label: 'Net holding', detail: 'No collector pump: bloom stacking on the net', tone: 'alarm' };
+    if (tr.running && !tr.poweredPathAvailable) return { code: 'OVERLOAD', label: 'Net holding', detail: 'Lifts stopped: bloom stacking on the net', tone: 'alarm' };
     if (s.nets[0].tornCount > 0) return { code: 'ELEVATED', label: 'Panel out', detail: 'Net B catching what comes through', tone: 'warn' };
-    if (tr.primaryFault) return { code: 'ELEVATED', label: 'On standby', detail: tr.standbyStatus === 'ONLINE' ? 'Standby pump carrying the load' : 'Standby pump starting', tone: 'warn' };
+    if (tr.primaryFault) return { code: 'ELEVATED', label: 'On standby', detail: tr.standbyStatus === 'ONLINE' ? 'Standby lift carrying the load' : 'Standby lift starting', tone: 'warn' };
     const near = this.constraints.find((c) => c.status !== 'ok');
     if (near) return { code: 'ELEVATED', label: 'Watch', detail: `${near.label} ${near.value}`, tone: 'warn' };
     if (s.counters.encountered > 0) return { code: 'NOMINAL', label: 'Sweeping', detail: 'Bloom moving along the net', tone: 'ok' };
-    if (tr.running) return { code: 'WARNING', label: 'Warning received', detail: 'Pumps running, bloom on its way', tone: 'warn' };
+    if (tr.running) return { code: 'WARNING', label: 'Warning received', detail: 'Lifts running, bloom on its way', tone: 'warn' };
     return { code: 'READY', label: 'Ready', detail: 'Nets in place, awaiting warning', tone: 'ok' };
   }
 

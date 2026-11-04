@@ -164,7 +164,7 @@ export class PostPipeline {
     this.ao.configuration.aoRadius = Math.min(6, Math.max(0.6, view.targetDistance * 0.022));
     // Tilt-shift only for high oblique views (not top-down, not close-ups).
     const tilt = smooth(70, 170, view.targetDistance) * (1 - smooth(52, 74, view.pitchDeg));
-    this.tiltShift.blendMode.opacity.value = tilt;
+    this.tiltShift.blendMode.opacity.value = tilt * 0.25;
     this.dof.target = view.focus;
   }
 

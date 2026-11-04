@@ -9,7 +9,7 @@
 import { SITE } from '../../config/site';
 import { MAP_INTRO_DATA } from '../../data/mapIntro.generated';
 import { S_INACTIVE, S_TRANSFERRED } from '../../simulation/Agent';
-import type { CurtainLayout } from '../../simulation/geometry';
+import { collectorPoint, NETS } from '../../simulation/geometry';
 import type { SimulationEngine } from '../../simulation/SimulationEngine';
 import { apply, DEG, type Affine } from './mapCamera';
 
@@ -89,17 +89,20 @@ export interface Schematic {
   throat: { x: number; z: number };
 }
 
-export function buildSchematic(layout: CurtainLayout): Schematic {
+export function buildSchematic(): Schematic {
   const I = SITE.intake;
-  const curtainPts: Array<[number, number]> = [];
-  for (let i = 0; i < layout.n; i++) curtainPts.push([layout.px[i], layout.pz[i]]);
+  const L = NETS[0];
+  const end = collectorPoint(L);
   return {
     intake: `M${I.x0 - 2.4} ${I.backZ}H${I.x1 + 2.4}V${I.mouthZ + 0.4}H${I.x0 - 2.4}Z`,
     intakeFace: `M${I.x0} ${I.mouthZ}H${I.x1}`,
-    curtain: polyline(curtainPts),
-    route: polyline([...SITE.pipeRoute, [SITE.release.x, SITE.release.z]]),
-    release: { x: SITE.release.x, z: SITE.release.z, r: 7 },
-    throat: { x: layout.end.x, z: layout.end.z },
+    curtain: polyline([
+      [L.ax, L.az],
+      [L.bx, L.bz],
+    ]),
+    route: polyline(SITE.pipeRoute.slice(0, 3).map(([x, z]) => [x, z] as [number, number])),
+    release: { x: SITE.pipeRoute[2][0], z: SITE.pipeRoute[2][1], r: 9 },
+    throat: { x: end.x, z: end.z },
   };
 }
 

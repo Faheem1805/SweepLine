@@ -1,17 +1,14 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { useApp, type UIState, type SelectionKind } from '../app/store';
-import { ASSUMPTIONS } from '../config/assumptions';
-import { SITE, mirrorX } from '../config/site';
+import { SITE } from '../config/site';
 import { S_APPROACHING, S_TRANSFERRED } from '../simulation/Agent';
-import { pointAtArc } from '../simulation/geometry';
+import { NETS, pointOnNet } from '../simulation/geometry';
 import type { SimController, SimSnapshot } from '../simulation/SimController';
 import type { SimulationEngine } from '../simulation/SimulationEngine';
-import type { EngineKind, LineSide } from '../simulation/types';
-import { waveElevation } from '../simulation/waves';
+import type { EngineKind } from '../simulation/types';
 import { AssetLoader } from './assets/AssetLoader';
 import { adaptExternalJellyGeometry, buildJellyfishGeometry, FAR_LOD, NEAR_LOD } from './assets/procedural/jellyfishGeometry';
-import { buildWorkboat } from './assets/procedural/workboat';
 import { CameraRig, type CameraPreset } from './cameras/CameraRig';
 import { buildCoast } from './environment/Coast';
 import { Seabed } from './environment/Seabed';
@@ -20,25 +17,26 @@ import { SkyDome } from './environment/Sky';
 import { UnderwaterFx } from './environment/Underwater';
 import { Water } from './environment/Water';
 import { Annotations } from './systems/Annotations';
+import { CollectorSystem } from './systems/CollectorSystem';
 import { CurrentField } from './systems/CurrentField';
-import { CurtainSystem } from './systems/CurtainSystem';
-import { JetSystem } from './systems/JetSystem';
 import { jellyShader, JellyfishSystem } from './systems/JellyfishSystem';
 import { LabelSystem, type LabelViewport } from './systems/LabelSystem';
+import { NetSystem } from './systems/NetSystem';
 import { PostPipeline, type ViewState } from './post/PostPipeline';
 import { iconSvg } from '../components/ui/icons';
 import { ReleaseSystem } from './systems/ReleaseSystem';
-import { ReleaseValve, TransferSystem } from './systems/TransferSystem';
+import { SonarSystem } from './systems/SonarSystem';
 
 const WORLDS: EngineKind[] = ['baseline', 'sweepline'];
-const SIDES: readonly LineSide[] = [0, 1];
 /** Time constant (real seconds) of the shown sea state following the simulated wave height. */
 const SEA_STATE_TAU = 1.6;
+/** Centre of the shadow map: the channel. */
+const SHADOW_FOCUS = new THREE.Vector3(0, 0, 240);
 
 /**
- * Owns the WebGL renderer and the 3D digital twin. One renderer serves both the
- * single view and the split Baseline | SweepLine compare view (scissor
- * viewports). Simulation state is read straight from the engines each frame.
+ * Owns the WebGL renderer and the 3D digital twin. One renderer serves both the single view and the
+ * split Without | With compare view (scissor viewports). Simulation state is read straight from the
+ * engines each frame.
  */
 export class SceneManager {
   readonly container: HTMLDivElement;
@@ -52,44 +50,37 @@ export class SceneManager {
   private readonly sky: SkyDome;
   private readonly water: Water;
   private readonly underwaterFx = new UnderwaterFx();
-  /** SweepLine Twin-Line installation, by side (line A, line B) and outlet. */
-  private readonly curtains: CurtainSystem[];
-  private readonly jets = [new JetSystem(), new JetSystem()];
-  private readonly transfers: TransferSystem[];
-  private readonly releases: ReleaseSystem[];
-  private readonly valve = new ReleaseValve();
-  /** Duty line the camera presets were last framed on. */
-  private framedDuty: LineSide = 0;
+  private readonly nets = new NetSystem(NETS);
+  private readonly collector = new CollectorSystem(NETS);
+  private readonly release = new ReleaseSystem();
+  private readonly sonar = new SonarSystem();
   private readonly annotations = new Annotations();
-  private readonly workboat: THREE.Group;
   private readonly sweepGroup = new THREE.Group();
   private readonly coast: ReturnType<typeof buildCoast>;
   private jellies!: Record<EngineKind, JellyfishSystem>;
   private readonly flows: Record<EngineKind, CurrentField>;
   private readonly sun: THREE.DirectionalLight;
+  private readonly hemi: THREE.HemisphereLight;
+  private readonly sunBase: number;
   private slot: HTMLElement | null = null;
   private readonly resizeObs: ResizeObserver;
   private width = 1;
   private height = 1;
   private pixelRatio = 1;
   private ui: UIState;
-  private snap: SimSnapshot | null = null;
   private infoTimer = 0;
   private bloomTimer = 0;
-  private readonly bloomAnchor = new THREE.Vector3(-150, 1, -10);
+  private captureTimer = 0;
+  private readonly bloomAnchor = new THREE.Vector3(-300, 1, 640);
   private bloomAnchorValid = false;
-  private dimAnchor: THREE.Vector3 | null = null;
   private readonly raycaster = new THREE.Raycaster();
   private pointerDown: { x: number; y: number } | null = null;
   private shadowFrames = 0;
   private shadowTimer = 0;
-  /** Compare state and displayed world the shadow map was last captured for. */
   private shadowCompare = false;
   private shadowWorld: EngineKind = 'sweepline';
   private realTime = 0;
   private lastMarkerSeq = -1;
-  private readonly boatPos = new THREE.Vector3();
-  private boatYaw = 0;
   private readonly tmpV = new THREE.Vector3();
   private readonly tmpDir = new THREE.Vector3();
   private readonly post: PostPipeline;
@@ -100,6 +91,8 @@ export class SceneManager {
   private precompiling: Promise<void> | null = null;
   /** Wave height (Hs) the scene shows, easing toward the simulated value (-1 until the first frame). */
   private seaState = -1;
+  /** Night in the scene, 0..1, easing toward the run's setting. */
+  private night = 0;
 
   constructor(ctrl: SimController) {
     this.ctrl = ctrl;
@@ -117,12 +110,12 @@ export class SceneManager {
     this.container.appendChild(this.renderer.domElement);
     this.container.appendChild(this.labels.layer);
 
-    this.camera = new THREE.PerspectiveCamera(42, 16 / 9, 0.12, 12000);
+    this.camera = new THREE.PerspectiveCamera(42, 16 / 9, 0.3, 16000);
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
-    this.controls.maxDistance = 1100;
-    this.controls.minDistance = 1.5;
+    this.controls.maxDistance = 2400;
+    this.controls.minDistance = 2;
     this.controls.zoomSpeed = 0.9;
     this.controls.rotateSpeed = 0.6;
     this.controls.panSpeed = 0.8;
@@ -135,27 +128,29 @@ export class SceneManager {
     // ------------------------------------------------ lighting & sky
     this.sky = new SkyDome(this.renderer);
     this.scene.add(this.sky.mesh);
-    // Distant water and land fade into the sky's own horizon colour.
     SHARED.uHazeColor.value.copy(this.sky.horizon);
+    SHARED.uHazeDensity.value = 0.00022;
     this.scene.environment = this.sky.envMap;
     this.scene.environmentIntensity = 0.6;
-    this.sun = new THREE.DirectionalLight(0xffeed4, 2.65);
+    this.sunBase = 2.65;
+    this.sun = new THREE.DirectionalLight(0xffeed4, this.sunBase);
     const sd = SHARED.uSunDir.value;
-    this.sun.position.set(sd.x * 400, sd.y * 400, sd.z * 400);
-    this.sun.target.position.set(0, 0, 0);
+    this.sun.position.set(SHADOW_FOCUS.x + sd.x * 1100, sd.y * 1100, SHADOW_FOCUS.z + sd.z * 1100);
+    this.sun.target.position.copy(SHADOW_FOCUS);
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
+    this.sun.shadow.mapSize.set(4096, 4096);
     const sc = this.sun.shadow.camera;
-    sc.left = -170;
-    sc.right = 170;
-    sc.top = 140;
-    sc.bottom = -140;
-    sc.near = 50;
-    sc.far = 900;
-    this.sun.shadow.bias = -0.0006;
-    this.sun.shadow.normalBias = 0.5;
+    sc.left = -470;
+    sc.right = 470;
+    sc.top = 470;
+    sc.bottom = -470;
+    sc.near = 100;
+    sc.far = 2400;
+    this.sun.shadow.bias = -0.0009;
+    this.sun.shadow.normalBias = 1.2;
     this.scene.add(this.sun, this.sun.target);
-    this.scene.add(new THREE.HemisphereLight(0x9fcbed, 0x84714f, 0.9));
+    this.hemi = new THREE.HemisphereLight(0x9fcbed, 0x84714f, 0.9);
+    this.scene.add(this.hemi);
 
     // ------------------------------------------------ environment
     this.water = new Water(this.sky.cubeTarget.texture);
@@ -165,21 +160,11 @@ export class SceneManager {
     this.scene.add(this.coast.group);
     this.scene.add(this.underwaterFx.group);
 
-    // ------------------------------------------------ SweepLine installation (SweepLine world only)
+    // ------------------------------------------------ SweepLine installation (its world only)
     this.sweepGroup.name = 'sweepline-installation';
-    this.curtains = SIDES.map((side) => new CurtainSystem(ctrl.params.anchorAngle, side));
-    this.transfers = SIDES.map((side) => new TransferSystem(side));
-    this.releases = SIDES.map((outlet) => new ReleaseSystem(outlet));
-    this.workboat = buildWorkboat();
-    this.sweepGroup.add(
-      ...this.curtains.map((c) => c.group),
-      ...this.jets.map((j) => j.group),
-      ...this.transfers.map((t) => t.group),
-      ...this.releases.map((r) => r.group),
-      this.valve.group,
-      this.workboat,
-    );
+    this.sweepGroup.add(this.nets.group, this.collector.group, this.release.group);
     this.scene.add(this.sweepGroup);
+    this.scene.add(this.sonar.mesh);
     this.scene.add(this.annotations.group);
 
     // ------------------------------------------------ agents and flow (one per world)
@@ -191,9 +176,7 @@ export class SceneManager {
     for (const w of WORLDS) this.scene.add(this.flows[w].group);
 
     this.setupLabels();
-    this.rig.snap('aerial', ctrl.sweepline.curtain!.layout);
-    const th0 = this.transfers[0].throat;
-    this.boatPos.set(th0.mx + 8, 0, th0.mz + 9);
+    this.rig.snap('aerial');
 
     // ------------------------------------------------ post-processing
     this.post = new PostPipeline(this.renderer, this.scene, this.camera, this.sun);
@@ -238,52 +221,10 @@ export class SceneManager {
   }
 
   private async loadAssets(): Promise<void> {
-    const [jelly, intake, breakwater, curtain, throat, transfer] = await Promise.all([
-      this.assets.load('jellyfish'),
-      this.assets.load('intake'),
-      this.assets.load('breakwater'),
-      this.assets.load('curtain'),
-      this.assets.load('throat'),
-      this.assets.load('transfer'),
-    ]);
+    const jelly = await this.assets.load('jellyfish');
     if (jelly) {
       const ex = AssetLoader.extractGeometry(jelly);
       if (ex) this.buildJellies(adaptExternalJellyGeometry(ex.geometry), ex.map);
-    }
-    if (intake) {
-      this.coast.intake.visible = false;
-      intake.scene.traverse((o) => (o.userData.pick = 'intake'));
-      this.coast.group.add(intake.scene);
-    }
-    if (breakwater) {
-      this.coast.breakwater.visible = false;
-      this.coast.group.add(breakwater.scene);
-    }
-    if (curtain) {
-      const ex = AssetLoader.extractGeometry(curtain);
-      if (ex) {
-        ex.geometry.computeBoundingBox();
-        const size = new THREE.Vector3();
-        ex.geometry.boundingBox!.getSize(size);
-        const s = 1.0 / Math.max(size.x, 0.01);
-        ex.geometry.scale(s, s, s);
-        ex.geometry.center();
-        for (const c of this.curtains) c.setFloatGeometry(ex.geometry);
-      }
-    }
-    // Both lines' installations use the same model (line B's is mirrored with its group).
-    if (throat) {
-      throat.scene.traverse((o) => (o.userData.pick = 'throat'));
-      for (const t of this.transfers) {
-        t.throatGroup.children.forEach((c, i) => {
-          if (i === 0) c.visible = false;
-        });
-        t.throatGroup.add(t.side === 0 ? throat.scene : throat.scene.clone());
-      }
-    }
-    if (transfer) {
-      transfer.scene.traverse((o) => (o.userData.pick = 'transfer'));
-      for (const t of this.transfers) t.moduleGroup.add(t.side === 0 ? transfer.scene : transfer.scene.clone());
     }
     this.shadowFrames = 0;
   }
@@ -315,11 +256,7 @@ export class SceneManager {
     this.resize();
   }
 
-  /**
-   * Compile the scene's shaders in the background (KHR_parallel_shader_compile where available),
-   * as the main view uses them (drawing into the post-processing buffer), so the first frames do
-   * not stall on compilation.
-   */
+  /** Compile the scene's shaders in the background, so the first frames do not stall on compilation. */
   precompile(): Promise<void> {
     if (!this.precompiling) {
       const r = this.renderer;
@@ -349,13 +286,12 @@ export class SceneManager {
 
   private onUI(ui: UIState, prev: UIState): void {
     this.ui = ui;
-    const layout = this.ctrl.sweepline.curtain!.layout;
     if (ui.compare !== prev.compare) {
-      if (ui.compare) this.rig.goTo('compare', layout, 1.6);
-      else if (ui.camera !== 'free') this.rig.goTo(ui.camera as Exclude<CameraPreset, 'free'>, layout, 1.6);
+      if (ui.compare) this.rig.goTo('compare', 1.6);
+      else if (ui.camera !== 'free') this.rig.goTo(ui.camera as Exclude<CameraPreset, 'free'>, 1.6);
     }
     if ((ui.camera !== prev.camera || ui.cameraNonce !== prev.cameraNonce) && ui.camera !== 'free') {
-      if (!(ui.compare && ui.camera === prev.camera)) this.rig.goTo(ui.camera as Exclude<CameraPreset, 'free'>, layout, 1.7);
+      if (!(ui.compare && ui.camera === prev.camera)) this.rig.goTo(ui.camera as Exclude<CameraPreset, 'free'>, 1.9);
     }
     if (ui.flowView !== prev.flowView) this.applyFlowView(ui.flowView);
     this.labels.enabled = ui.labels;
@@ -371,71 +307,47 @@ export class SceneManager {
       this.flows[w].setFlowMode(on);
       this.jellies[w].setStateColors(on);
     }
-    this.annotations.captureZone.visible = on;
+    this.annotations.captureLine.visible = on;
   }
 
   private onSnapshot(s: SimSnapshot): void {
-    this.snap = s;
-    const sw = s.sweepline;
-    const b = s.baseline;
-    const mode = s.curtain.mode;
-    const cs = s.curtain;
-    const jets = s.params.activeFlow && cs.jetOutput > 0.01 ? `jets ${Math.round(cs.jetOutput * 100)}%` : 'passive';
-    const curtainBody =
-      mode === 'STOWED'
-        ? `${cs.angle}° layout · ${s.params.deployMode === 'popup' ? 'stowed on seabed' : 'stowed'}`
-        : mode === 'REEFING' || mode === 'REEFED'
-          ? `Reefing · ${cs.reefedPct.toFixed(0)}% reefed`
-          : mode === 'DEPLOYING'
-            ? cs.deployDelay > 0
-              ? cs.deployMode === 'workboat'
-                ? 'Workboat mobilising'
-                : 'Pop-up · inflating'
-              : `${cs.deployMode === 'popup' ? 'Rising' : 'Laying'} · ${cs.deployedPct.toFixed(0)}%`
-            : `${cs.angle}° · ${cs.skirtActual.toFixed(1)} m skirt · ${jets}`;
-    this.labels.setContent('curtain', 'Guide Curtain', curtainBody, mode === 'REEFING' || mode === 'REEFED' ? 'amber' : 'default');
-    const occ = sw.throatOccupancy;
-    this.labels.setContent(
-      'throat',
-      'Recovery Throat',
-      s.transfer.path === 'NONE' && mode === 'STOWED' ? 'Standby' : `Occupancy ${(Math.min(occ, 1.5) * 100).toFixed(0)}%`,
-      occ >= 0.85 ? 'red' : occ >= 0.6 ? 'amber' : 'teal',
-    );
-    const intakeBody = (m: typeof b) =>
-      m.intakeContactPct === null ? 'Existing protection remains' : `Contact ${(m.intakeContactPct * 100).toFixed(0)}% · load ${m.screenLoad}`;
-    this.labels.setContent('intake', 'Intake Screens', 'Existing protection remains', 'default');
-    this.labels.setContent('intake-base', 'Intake Screens', intakeBody(b), b.screenLoad === 'HIGH' ? 'red' : b.screenLoad === 'MEDIUM' ? 'amber' : 'default');
-    this.labels.setContent('intake-left', 'Intake Screens', intakeBody(b), b.screenLoad === 'HIGH' ? 'red' : 'amber');
-    this.labels.setContent('intake-right', 'Intake Screens', intakeBody(sw), sw.screenLoad === 'HIGH' ? 'red' : sw.screenLoad === 'MEDIUM' ? 'amber' : 'teal');
-    this.labels.setContent('skirt-dim', 'Skirt depth', `${s.curtain.skirtActual.toFixed(1)} m`, 'cyan');
-    this.labels.setContent('bloom-p90', 'Bloom P90 depth', `${s.bloom.p90.toFixed(1)} m`, s.bloom.p90 > s.curtain.skirtActual ? 'amber' : 'teal');
+    const a = s.nets[0];
+    const netBody = a.torn > 0 ? 'Panel out, net B catching' : a.relief > 0 ? 'Relief open' : `${s.sweepline.onNetT[0].toFixed(1)} t on the net · ${(a.head * 1000).toFixed(1)} mm head`;
+    this.labels.setContent('net', 'Net A', netBody, a.torn > 0 || a.relief > 0 ? 'red' : a.loadFraction > 0.5 ? 'amber' : 'default');
+    this.labels.setContent('collector', 'Collector', s.transfer.path === 'NONE' ? 'Lifts stopped' : `${s.sweepline.collectTph.toFixed(1)} t/h`, s.transfer.path === 'NONE' ? 'amber' : 'teal');
+    const body = (m: typeof s.baseline) => `${m.screenTph.toFixed(1)} t/h · ${m.screenStatus === 'CLEAR' ? 'clear' : m.screenBacklogT.toFixed(1) + ' t backlog'}`;
+    const tone = (m: typeof s.baseline) => (m.screenStatus === 'CLEAR' ? 'teal' : m.screenStatus === 'LOADED' ? 'amber' : 'red');
+    this.labels.setContent('intake', 'Plant screens', body(s.sweepline), tone(s.sweepline));
+    this.labels.setContent('intake-base', 'Plant screens', body(s.baseline), tone(s.baseline));
+    this.labels.setContent('intake-left', 'Plant screens', body(s.baseline), tone(s.baseline));
+    this.labels.setContent('intake-right', 'Plant screens', body(s.sweepline), tone(s.sweepline));
   }
 
   private setupLabels(): void {
     const above = 'above' as const;
-    const layout = () => this.ctrl.sweepline.curtain!.layout;
+    const L = NETS[0];
     this.labels.add({
-      id: 'curtain',
-      title: 'Guide Curtain',
+      id: 'net',
+      title: 'Net A',
       icon: iconSvg('curtain', 22),
       anchor: () => {
-        const p = pointAtArc(layout(), layout().length * 0.36);
-        return this.tmpAnchor('curtain', p.x, 1.2, p.z);
+        const p = pointOnNet(L, L.length * 0.36);
+        return this.tmpAnchor('net', p.x, 6, p.z);
       },
       viewports: ['single'],
       view: above,
-      pick: 'curtain',
+      pick: 'net',
     });
     this.labels.add({
-      id: 'throat',
-      title: 'Recovery Throat',
+      id: 'collector',
+      title: 'Collector',
       icon: iconSvg('throat', 22),
-      anchor: () => this.transfers[this.ctrl.sweepline.duty].anchors().throat,
+      anchor: () => this.collector.anchor,
       viewports: ['single'],
       view: above,
-      pick: 'throat',
+      pick: 'collector',
     });
-    const intakeAnchor = new THREE.Vector3((SITE.intake.x0 + SITE.intake.x1) / 2 + 8, SITE.intake.deckY + 0.4, SITE.intake.mouthZ + 0.6);
+    const intakeAnchor = new THREE.Vector3(0, SITE.intake.deckY + 12, SITE.intake.mouthZ);
     for (const [id, vp] of [
       ['intake', ['single']],
       ['intake-base', ['base']],
@@ -444,7 +356,7 @@ export class SceneManager {
     ] as const) {
       this.labels.add({
         id,
-        title: 'Intake Screens',
+        title: 'Plant screens',
         icon: iconSvg('intake', 22),
         anchor: () => intakeAnchor,
         viewports: [...vp] as LabelViewport[],
@@ -452,28 +364,6 @@ export class SceneManager {
         pick: 'intake',
       });
     }
-    this.labels.add({
-      id: 'skirt-dim',
-      title: 'Skirt depth',
-      anchor: () => this.dimAnchor,
-      viewports: ['single'],
-      view: 'below',
-      placement: 'right',
-      tone: 'cyan',
-      maxDistance: 60,
-    });
-    this.labels.add({
-      id: 'bloom-p90',
-      title: 'Bloom P90 depth',
-      anchor: () => {
-        const p = pointAtArc(layout(), layout().length * 0.88);
-        return this.tmpAnchor('p90', p.x + p.nx * 4, -(this.snap?.bloom.p90 ?? 2.8), p.z + p.nz * 4);
-      },
-      viewports: ['single'],
-      view: 'below',
-      placement: 'right',
-      maxDistance: 60,
-    });
   }
 
   private readonly anchorCache = new Map<string, THREE.Vector3>();
@@ -516,10 +406,7 @@ export class SceneManager {
     jel.near.mesh.computeBoundingSphere();
     jel.far.mesh.computeBoundingSphere();
     targets.push(jel.near.mesh, jel.far.mesh);
-    if (world === 'sweepline') {
-      for (const c of this.curtains) if (c.group.visible) targets.push(...c.pickables());
-      targets.push(...this.transfers.map((t) => t.group), ...this.releases.map((r) => r.group), this.valve.group);
-    }
+    if (world === 'sweepline') targets.push(...this.nets.pickables(), this.collector.group, this.release.group);
     const hits = this.raycaster.intersectObjects(targets, true);
     for (const h of hits) {
       if (h.object === jel.near.mesh || h.object === jel.far.mesh) {
@@ -561,6 +448,21 @@ export class SceneManager {
     this.annotations.setWorld(world);
   }
 
+  /** Night: the sun goes, the sky darkens, and the lamps, sonar and bloom carry the picture. */
+  private updateNight(dt: number): void {
+    const target = this.ctrl.params.night ? 1 : 0;
+    if (Math.abs(this.night - target) < 0.001 && this.night === target) return;
+    this.night += Math.sign(target - this.night) * Math.min(Math.abs(target - this.night), dt / 1.4);
+    const k = 1 - this.night;
+    this.sun.intensity = this.sunBase * (0.03 + 0.97 * k);
+    this.hemi.intensity = 0.9 * (0.1 + 0.9 * k);
+    this.scene.environmentIntensity = 0.6 * (0.07 + 0.93 * k);
+    SHARED.uHazeColor.value.copy(this.sky.horizon).multiplyScalar(0.06 + 0.94 * k);
+    SHARED.uSunColor.value.setRGB(1, 0.93, 0.8).multiplyScalar(0.08 + 0.92 * k);
+    this.sky.setBrightness(0.035 + 0.965 * k);
+    this.water.setSkyBright(0.06 + 0.94 * k);
+  }
+
   frame(dtReal: number): void {
     const dt = Math.min(dtReal, 0.1);
     this.realTime += dt;
@@ -568,83 +470,35 @@ export class SceneManager {
     SHARED.uWaveTime.value = this.realTime;
     const ctrl = this.ctrl;
     const params = ctrl.params;
-    // A changed sea state builds up (or calms) over a few seconds instead of jumping.
     this.seaState = this.seaState < 0 ? params.waveHeight : this.seaState + (params.waveHeight - this.seaState) * (1 - Math.exp(-dt / SEA_STATE_TAU));
     const hs = this.seaState;
     SHARED.uWaveAmp.value = hs * 0.5;
     const simDt = ctrl.ready && !ctrl.paused ? dt * ctrl.speed : 0;
     const sw = ctrl.sweepline;
-    const c = sw.curtain!;
     const tr = sw.transfer!;
+    this.updateNight(dt);
 
     // A run restart resets the engines' marker sequence — forget stale flashes.
     if (sw.markerSeq < this.lastMarkerSeq) this.annotations.reset();
     this.lastMarkerSeq = sw.markerSeq;
 
-    // SweepLine installation: both Twin-Line sides (line B only exists with the Twin-Line), the
-    // release valve and both outlets.
-    const twin = params.twinLine;
-    const flowFraction = tr.availability() * Math.min(1, 0.35 + tr.processedEMA / Math.max(tr.capacityRate(), 1e-3));
-    // The outlet the release line is sending to (down-drift, or the down-tide valve's choice).
-    const outlet = ASSUMPTIONS.release.design.side === 'down-tide' ? sw.flowSide() : 0;
-    for (const side of SIDES) {
-      const line = sw.lines[side];
-      const show = side === 0 || twin;
-      // Line B's hoses and outlet lie stowed (the outlet hidden) until line B or its outlet is in use.
-      const lineUp = line.mode !== 'STOWED' || tr.queues[side].length > 0;
-      const branchUp = side === 0 || lineUp || (tr.throatOpen && outlet === side) || sw.outletEMA[side] > 0.002;
-      this.curtains[side].group.visible = show;
-      this.transfers[side].group.visible = show;
-      this.releases[side].group.visible = show && branchUp;
-      if (!show) {
-        this.jets[side].group.visible = false;
-        continue;
-      }
-      this.curtains[side].previewsEnabled = side === sw.duty;
-      this.curtains[side].update(line, this.realTime, hs, this.ui.flowView, Math.min(1, sw.debrisLoad / 0.95));
-      this.jets[side].update(line, this.realTime, simDt, hs);
-      // A throat is open while its line is in the water or still holds traffic.
-      const open = tr.throatOpen && (line.mode !== 'STOWED' || tr.queues[side].length > 0);
-      this.transfers[side].update({
-        occupancy: tr.queues[side].length / sw.holdCapacity,
-        primary: open ? tr.primaryStatus : 'STANDBY',
-        standby: open ? tr.standbyStatus : tr.standbyEnabled ? 'STANDBY' : 'DISABLED',
-        path: open ? tr.activePath : 'NONE',
-        flowFraction,
-        throatOpen: open,
-        branchFlow: Math.min(1, sw.outletEMA[side] * 14 + (tr.throatOpen && outlet === side ? 0.35 : 0)),
-        feederUp: side === 0 || lineUp,
-        branchUp,
-        dt,
-        time: this.realTime,
-        waveTime: this.realTime,
-        waveHeight: hs,
-      });
-      this.releases[side].update(sw.outletEMA[side], (tr.throatOpen && outlet === side) || sw.outletEMA[side] > 0.002, this.realTime, this.realTime, hs);
-    }
-    this.valve.group.visible = twin;
-    if (twin) this.valve.update(outlet, tr.throatOpen, dt, this.realTime, hs);
-    this.updateWorkboat(dt);
+    this.nets.update(sw.nets, this.realTime, hs, this.ui.flowView, this.camera);
+    const flowFraction = Math.min(1, tr.availability() * (0.35 + tr.processedEMA / Math.max(tr.capacityRate(), 1e-3) * 4));
+    this.collector.update(tr.primaryStatus, tr.standbyStatus, flowFraction, this.realTime);
+    this.release.update(sw.releaseEMA, tr.running, this.realTime, this.realTime, hs);
+    this.sonar.update((this.ui.flowView || params.night) && !ctrl.failures.sonarLoss, dt);
 
-    // When the tide hands duty to the other line, the camera preset re-frames on it.
-    if (sw.duty !== this.framedDuty) {
-      this.framedDuty = sw.duty;
-      const ui = this.ui;
-      if (!ui.follow && ui.camera !== 'free') this.rig.goTo(ui.compare ? 'compare' : (ui.camera as Exclude<CameraPreset, 'free'>), c.layout, 2.6);
-    }
-
-    // Worlds to draw this frame.
     const worlds: EngineKind[] = this.ui.compare ? ['baseline', 'sweepline'] : [this.ui.displayed];
     for (const w of worlds) this.flows[w].update(ctrl.engine(w), simDt, dt);
 
-    // Annotations.
     this.annotations.ingestMarkers(ctrl.baseline, this.realTime);
     this.annotations.ingestMarkers(sw, this.realTime);
     this.annotations.update(this.realTime, this.camera);
-    const underwaterView = this.camera.position.y < 0;
-    const showDim = !this.ui.compare && this.ui.displayed === 'sweepline' && (underwaterView || this.ui.camera === 'curtain');
-    this.dimAnchor = this.annotations.updateDimension(c.mode === 'STOWED' ? null : c.layout, 0.83, c.skirtActual * c.liftCos, showDim);
-    this.annotations.updateBloomPlane(c.layout, this.snap?.bloom.p90 ?? 2.8, showDim && underwaterView);
+    this.captureTimer -= dt;
+    if (this.ui.flowView && this.captureTimer <= 0) {
+      this.captureTimer = 0.7;
+      this.annotations.updateCaptureLine(sw.flow);
+    }
 
     this.bloomTimer -= dt;
     if (this.bloomTimer <= 0) {
@@ -668,10 +522,7 @@ export class SceneManager {
     this.rig.update(dt);
     if (!this.slot || this.renderSuspended) return;
 
-    // Static shadow map: refresh for the first few frames (and after asset swaps), several times a
-    // second while the curtain moves (its skirt shades the seabed), and otherwise about once a second.
-    // The map is captured with the displayed world; in Compare always with the baseline, so the
-    // baseline half never shows shadows of an installation it does not have.
+    // Static shadow map: refresh for the first few frames, quickly while panels move, else about once a second.
     this.shadowTimer -= dt;
     let refreshShadows = this.ui.compare !== this.shadowCompare || this.ui.displayed !== this.shadowWorld;
     this.shadowCompare = this.ui.compare;
@@ -681,8 +532,7 @@ export class SceneManager {
       this.shadowFrames++;
     } else if (this.shadowTimer <= 0) {
       refreshShadows = true;
-      const moving = sw.lines.some((l) => l.mode === 'DEPLOYING' || l.mode === 'REEFING' || l.mode === 'UNREEFING' || l.mode === 'STOWING');
-      this.shadowTimer = moving ? 0.15 : 1.0;
+      this.shadowTimer = sw.nets.some((n) => n.arming) ? 0.2 : 1.2;
     }
     if (refreshShadows && !this.ui.compare) this.renderer.shadowMap.needsUpdate = true;
 
@@ -690,13 +540,11 @@ export class SceneManager {
     this.labels.beginFrame();
     this.post.configure(this.viewState(underwater));
     if (this.ui.compare) {
-      // Both halves share one size so the post-processing buffers are not reallocated every frame.
       const half = Math.floor(this.width / 2);
       this.labels.setCompact(half < 640);
       this.camera.aspect = half / this.height;
       this.camera.updateProjectionMatrix();
       if (this.width !== half * 2) {
-        // An odd width leaves the centre column uncovered.
         this.renderer.setRenderTarget(null);
         this.renderer.clear();
       }
@@ -710,7 +558,6 @@ export class SceneManager {
       }
     } else {
       const w = this.ui.displayed;
-      // Compact, title-only labels keep the scene uncluttered.
       this.labels.setCompact(true);
       this.camera.aspect = this.width / this.height;
       this.camera.updateProjectionMatrix();
@@ -770,12 +617,9 @@ export class SceneManager {
     let sx = 0;
     let sz = 0;
     let n = 0;
-    // The bloom still upstream of the intake, on whichever side the current brings it from.
-    const fromEast = e.flowSide() === 1;
     for (let i = 0; i < p.capacity; i++) {
       if (p.state[i] !== S_APPROACHING) continue;
       const x = p.px[i];
-      if (fromEast ? x < mirrorX(-30) : x > -30) continue;
       v.set(x, 0.5, p.pz[i]).project(this.camera);
       if (v.z > 1 || v.x < -0.78 || v.x > 0.55 || v.y < -0.72 || v.y > 0.45) continue;
       sx += x;
@@ -791,40 +635,9 @@ export class SceneManager {
     } else this.bloomAnchorValid = false;
   }
 
-  private updateWorkboat(dt: number): void {
-    const c = this.ctrl.sweepline.curtain!;
-    const L = c.layout;
-    const th = this.transfers[L.side].throat;
-    let tx = th.mx + (L.side === 0 ? 8 : -8);
-    let tz = th.mz + 9;
-    let yaw = 0;
-    let s = -1;
-    const byBoat = c.deployMode === 'workboat';
-    if (byBoat && ((c.mode === 'DEPLOYING' && c.deployDelay <= 0) || c.mode === 'STOWING')) s = Math.min(L.length, Math.max(0, L.length - c.deployFront));
-    else if (byBoat && (c.mode === 'REEFING' || c.mode === 'UNREEFING')) s = Math.min(L.length, Math.max(0, c.reefFront));
-    if (s >= 0) {
-      const p = pointAtArc(L, s);
-      tx = p.x + p.nx * 4;
-      tz = p.z + p.nz * 4;
-      const dir = c.mode === 'DEPLOYING' ? -1 : 1;
-      yaw = -Math.atan2(p.tz * dir, p.tx * dir);
-    }
-    const k = Math.min(1, dt * 1.5);
-    this.boatPos.x += (tx - this.boatPos.x) * k;
-    this.boatPos.z += (tz - this.boatPos.z) * k;
-    let dy = yaw - this.boatYaw;
-    while (dy > Math.PI) dy -= Math.PI * 2;
-    while (dy < -Math.PI) dy += Math.PI * 2;
-    this.boatYaw += dy * Math.min(1, dt * 1.2);
-    const eta = waveElevation(this.boatPos.x, this.boatPos.z, this.realTime, this.seaState);
-    this.workboat.position.set(this.boatPos.x, eta - 0.25, this.boatPos.z);
-    this.workboat.rotation.set(Math.sin(this.realTime * 0.9) * 0.03, this.boatYaw, Math.sin(this.realTime * 1.1) * 0.04);
-  }
-
-  /** Reset the camera to the active preset (or perspective). */
+  /** Reset the camera to the active preset (or the overview). */
   resetView(): void {
-    const layout = this.ctrl.sweepline.curtain!.layout;
     const preset = this.ui.compare ? 'compare' : this.ui.camera === 'free' ? 'aerial' : this.ui.camera;
-    this.rig.goTo(preset as Exclude<CameraPreset, 'free'>, layout, 1.4);
+    this.rig.goTo(preset as Exclude<CameraPreset, 'free'>, 1.4);
   }
 }

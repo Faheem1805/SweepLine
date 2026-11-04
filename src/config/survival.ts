@@ -1,12 +1,12 @@
 /**
- * Survival on the way from the curtain to the release outlet, stage by stage. No published study
+ * Survival on the way from the net to the release outlet, stage by stage. No published study
  * measures scyphozoan jellyfish through a pump or a long pipe, so the ranges are fish and
  * invertebrate analogues, as published, and the end-to-end figure is their product. The decisive
  * test is listed with them.
  *
  * Transfer design that follows from the evidence (US NMFS fish-bypass criteria, 2011): lift the
- * animals once, with an Archimedes screw into a head tank on the pontoon, then let them run by
- * gravity down a smooth line (bends of at least 5 bores, never below atmospheric pressure, no air).
+ * animals once, with an Archimedes screw into a head tank, then let them run down a smooth line
+ * (bends of at least 5 bores, never below atmospheric pressure, no air).
  */
 export interface SurvivalStage {
   stage: string;
@@ -18,10 +18,10 @@ export interface SurvivalStage {
 
 export const SURVIVAL: SurvivalStage[] = [
   {
-    stage: 'Guided along the curtain',
+    stage: 'Swept along the net',
     low: 0.9,
     high: 1,
-    basis: 'Juvenile fish impinged on rotating fish-return screens at 0.3–0.9 m/s, a harsher case than sliding along fabric at ≤ 0.3 m/s.',
+    basis: 'Juvenile fish impinged on rotating fish-return screens at 0.3–0.9 m/s, a harsher case than sliding along mesh at ≤ 0.31 m/s.',
     source: 'EPRI 2010, report 1021372',
   },
   {
@@ -32,7 +32,7 @@ export const SURVIVAL: SurvivalStage[] = [
     source: 'McNabb et al. 2003, TAFS 132:326; Borthwick & Liston 2003, USBR',
   },
   {
-    stage: 'Gravity line, 2.2 km',
+    stage: 'Line, 2.2 km',
     low: 0.7,
     high: 1,
     basis: 'Fish and invertebrate larvae in power-plant return lines (up to 131 m, 0.6–1.8 m/s): length, velocity and bends had no measurable effect.',

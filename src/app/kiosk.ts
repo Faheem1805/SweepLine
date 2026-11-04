@@ -1,18 +1,13 @@
-import { DRIFT_DATA } from '../data/drift.generated';
-import { SEEDS_DATA } from '../data/seeds.generated';
+import { CHALLENGES } from '../config/challenges';
 import { controller } from '../simulation/SimController';
 import { DEFAULT_PARAMS } from '../simulation/types';
 import { useApp } from './store';
 
 /**
  * Booth kiosk (`?kiosk=1`): a self-running loop for a stand where nobody is at the controls.
- * It drives the ordinary run controls (runs, scenarios, camera presets, pages) and shows one
- * caption; captions follow the simulation's state, so they always match the scene. Any click,
- * key or scroll hands control back.
- *
- *   1. Pop-up and sweep: the reference run from the bloom approach, then the release point.
- *   2. Tide turn: the recorded turn, Line B taking over (the scenario paces itself).
- *   3. Evidence: the same-seed result.
+ * It runs the reference bloom, then the problems a judge is most likely to ask about, each as the
+ * same live scenario the problem cards run. Captions follow the simulation's state, so they always
+ * match the scene. Any click, key or scroll hands control back.
  */
 
 export interface KioskCaption {
@@ -22,12 +17,12 @@ export interface KioskCaption {
   text: string;
 }
 
-const STEPS = 3;
+/** The problems the loop shows, in order. */
+const TOUR = ['tide', 'under', 'fail', 'dam', 'dark'] as const;
+const STEPS = TOUR.length + 1;
 const TICK = 400;
-
-const design = DRIFT_DATA.outcomes.find((o) => o.id === DRIFT_DATA.design)!;
-const near = DRIFT_DATA.outcomes.find((o) => o.id === 'as-built')!;
-const pct = (v: number) => `${Math.round(v * 100)}%`;
+/** How long each problem runs once its answer is on screen (ms). */
+const PROBLEM_TIME = 22_000;
 
 let timer: ReturnType<typeof setTimeout> | null = null;
 let running = false;
@@ -41,44 +36,34 @@ async function until(done: () => boolean, maxMs: number): Promise<boolean> {
   return running;
 }
 
-async function popUpAndSweep(): Promise<boolean> {
-  const { setUI, setCamera } = useApp.getState();
+async function reference(): Promise<boolean> {
+  const { setUI, setCamera, setActiveChallenge } = useApp.getState();
   setUI({ page: 'live', compare: false, flowView: false, selection: null, follow: false });
+  setActiveChallenge(null);
   setCamera('aerial');
   controller.params = { ...DEFAULT_PARAMS, seed: controller.params.seed, agentBudget: controller.params.agentBudget };
   await controller.restart('sequence', null);
-  controller.setSpeed(5);
-  const c = () => controller.sweepline.curtain!;
-  caption(1, 'Pop-up deployment', 'The early warning arrives and the curtain rises from the seabed in about a minute: no boat, no crew.');
-  if (!(await until(() => c().mode === 'DEPLOYED', 40_000))) return false;
-  controller.setSpeed(10);
-  caption(1, 'Guide, don’t block', 'The current and gentle water jets sweep the bloom along the curtain into the recovery throat. The intake screens stay as they are.');
-  if (!(await until(() => controller.sweepline.counters.released > 0, 45_000))) return false;
-  setCamera('release');
-  caption(1, 'Released alive', `A low-shear line carries them around the intake. In the design they leave 2 km along the shore, down-drift: ${pct(design.backAtSite)} come back, against ${pct(near.backAtSite)} released next to the intake.`);
-  await wait(12_000);
+  caption(1, 'A bloom reaches the channel', 'The plant draws its water through one channel. Two nets stand across it. The water passes through and the jellyfish cannot.');
+  if (!(await until(() => controller.sweepline.counters.diverted > 40, 60_000))) return false;
+  setCamera('collector');
+  caption(1, 'Swept to the collector', 'The plant’s own flow carries them along the net to a pocket at the wall. A screw lift sends them over the breakwater and 2 km down the coast.');
+  await wait(16_000);
   return running;
 }
 
-async function tideTurn(): Promise<boolean> {
-  const { setCamera } = useApp.getState();
-  setCamera('aerial');
-  await controller.runScenario('tide-turn');
-  const s = controller.sweepline;
-  caption(2, 'The tide turns', 'Recorded current at the site, 8 Oct 2025. Here it reverses about four times a day, so a one-way barrier faces the wrong way half the time.');
-  if (!(await until(() => s.handoverAt >= 0, 70_000))) return false;
-  caption(2, 'Line B takes over', 'The second line pops up on the other side of the intake while Line A guides its last traffic home and settles back onto the seabed.');
-  if (!(await until(() => s.guidedByLine[s.duty] >= 3, 60_000))) return false;
-  caption(2, 'Nothing reaches the screens', 'Line B guides the returning bloom into its throat; both lines share one release line.');
-  await wait(14_000);
-  return running;
-}
-
-async function evidence(): Promise<boolean> {
-  useApp.getState().setUI({ page: 'evidence' });
-  const r = SEEDS_DATA.reference.reduction;
-  caption(3, 'The evidence', `Same bloom, with and without SweepLine: ${pct(r.mean)} fewer jellyfish reach the intake across ${r.n} blooms. Every assumption is listed and exported with the run.`);
-  await wait(14_000);
+async function problem(id: (typeof TOUR)[number], step: number): Promise<boolean> {
+  const c = CHALLENGES.find((x) => x.id === id);
+  if (!c) return running;
+  const { setUI, setCamera, setActiveChallenge } = useApp.getState();
+  setActiveChallenge(c.id);
+  setUI({ flowView: !!c.engineering, compare: !!c.compare, selection: null, follow: false });
+  setCamera(c.camera);
+  await controller.runScenario(c.scenario);
+  caption(step, c.problem, c.trap);
+  await wait(9_000);
+  if (!running) return false;
+  caption(step, 'What we did', c.answer);
+  await wait(PROBLEM_TIME);
   return running;
 }
 
@@ -91,9 +76,11 @@ export function startKiosk(): void {
     // Start once the opening intro has handed over.
     while (running && useApp.getState().intro) await wait(TICK);
     while (running) {
-      if (!(await popUpAndSweep())) break;
-      if (!(await tideTurn())) break;
-      if (!(await evidence())) break;
+      if (!(await reference())) break;
+      let step = 2;
+      for (const id of TOUR) {
+        if (!(await problem(id, step++))) break;
+      }
     }
   })();
 }
@@ -104,7 +91,7 @@ export function stopKiosk(): void {
   if (timer) clearTimeout(timer);
   timer = null;
   useApp.setState({ kiosk: null });
-  controller.setSpeed(5);
+  useApp.getState().setActiveChallenge(null);
   useApp.getState().showToast('Kiosk stopped: the twin is yours', 'info');
 }
 

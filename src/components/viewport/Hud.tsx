@@ -3,9 +3,8 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { getScene } from '../../app/runtime';
 import { useApp } from '../../app/store';
 import { compassLabel } from '../../config/site';
-import { PHASE_LABELS } from '../../simulation/SimController';
 import { CAMERA_PRESETS, type CameraPreset } from '../../three/cameras/CameraRig';
-import { cn, mmss, pct } from '../../utils/format';
+import { cn } from '../../utils/format';
 import { useOutsideClose } from '../layout/TopBar';
 
 /** Current direction & speed card with a compass that follows the camera heading. */
@@ -67,17 +66,7 @@ function TideTrace({ trace }: { trace: number[] }) {
   );
 }
 
-const LINE_STATE: Record<string, string> = {
-  STOWED: 'on the seabed',
-  DEPLOYING: 'rising',
-  DEPLOYED: 'guiding',
-  REEFING: 'reefing',
-  REEFED: 'reefed',
-  UNREEFING: 're-arming',
-  STOWING: 'settling',
-};
-
-/** The recorded tidal current driving a tide run, and which Twin-Line line is on duty. Shown only for tide runs. */
+/** The recorded tide outside against the steady flow inside the channel. Shown only for tide runs. */
 export function TideCard() {
   const s = useApp((st) => st.snap);
   if (!s || !s.tide.on) return null;
@@ -87,7 +76,6 @@ export function TideCard() {
   const date = when.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
   const time = when.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC' });
   const turn = t.turnIn === null ? null : t.turnIn < 1 ? `${Math.max(1, Math.round(t.turnIn * 60))} min` : `${Math.floor(t.turnIn)} h ${String(Math.round((t.turnIn % 1) * 60)).padStart(2, '0')} min`;
-  const tw = s.twin;
   return (
     <div data-hud className="glass pointer-events-auto w-[300px] max-w-full animate-fade-in !rounded-xl px-3.5 py-2.5" title="Copernicus SMOC surface current at the site, along the shore: fitted tide plus its slow residual (simulation input)">
       <div className="flex items-center justify-between gap-2">
@@ -111,40 +99,19 @@ export function TideCard() {
         <span>now</span>
         <span>+6 h</span>
       </div>
-      {tw.enabled ? (
-        <div className="mt-1.5 flex gap-1.5 border-t border-line pt-1.5">
-          {tw.lines.map((l, side) => {
-            const duty = side === tw.duty;
-            const live = l.mode !== 'STOWED';
-            return (
-              <span key={side} className={cn('flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px]', duty ? 'bg-cyan/10 text-white' : 'text-muted')}>
-                <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', live ? (l.mode === 'DEPLOYING' ? 'animate-pulse-soft bg-cyan' : duty ? 'bg-cyan' : 'bg-ink-2') : 'bg-dim')} />
-                <span className="shrink-0 whitespace-nowrap">Line {side === 0 ? 'A' : 'B'}</span>
-                <span className="min-w-0 truncate text-[10.5px] text-ink-2">{LINE_STATE[l.mode]}</span>
-              </span>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="mt-1.5 border-t border-line pt-1.5 text-[11px] text-amber">Single line — no second line for the turned tide</div>
-      )}
-      {t.timeLapse && <div className="mt-1.5 text-[10.5px] text-cyan">Time-lapse ×{s.speed} through slack water</div>}
+      <div className="mt-1.5 flex items-baseline justify-between border-t border-line pt-1.5 text-[11.5px]">
+        <span className="text-ink-2">Inside the channel</span>
+        <span className="num font-semibold text-cyan">{s.channel.speed.toFixed(2)} m/s, one way</span>
+      </div>
     </div>
   );
 }
 
-const OVERVIEW_PRESETS: Array<{ key: CameraPreset; label: string }> = [
-  { key: 'release', label: 'Release Point' },
-  { key: 'top', label: 'Top View' },
-  { key: 'aerial', label: 'Perspective' },
-  { key: 'underwater', label: 'Underwater' },
-];
-
 const MAIN_PRESETS: Array<{ key: CameraPreset; label: string }> = [
-  { key: 'aerial', label: 'Perspective' },
-  { key: 'top', label: 'Top' },
+  { key: 'aerial', label: 'Overview' },
+  { key: 'net', label: 'Net' },
   { key: 'underwater', label: 'Underwater' },
-  { key: 'curtain', label: 'Curtain' },
+  { key: 'collector', label: 'Collector' },
 ];
 
 const MORE_PRESETS = CAMERA_PRESETS.filter((p) => !MAIN_PRESETS.some((m) => m.key === p.key));
@@ -168,7 +135,7 @@ function ToolIcon({ title, active, onClick, children }: { title: string; active?
 }
 
 /** Camera preset switcher and viewport tools. */
-export function ViewportToolbar({ full }: { full?: boolean }) {
+export function ViewportToolbar() {
   const ui = useApp((s) => s.ui);
   const setUI = useApp((s) => s.setUI);
   const setCamera = useApp((s) => s.setCamera);
@@ -180,7 +147,7 @@ export function ViewportToolbar({ full }: { full?: boolean }) {
     document.addEventListener('fullscreenchange', h);
     return () => document.removeEventListener('fullscreenchange', h);
   }, []);
-  const presets = full ? MAIN_PRESETS : OVERVIEW_PRESETS;
+  const presets = MAIN_PRESETS;
   const toggleFs = () => {
     const el = document.querySelector('[data-viewport]') as HTMLElement | null;
     if (!document.fullscreenElement && el) void el.requestFullscreen();
@@ -200,8 +167,7 @@ export function ViewportToolbar({ full }: { full?: boolean }) {
             {p.label}
           </button>
         ))}
-        {full && (
-          <div className="relative" ref={moreRef}>
+        <div className="relative" ref={moreRef}>
             <button type="button" onClick={() => setMoreOpen((o) => !o)} className={cn(segBtn(!!moreActive && !ui.compare), 'flex items-center gap-1 !px-3')}>
               {moreActive ? moreActive.label : 'More'} <ChevronDown size={13} />
             </button>
@@ -222,16 +188,14 @@ export function ViewportToolbar({ full }: { full?: boolean }) {
                 ))}
               </div>
             )}
-          </div>
-        )}
+        </div>
       </div>
       <div data-hud className="glass flex items-center gap-0.5 !rounded-xl p-[3px]">
-        <ToolIcon title={ui.flowView ? 'Flow View on — show realistic ocean' : 'Flow View — show velocity streamlines'} active={ui.flowView} onClick={() => setUI({ flowView: !ui.flowView })}>
+        <ToolIcon title={ui.flowView ? 'Engineering view on — back to the real view' : 'Engineering view: flow, net load, sonar and the water the plant draws in'} active={ui.flowView} onClick={() => setUI({ flowView: !ui.flowView })}>
           <SlidersHorizontal size={15} />
         </ToolIcon>
-        {full && (
-          <>
-            <ToolIcon title={ui.compare ? 'Exit compare mode' : 'Compare Baseline vs SweepLine (same seed)'} active={ui.compare} onClick={() => setUI({ compare: !ui.compare })}>
+        <>
+            <ToolIcon title={ui.compare ? 'Exit compare mode' : 'Compare without and with SweepLine (same bloom)'} active={ui.compare} onClick={() => setUI({ compare: !ui.compare })}>
               <Split size={15} />
             </ToolIcon>
             <ToolIcon title={ui.labels ? 'Hide labels' : 'Show labels'} active={!ui.labels} onClick={() => setUI({ labels: !ui.labels })}>
@@ -240,8 +204,7 @@ export function ViewportToolbar({ full }: { full?: boolean }) {
             <ToolIcon title="Reset view" onClick={() => getScene().resetView()}>
               <RotateCcw size={15} />
             </ToolIcon>
-          </>
-        )}
+        </>
         <ToolIcon title={fs ? 'Exit full screen' : 'Full screen'} onClick={toggleFs}>
           {fs ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
         </ToolIcon>
@@ -257,29 +220,16 @@ export function CompareOverlay() {
   if (!compare || !snap) return null;
   const b = snap.baseline;
   const s = snap.sweepline;
-  const reduction = b.intakeContactPct && s.intakeContactPct !== null && b.intakeContactPct > 0 ? 1 - s.intakeContactPct / b.intakeContactPct : null;
   return (
     <div className="pointer-events-none absolute inset-0">
       <div className="absolute top-0 bottom-0 left-1/2 w-px -translate-x-1/2 bg-gradient-to-b from-cyan/0 via-cyan/50 to-cyan/0" />
-      <div className="absolute top-3 left-3">
-        <span data-hud className="glass block px-2.5 py-1.5 text-[11px] font-semibold tracking-[0.12em] text-ink-2">BASELINE · NO SWEEPLINE</span>
+      <div data-hud className="absolute right-[calc(50%+12px)] bottom-3 left-3 grid grid-cols-2 gap-2">
+        <CompareStat label="Without SweepLine, at the screens" value={`${b.screensT.toFixed(1)} t`} sub={`${b.screenTph.toFixed(1)} t/h`} tone="alarm" />
+        <CompareStat label="Screens" value={b.screenStatus === 'CLEAR' ? 'Clear' : b.screenStatus === 'LOADED' ? 'Loaded' : 'Past capacity'} sub={`${b.screenBacklogT.toFixed(1)} t backlog`} tone={b.screenStatus === 'CLEAR' ? 'ok' : 'warn'} />
       </div>
-      <div data-hud className="absolute top-[52px] left-[calc(50%+12px)] flex flex-col items-start gap-1">
-        <span className="glass block border-cyan/40 px-2.5 py-1.5 text-[11px] font-semibold tracking-[0.12em] text-cyan">SWEEPLINE · {snap.curtain.angle}° LAYOUT</span>
-        <span className="tag !border-line-strong !bg-base/70">Seed {snap.params.seed} · same bloom</span>
-      </div>
-      <div data-hud className="absolute right-[calc(50%+12px)] bottom-3 left-3 grid grid-cols-3 gap-2">
-        <CompareStat label="Intake contact" value={pct(b.intakeContactPct)} sub={`n = ${b.resolved}`} tone="alarm" />
-        <CompareStat label="Screen loading" value={b.screenLoad} sub={`${b.intakeRatePerMin.toFixed(1)} / min`} tone={b.screenLoad === 'HIGH' ? 'alarm' : b.screenLoad === 'MEDIUM' ? 'warn' : 'ok'} />
-        <CompareStat label="Intake contacts" value={String(b.intakeContacts)} sub="cumulative" tone="muted" />
-      </div>
-      <div data-hud className="absolute right-3 bottom-3 left-[calc(50%+12px)] grid grid-cols-3 gap-2">
-        <CompareStat label="Intake contact" value={pct(s.intakeContactPct)} sub={reduction !== null ? `${pct(-reduction)} vs baseline` : `n = ${s.resolved}`} tone="ok" />
-        <CompareStat label="Diversion" value={pct(s.diversionEfficiency)} sub={`${s.diverted} diverted`} tone="info" />
-        <CompareStat label="Under-skirt" value={pct(s.underSkirtPct)} sub={`${s.underSkirt} escapes`} tone="warn" />
-      </div>
-      <div className="absolute bottom-[76px] left-1/2 -translate-x-1/2">
-        <span className="tag !bg-base/80">Simulation estimate</span>
+      <div data-hud className="absolute right-3 bottom-3 left-[calc(50%+12px)] grid grid-cols-2 gap-2">
+        <CompareStat label="With SweepLine, at the screens" value={`${s.screensT.toFixed(1)} t`} sub={`${s.screenTph.toFixed(1)} t/h`} tone="ok" />
+        <CompareStat label="Collected" value={`${s.collectedT.toFixed(1)} t`} sub={`${s.collectTph.toFixed(1)} t/h`} tone="info" />
       </div>
     </div>
   );
@@ -296,140 +246,38 @@ function CompareStat({ label, value, sub, tone }: { label: string; value: string
   );
 }
 
-/** Professional SafeOpen / transfer-fault banner (amber/red used sparingly). */
-export function SafetyBanner() {
-  const snap = useApp((s) => s.snap);
-  if (!snap) return null;
-  const so = snap.safeOpen;
-  const tr = snap.transfer;
-  const active = so.phase !== 'IDLE' && so.phase !== 'COMPLETE';
-  if (active) {
-    return (
-      <div data-hud className="glass pointer-events-auto flex animate-fade-in items-center gap-2.5 border-red/45 px-3 py-1.5 shadow-[0_0_24px_rgba(248,113,113,0.14)]">
-        <span className="relative flex h-2 w-2">
-          <span className="absolute inset-0 animate-ping rounded-full bg-red/60" />
-          <span className="relative h-2 w-2 rounded-full bg-red" />
-        </span>
-        <div className="leading-tight">
-          <div className="text-[10px] font-semibold tracking-[0.14em] text-red">SAFEOPEN</div>
-          <div className="text-[11.5px] text-ink">{PHASE_LABELS[so.phase]}</div>
-        </div>
-        <div className="ml-1 border-l border-line-strong pl-2.5 leading-tight">
-          <div className="text-[10px] text-muted">Reefed</div>
-          <div className="num text-[12px] text-amber">{snap.curtain.reefedPct.toFixed(0)}%</div>
-        </div>
-        <div className="leading-tight">
-          <div className="text-[10px] text-muted">Elapsed</div>
-          <div className="num text-[12px] text-ink">{mmss(so.elapsed)}</div>
-        </div>
-      </div>
-    );
-  }
-  if (so.phase === 'COMPLETE') {
-    return (
-      <div data-hud className="glass pointer-events-auto flex animate-fade-in items-center gap-2.5 border-teal/40 px-3 py-1.5">
-        <span className="h-2 w-2 rounded-full bg-teal" />
-        <div className="leading-tight">
-          <div className="text-[10px] font-semibold tracking-[0.14em] text-teal">INTAKE PROTECTION RESTORED</div>
-          <div className="text-[11.5px] text-ink-2">Reefed upstream-first · existing screens unchanged</div>
-        </div>
-      </div>
-    );
-  }
-  if (tr.primary === 'FAULT') {
-    const ok = tr.standby === 'ONLINE';
-    return (
-      <div data-hud className={cn('glass pointer-events-auto flex animate-fade-in items-center gap-2.5 px-3 py-1.5', ok ? 'border-amber/45' : 'border-red/45')}>
-        <span className={cn('h-2 w-2 rounded-full', ok ? 'bg-amber' : 'animate-pulse-soft bg-red')} />
-        <div className="leading-tight">
-          <div className={cn('text-[10px] font-semibold tracking-[0.14em]', ok ? 'text-amber' : 'text-red')}>TRANSFER FAILURE</div>
-          <div className="text-[11.5px] text-ink">
-            Primary: <span className="text-red">FAULT</span> · Standby:{' '}
-            <span className={tr.standby === 'ONLINE' ? 'text-teal' : tr.standby === 'ACTIVATING' ? 'text-amber' : 'text-red'}>{tr.standby}</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
-  if (snap.status.code === 'OUTSIDE_ENVELOPE') {
-    return (
-      <div data-hud className="glass pointer-events-auto flex animate-fade-in items-center gap-2.5 border-red/45 px-3 py-1.5">
-        <span className="h-2 w-2 animate-pulse-soft rounded-full bg-red" />
-        <div className="leading-tight">
-          <div className="text-[10px] font-semibold tracking-[0.14em] text-red">OUTSIDE VALIDATED OPERATING ENVELOPE</div>
-          <div className="text-[11.5px] text-ink">{snap.envelope.recommendation === 'DO NOT DEPLOY' ? 'DEPLOYMENT NOT RECOMMENDED' : snap.envelope.recommendation}</div>
-        </div>
-      </div>
-    );
-  }
-  return null;
-}
-
-/** Underwater HUD: depth readout and under-skirt escape counter (+1 pulse). */
+/** Underwater HUD: depth readout. */
 export function UnderwaterHud() {
   const underwater = useApp((s) => s.ui.underwater);
   const depth = useApp((s) => s.ui.cameraDepth);
-  const under = useApp((s) => s.snap?.sweepline.underSkirt ?? 0);
-  const underPct = useApp((s) => s.snap?.sweepline.underSkirtPct ?? null);
-  const skirt = useApp((s) => s.snap?.curtain.skirtActual ?? 0);
-  const displayed = useApp((s) => s.ui.displayed);
-  const compare = useApp((s) => s.ui.compare);
-  const [flash, setFlash] = useState<{ n: number; key: number } | null>(null);
-  const [prev, setPrev] = useState(under);
-  if (under !== prev) {
-    if (under > prev) setFlash({ n: under - prev, key: Date.now() });
-    setPrev(under);
-  }
-  useEffect(() => {
-    if (!flash) return;
-    const t = setTimeout(() => setFlash(null), 1800);
-    return () => clearTimeout(t);
-  }, [flash]);
   if (!underwater) return null;
   return (
     <>
       <div className="sl-vignette" />
-      <div className="pointer-events-none absolute bottom-[74px] left-4 flex flex-col gap-2">
-        <div data-hud className="glass px-3 py-2">
-          <div className="flex items-center gap-2 text-[10.5px] font-semibold tracking-[0.14em] text-cyan">
-            <Crosshair size={12} /> UNDERWATER · {depth.toFixed(1)} m
-          </div>
-          {displayed === 'sweepline' && !compare && (
-            <div className="mt-1.5 grid grid-cols-2 gap-x-5 gap-y-0.5 text-[11.5px]">
-              <span className="text-muted">Skirt depth</span>
-              <span className="num text-ink">{skirt.toFixed(1)} m</span>
-              <span className="text-muted">Under-skirt escapes</span>
-              <span className="num text-amber">
-                {under} <span className="text-dim">({pct(underPct)})</span>
-              </span>
-            </div>
-          )}
+      <div className="pointer-events-none absolute top-4 left-1/2 -translate-x-1/2">
+        <div data-hud className="glass flex items-center gap-2 px-3 py-1.5 text-[11px] font-semibold tracking-[0.12em] text-cyan">
+          <Crosshair size={12} /> UNDERWATER · {depth.toFixed(1)} m
         </div>
-        {flash && displayed === 'sweepline' && (
-          <div key={flash.key} className="glass w-fit animate-fade-in border-red/50 px-3 py-1.5 text-[12px] font-semibold text-red">
-            UNDER-SKIRT ESCAPE +{flash.n}
-          </div>
-        )}
       </div>
     </>
   );
 }
 
-/** Small legend for Flow View state colours. */
+/** Legend for the engineering view. */
 export function FlowLegend() {
   const flow = useApp((s) => s.ui.flowView);
   if (!flow) return null;
   const items: Array<[string, string]> = [
-    ['#bfdbfe', 'Approaching'],
-    ['#26d9f2', 'Guided'],
-    ['#ffb84a', 'Throat queue'],
+    ['#bfdbfe', 'Drifting in'],
+    ['#26d9f2', 'On the net'],
+    ['#ffb84a', 'In the pocket'],
     ['#4df29a', 'Released'],
-    ['#ff5c4d', 'Under-skirt / contact'],
+    ['#ff5c4d', 'Past a net, or at the screens'],
   ];
   return (
     <div data-hud className="glass pointer-events-auto px-3 py-2">
       <div className="mb-1 flex items-center gap-1.5 text-[10.5px] font-semibold tracking-[0.12em] text-cyan">
-        <Workflow size={11} /> FLOW VIEW
+        <Workflow size={11} /> ENGINEERING VIEW
       </div>
       <div className="flex flex-col gap-0.5">
         {items.map(([c, l]) => (
@@ -439,10 +287,13 @@ export function FlowLegend() {
           </div>
         ))}
         <div className="mt-1 flex items-center gap-2 text-[11px] text-ink-2">
-          <span className="h-[2px] w-4 bg-gradient-to-r from-cyan/30 to-white" /> Current streamlines
+          <span className="h-[2px] w-4 bg-gradient-to-r from-cyan/30 to-white" /> Flow
         </div>
         <div className="flex items-center gap-2 text-[11px] text-ink-2">
-          <span className="h-2 w-3 rounded-sm bg-red/40" /> Modelled intake capture zone
+          <span className="h-0 w-4 border-t-2 border-dashed border-red/80" /> Water the plant draws in
+        </div>
+        <div className="flex items-center gap-2 text-[11px] text-ink-2">
+          <span className="h-2 w-4 rounded-sm bg-gradient-to-r from-teal via-amber to-red" /> Net load
         </div>
       </div>
     </div>
@@ -457,7 +308,7 @@ export function ViewportFooter() {
     <div
       data-hud
       className="pointer-events-auto absolute right-3 bottom-2.5 text-right text-[10.5px] text-ink-2/55"
-      title="Reference coastal intake geometry is schematic and not ENEC facility data. Agent-based engineering simulation — not validated field performance. Agents are drawn enlarged at distance for legibility."
+      title="Reference coastal intake geometry is schematic and does not represent any real plant. Agent-based engineering simulation, not validated field performance. Agents are drawn enlarged at distance for legibility."
     >
       Schematic reference geometry · simulation estimate · agents enlarged for legibility
     </div>
@@ -477,7 +328,7 @@ export function LoadingOverlay() {
         <div className="mt-3 h-[4px] overflow-hidden rounded-full bg-line">
           <div className="h-full rounded-full bg-gradient-to-r from-cyan to-teal transition-[width] duration-200" style={{ width: `${loading.progress * 100}%` }} />
         </div>
-        <div className="mt-2 text-[11px] text-muted">Same seed for Baseline and SweepLine — identical bloom in both worlds.</div>
+        <div className="mt-2 text-[11px] text-muted">The same bloom runs with and without SweepLine.</div>
       </div>
     </div>
   );

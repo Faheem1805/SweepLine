@@ -1,38 +1,41 @@
 import { Inspector } from '../components/panels/Inspector';
-import { CompactTimeline, EventLogMenu, LiveHeadline, SafeOpenPanel, StressTestMenu } from '../components/panels/LivePanels';
-import { FlowLegend, TideCard, UnderwaterHud, ViewportToolbar } from '../components/viewport/Hud';
+import { EventLogMenu, LiveHeadline, MarginsCard, PipelineStrip, ProblemRail, WhatIfMenu } from '../components/panels/LivePanels';
+import { CompareOverlay, FlowLegend, TideCard, UnderwaterHud, ViewportToolbar } from '../components/viewport/Hud';
 import { ViewportSlot } from '../components/viewport/ViewportSlot';
 
 /**
- * 01 — Live Simulation: the 3D scene fills the page; a headline states the
- * situation, SweepLine's response and the result. Everything else is contextual.
+ * 01 — Live Simulation: the 3D twin fills the page. The left states the result, the bottom follows
+ * the bloom from the sea to the release point, and the right holds the problems a judge will ask
+ * about, each one a button that runs it.
  */
 export function LiveSimulation() {
   return (
     <div className="flex min-w-0 flex-1 p-3">
       <ViewportSlot className="min-h-[360px] flex-1 rounded-[16px] border border-line">
         <div data-live-hud className="pointer-events-none absolute inset-0 z-10">
-          <div className="absolute top-4 left-4 flex flex-col items-start gap-3">
+          <div className="absolute top-4 left-4 flex flex-col items-start gap-2.5">
             <LiveHeadline />
+            <MarginsCard />
             <TideCard />
-            <SafeOpenPanel />
-          </div>
-          <div className="absolute top-4 right-4">
-            <ViewportToolbar />
-          </div>
-          <div className="absolute top-[58px] right-4">
-            <Inspector />
-          </div>
-          <div className="absolute right-4 bottom-[74px] flex items-end gap-2">
-            <EventLogMenu />
-            <StressTestMenu />
-          </div>
-          <div className="absolute bottom-[74px] left-4">
             <FlowLegend />
           </div>
+          <div className="absolute top-4 right-[372px]">
+            <ViewportToolbar />
+          </div>
+          <div className="absolute top-[64px] right-[372px]">
+            <Inspector />
+          </div>
+          <div className="absolute top-4 right-4 bottom-4">
+            <ProblemRail />
+          </div>
           <UnderwaterHud />
-          <div className="absolute inset-x-4 bottom-4">
-            <CompactTimeline />
+          <CompareOverlay />
+          <div className="absolute right-[372px] bottom-4 left-4 flex flex-col gap-2">
+            <div className="flex items-end justify-end gap-2">
+              <EventLogMenu />
+              <WhatIfMenu />
+            </div>
+            <PipelineStrip />
           </div>
         </div>
       </ViewportSlot>

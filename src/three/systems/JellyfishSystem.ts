@@ -1,10 +1,10 @@
 import * as THREE from 'three';
-import { S_FREE_DRIFT, S_INACTIVE, S_INTAKE_CONTACT, S_TRANSFERRED, S_UNDER_SKIRT } from '../../simulation/Agent';
+import { S_FREE_DRIFT, S_INACTIVE, S_INTAKE_CONTACT, S_TRANSFERRED, S_PAST_NET } from '../../simulation/Agent';
 import type { SimulationEngine } from '../../simulation/SimulationEngine';
 import { CAUSTIC_GLSL, MEDIUM_GLSL, SHARED } from '../environment/shaderChunks';
 
 /** Distance-based legibility scaling: true scale up close, enlarged at aerial distances. */
-export const LEGIBILITY = { start: 12, perMetre: 1 / 15, max: 11 };
+export const LEGIBILITY = { start: 14, perMetre: 1 / 16, max: 10 };
 
 /** Height of the bell crown above the instance origin, in bell diameters (see jellyfishGeometry). */
 const BELL_TOP = 0.37;
@@ -300,7 +300,7 @@ export class JellyfishSystem {
       const selected = id[i] === this.selectedId;
       let alpha = fade[i];
       if (st === S_INTAKE_CONTACT) alpha *= 0.85;
-      const stateCode = st === S_FREE_DRIFT && p.flags[i] & 2 ? S_UNDER_SKIRT : st;
+      const stateCode = st === S_FREE_DRIFT && p.flags[i] & 2 ? S_PAST_NET : st;
       const useNear = (dist < NEAR_DISTANCE || selected) && near.count < nearCap;
       if (useNear) {
         const k = near.count++;

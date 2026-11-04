@@ -38,7 +38,7 @@ export const SITE = {
   /** The dredged intake channel: walls (inner toes of the breakwaters) at x = ±halfWidth, open to the sea at mouthZ. */
   channel: {
     halfWidth: 70,
-    depth: 9,
+    depth: 12,
     mouthZ: 540,
   },
 
@@ -59,7 +59,7 @@ export const SITE = {
     x1: 60,
     mouthZ: -30,
     backZ: -84,
-    sillDepth: 9,
+    sillDepth: 12,
     deckY: 3.8,
     bays: 12,
     pierWidth: 1.6,
@@ -94,9 +94,9 @@ export const SITE = {
 
   /** Release line: over the east breakwater, then along the seabed to the outlet. */
   pipeRoute: [
-    [70, 66],
-    [98, 66],
-    [130, 72],
+    [80, 89],
+    [100, 89],
+    [132, 94],
     [620, 150],
     [2040, 300],
   ] as ReadonlyArray<readonly [number, number]>,

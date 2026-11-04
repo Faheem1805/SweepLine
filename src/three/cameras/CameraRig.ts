@@ -1,16 +1,17 @@
 import * as THREE from 'three';
 import type { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { SITE, mirrorX, seabedDepth } from '../../config/site';
-import { getCurtainLayout, pointAtArc, type CurtainLayout } from '../../simulation/geometry';
+import { SITE, seabedDepth } from '../../config/site';
+import { NETS, pointOnNet } from '../../simulation/geometry';
 
-export type CameraPreset = 'aerial' | 'top' | 'underwater' | 'curtain' | 'throat' | 'intake' | 'release' | 'compare' | 'free';
+export type CameraPreset = 'aerial' | 'top' | 'mouth' | 'net' | 'underwater' | 'collector' | 'intake' | 'release' | 'compare' | 'free';
 
 export const CAMERA_PRESETS: Array<{ key: Exclude<CameraPreset, 'free' | 'compare'>; label: string }> = [
+  { key: 'aerial', label: 'Overview' },
   { key: 'top', label: 'Top' },
-  { key: 'aerial', label: 'Perspective' },
+  { key: 'mouth', label: 'Channel mouth' },
+  { key: 'net', label: 'Along the net' },
   { key: 'underwater', label: 'Underwater' },
-  { key: 'curtain', label: 'Curtain' },
-  { key: 'throat', label: 'Throat' },
+  { key: 'collector', label: 'Collector' },
   { key: 'intake', label: 'Intake' },
   { key: 'release', label: 'Release' },
 ];
@@ -20,107 +21,39 @@ export interface CameraPose {
   target: THREE.Vector3;
 }
 
-/** Perspective preset on a wide screen: from offshore and slightly upstream, about 49° down. */
-const AERIAL_TARGET = new THREE.Vector3(-18.6, 0, -10.2);
-const AERIAL_OFFSET = new THREE.Vector3(-15.9, 137.4, 120.6);
-const _cam = new THREE.PerspectiveCamera();
-const _p = new THREE.Vector3();
-
-/**
- * Perspective preset for a canvas aspect: the wide-screen framing, moved upstream and back just
- * enough to keep in view where a run's bloom starts (upstream of the curtain's anchor) as well
- * as the throat and the intake.
- */
-function aerialPose(layout: CurtainLayout, aspect: number, fov: number): CameraPose {
-  const keep: Array<[number, number, number]> = [
-    [layout.upstream.x - 22, -1, layout.upstream.z + 3],
-    [layout.upstream.x - 22, -1, -8],
-    [layout.throat.mx, 0, layout.throat.mz],
-    [SITE.intake.x1, SITE.intake.deckY, SITE.intake.mouthZ],
-  ];
-  _cam.fov = fov;
-  _cam.aspect = aspect;
-  _cam.updateProjectionMatrix();
-  const fits = (tx: number, scale: number) => {
-    _cam.position.set(tx, 0, AERIAL_TARGET.z).addScaledVector(AERIAL_OFFSET, scale);
-    _cam.lookAt(tx, 0, AERIAL_TARGET.z);
-    _cam.updateMatrixWorld();
-    for (const k of keep) {
-      _p.set(k[0], k[1], k[2]).project(_cam);
-      if (Math.abs(_p.x) > 0.94 || Math.abs(_p.y) > 0.94) return false;
-    }
-    return true;
-  };
-  let best = { tx: AERIAL_TARGET.x, scale: 2.2 };
-  for (let shift = 0; shift <= 60; shift += 3) {
-    const tx = AERIAL_TARGET.x - shift;
-    if (!fits(tx, 2.2)) continue;
-    let lo = 1;
-    let hi = 2.2;
-    if (!fits(tx, lo)) {
-      for (let i = 0; i < 14; i++) {
-        const mid = (lo + hi) / 2;
-        if (fits(tx, mid)) hi = mid;
-        else lo = mid;
-      }
-    } else hi = lo;
-    if (hi < best.scale - 1e-3) best = { tx, scale: hi };
-  }
-  const target = new THREE.Vector3(best.tx, 0, AERIAL_TARGET.z);
-  return { pos: target.clone().addScaledVector(AERIAL_OFFSET, best.scale), target };
-}
-
-/**
- * Camera presets derived from the duty line's anchor layout and the reference site (`aspect` and
- * `fov` of the view). For the Twin-Line's mirror-image line the pose is the mirror of its side-0 pose.
- */
-export function presetPose(key: Exclude<CameraPreset, 'free'>, layout: CurtainLayout, aspect = 16 / 9, fov = 42): CameraPose {
-  if (layout.side === 0) return sidePose(key, layout, aspect, fov);
-  const p = sidePose(key, getCurtainLayout(layout.angle, 0), aspect, fov);
-  p.pos.x = mirrorX(p.pos.x);
-  p.target.x = mirrorX(p.target.x);
-  return p;
-}
-
-function sidePose(key: Exclude<CameraPreset, 'free'>, layout: CurtainLayout, aspect: number, fov: number): CameraPose {
-  const th = layout.throat;
+/** Camera presets on the reference site. The overview stands offshore to the west, looking along the channel to the plant. */
+export function presetPose(key: Exclude<CameraPreset, 'free'>): CameraPose {
+  const L = NETS[0];
+  const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
   switch (key) {
     case 'top':
-      // Framed so the land strip, not the curtain's upstream end, sits under the Live headline (top left).
-      return { pos: new THREE.Vector3(-14, 330, -3.99), target: new THREE.Vector3(-14, 0, -4) };
+      return { pos: v(0, 1120, 300.01), target: v(0, 0, 300) };
     case 'compare':
-      return { pos: new THREE.Vector3(-42, 292, 92), target: new THREE.Vector3(-40, -2, -22) };
+      return { pos: v(-300, 640, 760), target: v(10, 0, 250) };
+    case 'mouth':
+      return { pos: v(-250, 86, 760), target: v(20, 0, 500) };
+    case 'net': {
+      const p = pointOnNet(L, L.length * 0.42);
+      return { pos: v(p.x - L.tx * 70 + L.nx * 28, 15, p.z - L.tz * 70 + L.nz * 28), target: v(p.x + L.tx * 70, 0, p.z + L.tz * 70) };
+    }
     case 'underwater': {
-      // Downstream section, looking along the bloom face toward the throat where guided traffic converges.
-      const p = pointAtArc(layout, layout.length * 0.78);
+      const p = pointOnNet(L, L.length * 0.74);
       return {
-        pos: new THREE.Vector3(p.x + p.nx * 7.5 - p.tx * 8, -2.5, p.z + p.nz * 7.5 - p.tz * 8),
-        target: new THREE.Vector3(p.x + p.tx * 9 + p.nx * 0.6, -1.7, p.z + p.tz * 9 + p.nz * 0.6),
+        pos: v(p.x + L.nx * 7 - L.tx * 12, -4.2, p.z + L.nz * 7 - L.tz * 12),
+        target: v(p.x + L.tx * 14 + L.nx * 0.6, -3.6, p.z + L.tz * 14 + L.nz * 0.6),
       };
     }
-    case 'curtain': {
-      const p = pointAtArc(layout, layout.length * 0.55);
-      return {
-        pos: new THREE.Vector3(p.x + p.nx * 26 - p.tx * 22, 11, p.z + p.nz * 26 - p.tz * 22),
-        target: new THREE.Vector3(p.x + p.tx * 12, -1, p.z + p.tz * 12),
-      };
-    }
-    case 'throat':
-      return {
-        pos: new THREE.Vector3(th.mx - 13, 6.5, th.mz + 12),
-        target: new THREE.Vector3(th.mx + 3, -0.8, th.mz - 1),
-      };
-    case 'intake': {
-      const cx = (SITE.intake.x0 + SITE.intake.x1) / 2;
-      return { pos: new THREE.Vector3(cx - 8, 9, SITE.intake.mouthZ + 30), target: new THREE.Vector3(cx + 2, 0.5, SITE.intake.mouthZ) };
-    }
+    case 'collector':
+      return { pos: v(26, 19, 44), target: v(70, 2.5, 76) };
+    case 'intake':
+      return { pos: v(-70, 34, 120), target: v(0, 1, -30) };
     case 'release': {
       const r = SITE.release;
-      return { pos: new THREE.Vector3(r.x - 30, 16, r.z + 26), target: new THREE.Vector3(r.x + 10, 0, r.z + 4) };
+      return { pos: v(r.x - 46, 22, r.z + 44), target: v(r.x + 8, 0, r.z + 4) };
     }
     case 'aerial':
     default:
-      return aerialPose(layout, aspect, fov);
+      return { pos: v(-430, 200, 800), target: v(30, 0, 250) };
   }
 }
 
@@ -197,13 +130,13 @@ export class CameraRig {
     return this.tween !== null;
   }
 
-  /** Preset pose framed for this camera's current aspect. */
-  pose(key: Exclude<CameraPreset, 'free'>, layout: CurtainLayout): CameraPose {
-    return presetPose(key, layout, this.camera.aspect, this.camera.fov);
+  /** Preset pose. */
+  pose(key: Exclude<CameraPreset, 'free'>): CameraPose {
+    return presetPose(key);
   }
 
-  goTo(key: Exclude<CameraPreset, 'free'>, layout: CurtainLayout, duration = 1.7): void {
-    const to = this.pose(key, layout);
+  goTo(key: Exclude<CameraPreset, 'free'>, duration = 1.7): void {
+    const to = this.pose(key);
     this.flyTo(to, duration);
     this.current = key;
     this.onPresetChange?.(key);
@@ -214,7 +147,7 @@ export class CameraRig {
     const mid = from.pos.clone().lerp(to.pos, 0.5);
     const dist = from.pos.distanceTo(to.pos);
     const crossing = (from.pos.y > 0) !== (to.pos.y > 0);
-    const lift = Math.min(60, dist * 0.25);
+    const lift = Math.min(160, dist * 0.25);
     if (crossing) mid.y = Math.max(from.pos.y, to.pos.y, 6) + lift * 0.3;
     else if (to.pos.y > 0) mid.y = Math.max(mid.y, Math.max(from.pos.y, to.pos.y) + lift * 0.4);
     this.tween = { from, to: { pos: to.pos.clone(), target: to.target.clone() }, ctrl: mid, t: 0, duration, path };
@@ -244,8 +177,8 @@ export class CameraRig {
     this.controls.target.lerpVectors(tw.from.target, tw.to.target, k);
   }
 
-  snap(key: Exclude<CameraPreset, 'free'>, layout: CurtainLayout): void {
-    const p = this.pose(key, layout);
+  snap(key: Exclude<CameraPreset, 'free'>): void {
+    const p = this.pose(key);
     this.camera.position.copy(p.pos);
     this.controls.target.copy(p.target);
     this.current = key;

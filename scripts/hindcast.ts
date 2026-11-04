@@ -9,6 +9,7 @@
  *   npm run study:hindcast              # uses the downloads cached in .cache/tide
  *   npm run study:hindcast -- --refresh
  */
+import { WAVE_SHELTER } from '../src/config/site';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { OPERATING_ENVELOPE } from '../src/config/operatingEnvelope';
@@ -52,7 +53,8 @@ const time = cur.hourly.time;
 if (wav.hourly.time.length !== time.length || wav.hourly.time[0] !== time[0]) throw new Error('Wave and current records do not line up');
 
 const E = OPERATING_ENVELOPE;
-const limits = { wave: E.waveHeight.max, waveNear: E.waveHeight.near, current: E.currentSpeed.max, currentNear: E.currentSpeed.near };
+// Offshore equivalents of the limits at the net. The current outside sets no limit: the plant sets the flow in the channel.
+const limits = { wave: E.wave.max / WAVE_SHELTER, waveNear: E.wave.near / WAVE_SHELTER, current: Infinity, currentNear: Infinity };
 
 function period(label: string, keep: (t: string) => boolean): HindcastPeriod {
   const p: HindcastPeriod = { label, hours: 0, maxWave: 0, maxCurrent: 0, overWave: 0, nearWave: 0, overCurrent: 0, nearCurrent: 0, longestStandDown: 0 };

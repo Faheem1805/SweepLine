@@ -94,6 +94,7 @@ function domeMaterial(sky: THREE.CubeTexture): THREE.ShaderMaterial {
       uSunDir: SHARED.uSunDir,
       uSunColor: SHARED.uSunColor,
       uWaterScatter: SHARED.uWaterScatter,
+      uBright: { value: 1 },
     },
     vertexShader: /* glsl */ `
       varying vec3 vDir;
@@ -109,9 +110,10 @@ function domeMaterial(sky: THREE.CubeTexture): THREE.ShaderMaterial {
       uniform vec3 uSunDir;
       uniform vec3 uSunColor;
       uniform vec3 uWaterScatter;
+      uniform float uBright;
       void main() {
         vec3 d = normalize(vDir);
-        vec3 col = textureCube(uSky, d).rgb;
+        vec3 col = textureCube(uSky, d).rgb * uBright;
         float s = max(dot(d, uSunDir), 0.0);
         col += uSunColor * pow(s, 1400.0) * 46.0;
         // Camera below the surface: open water fades to the in-scattered water colour.
@@ -161,6 +163,11 @@ export class SkyDome {
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = -1000;
     this.mesh.name = 'sky';
+  }
+
+  /** Dim the sky (night). */
+  setBrightness(k: number): void {
+    (this.mesh.material as THREE.ShaderMaterial).uniforms.uBright.value = k;
   }
 
   /** Keep the dome centred on the camera. */

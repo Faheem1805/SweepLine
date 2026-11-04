@@ -1,211 +1,95 @@
-import { useMemo } from 'react';
-import { hash01 } from '../../simulation/seededRandom';
+import { ASSUMPTIONS } from '../../config/assumptions';
 
-const W = 780;
-const H = 382;
-const TOP = 64;
-const LEFT = 56;
-const CURTAIN_X = 470;
-/** Dark outline behind labels drawn over the bloom and jets, so they stay legible. */
-const HALO = { stroke: '#082531', strokeWidth: 4, strokeLinejoin: 'round' as const, paintOrder: 'stroke' };
+const AMBER = '#f5b94c';
+const CYAN = '#22d3ee';
+const TEAL = '#2dd4bf';
+const INK = '#e7f1f5';
+const MUTED = '#93a9b6';
 
-/**
- * Cross-section through the curtain at its shallowest point, drawn from live
- * simulation values: skirt depth and blow-back, seabed clearance, bloom depth
- * distribution and wave height. Schematic — not to scale horizontally.
- */
-export function SideSchematic({
-  skirt,
-  liftDeg,
-  seabed,
-  mean,
-  sd,
-  p90,
-  hs,
-  current,
-  underPct,
-  minClearance,
-  jet = 0,
-}: {
-  skirt: number;
-  liftDeg: number;
-  seabed: number;
-  mean: number;
-  sd: number;
-  p90: number;
-  hs: number;
-  current: number;
-  underPct: number | null;
-  minClearance: number;
-  /** Active-flow jet output 0..1 (0 = passive curtain). */
-  jet?: number;
-}) {
-  const dMax = Math.max(6, Math.ceil(seabed + 0.8));
-  const k = (H - TOP - 26) / dMax;
-  const y = (d: number) => TOP + d * k;
-  const ySea = y(seabed);
-
-  // Deterministic bloom sample following the configured depth distribution.
-  const jellies = useMemo(() => {
-    const out: Array<{ x: number; d: number; s: number }> = [];
-    for (let i = 0; i < 46; i++) {
-      const u1 = Math.max(1e-4, hash01(i, 1.7));
-      const u2 = hash01(i, 9.3);
-      const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-      out.push({ x: 92 + hash01(i, 4.1) * 300, d: Math.max(0.25, mean + sd * z), s: 0.8 + hash01(i, 6.6) * 0.5 });
-    }
-    return out;
-  }, [mean, sd]);
-
-  const amp = Math.min(13, Math.max(2, (hs / 2) * k));
-  let wave = `M0 ${TOP}`;
-  for (let x = 0; x <= W; x += 10) wave += ` L${x} ${(TOP + amp * Math.sin(x / 38)).toFixed(1)}`;
-
-  const lift = (liftDeg * Math.PI) / 180;
-  const bx = CURTAIN_X + skirt * k * Math.sin(lift);
-  const by = y(0) + skirt * k * Math.cos(lift);
-  const clearance = seabed - skirt * Math.cos(lift);
-  const dimX = Math.max(bx, CURTAIN_X) + 46;
-
+function Arrow({ x1, y1, x2, y2, color }: { x1: number; y1: number; x2: number; y2: number; color: string }) {
+  const a = Math.atan2(y2 - y1, x2 - x1);
+  const h = 8;
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label={`Side section: skirt ${skirt.toFixed(1)} m, seabed ${seabed.toFixed(1)} m, bloom P90 ${p90.toFixed(1)} m`}>
+    <g stroke={color} fill={color} strokeWidth={2}>
+      <line x1={x1} y1={y1} x2={x2 - Math.cos(a) * 4} y2={y2 - Math.sin(a) * 4} />
+      <path d={`M${x2} ${y2} L${x2 - h * Math.cos(a - 0.45)} ${y2 - h * Math.sin(a - 0.45)} L${x2 - h * Math.cos(a + 0.45)} ${y2 - h * Math.sin(a + 0.45)} z`} stroke="none" />
+    </g>
+  );
+}
+
+/** How the flow splits at the net: a small part through the mesh, a large part along it. */
+export function FlowSplit({ angle, channel, through, sweep }: { angle: number; channel: number; through: number; sweep: number }) {
+  const a = (angle * Math.PI) / 180;
+  const ox = 44;
+  const oy = 160;
+  const L = 300;
+  const nx = ox + L * Math.cos(a);
+  const ny = oy - L * Math.sin(a);
+  const px = ox + L * 0.5 * Math.cos(a);
+  const py = oy - L * 0.5 * Math.sin(a);
+  const scale = 230;
+  const vx = px + channel * scale;
+  const tx = px + sweep * scale * Math.cos(a);
+  const ty = py - sweep * scale * Math.sin(a);
+  return (
+    <svg viewBox="0 0 400 200" className="block h-auto w-full" role="img" aria-label={`A net at ${angle.toFixed(0)} degrees splits ${channel.toFixed(2)} metres per second into ${through.toFixed(2)} through the mesh and ${sweep.toFixed(2)} along it`}>
+      <line x1={ox} y1={oy} x2={nx} y2={ny} stroke={AMBER} strokeWidth={3} />
+      <text x={ox + 6} y={oy + 18} fill={AMBER} fontSize={12} fontWeight={600}>
+        Net at {angle.toFixed(0)}°
+      </text>
+      <Arrow x1={px} y1={py} x2={vx} y2={py} color={CYAN} />
+      <Arrow x1={px} y1={py} x2={tx} y2={ty} color={TEAL} />
+      <Arrow x1={tx} y1={ty} x2={vx} y2={py} color={through <= ASSUMPTIONS.screenCriteria.approachMax ? INK : '#f87171'} />
+      <text x={vx + 6} y={py + 4} fill={CYAN} fontSize={12} fontWeight={600}>
+        {channel.toFixed(2)} m/s
+      </text>
+      <text x={tx - 8} y={ty - 8} fill={TEAL} fontSize={12} fontWeight={600} textAnchor="end">
+        {sweep.toFixed(2)} along
+      </text>
+      <text x={vx + 6} y={py + 22} fill={through <= ASSUMPTIONS.screenCriteria.approachMax ? INK : '#f87171'} fontSize={12} fontWeight={600}>
+        {through.toFixed(3)} through
+      </text>
+    </svg>
+  );
+}
+
+/** Section through a net: float line, full-depth mesh, ground line, pile and the relief dip. */
+export function NetSection({ depth }: { depth: number }) {
+  const y0 = 46;
+  const bed = 180;
+  return (
+    <svg viewBox="0 0 400 200" className="block h-auto w-full" role="img" aria-label={`Section through the net from the float line to the seabed, ${depth} metres deep`}>
+      <rect y={y0} width={400} height={bed - y0} fill="#0e4257" />
+      <rect y={bed} width={400} height={20} fill="#6a5f43" />
+      <line x1={0} y1={y0} x2={400} y2={y0} stroke={CYAN} strokeOpacity={0.7} />
+      <text x={8} y={y0 - 8} fill={MUTED} fontSize={12}>
+        Still water
+      </text>
+      {/* Piles. */}
+      {[80, 300].map((x) => (
+        <rect key={x} x={x - 6} y={18} width={12} height={bed + 14 - 18} fill="#3a4a53" />
+      ))}
+      {/* Mesh. */}
+      <path d={`M86 ${y0 + 1} L294 ${y0 + 1} L294 ${bed} L86 ${bed} z`} fill="url(#netmesh)" stroke={AMBER} strokeOpacity={0.55} />
       <defs>
-        <linearGradient id="ss-sea" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0" stopColor="#0f4a58" />
-          <stop offset="1" stopColor="#06202b" />
-        </linearGradient>
-        <linearGradient id="ss-sky" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0" stopColor="#0b1822" />
-          <stop offset="1" stopColor="#11293a" />
-        </linearGradient>
-        <marker id="ss-arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-          <path d="M0,0 L10,5 L0,10 z" fill="#7dd3fc" />
-        </marker>
-        <marker id="ss-dim" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-          <path d="M0,0 L10,5 L0,10 z" fill="#B9CBD3" />
-        </marker>
-        <marker id="ss-esc" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-          <path d="M0,0 L10,5 L0,10 z" fill="#f5b94c" />
-        </marker>
-        <marker id="ss-jet" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-          <path d="M0,0 L10,5 L0,10 z" fill="#22d3ee" />
-        </marker>
+        <pattern id="netmesh" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <path d="M0 0 H9 M0 0 V9" stroke="#cfd8d0" strokeOpacity={0.5} strokeWidth={0.7} />
+        </pattern>
       </defs>
-      <rect x="0" y="0" width={W} height={H} rx="12" fill="url(#ss-sky)" />
-      <path d={`${wave} L${W} ${H} L0 ${H} Z`} fill="url(#ss-sea)" />
-      <path d={wave} fill="none" stroke="#7dd3fc" strokeOpacity="0.55" strokeWidth="1.4" />
-      {/* Seabed */}
-      <path d={`M0 ${ySea + 6} L${W} ${ySea - 4} L${W} ${H} L0 ${H} Z`} fill="#2b2b24" />
-      <path d={`M0 ${ySea + 6} L${W} ${ySea - 4}`} stroke="#6b6448" strokeWidth="1.5" />
-      <text x={W - 14} y={H - 12} fill="#8a8466" fontSize="11" textAnchor="end">
-        Seabed
+      {/* Float line and ground line. */}
+      <line x1={86} y1={y0 - 3} x2={294} y2={y0 - 3} stroke={AMBER} strokeWidth={6} strokeLinecap="round" />
+      <line x1={86} y1={bed - 1} x2={294} y2={bed - 1} stroke="#dfe5e4" strokeWidth={4} />
+      <text x={190} y={y0 - 12} fill={AMBER} fontSize={12} fontWeight={600} textAnchor="middle">
+        Float line, dips at 0.12 m of head
       </text>
-      {/* Depth axis */}
-      {Array.from({ length: dMax + 1 }, (_, d) => (
-        <g key={d}>
-          <line x1={LEFT - 6} x2={LEFT} y1={y(d)} y2={y(d)} stroke="#4E6472" />
-          <text x={LEFT - 10} y={y(d) + 4} fill="#7992A0" fontSize="11" textAnchor="end">
-            {d} m
-          </text>
-        </g>
-      ))}
-      <line x1={LEFT} x2={LEFT} y1={y(0)} y2={y(dMax)} stroke="#4E6472" />
-      {/* Current */}
-      {[0.6, 1.6, 2.6].map((d) => (
-        <line key={d} x1={LEFT + 14} x2={LEFT + 64} y1={y(d)} y2={y(d)} stroke="#7dd3fc" strokeWidth="1.6" markerEnd="url(#ss-arr)" opacity="0.8" />
-      ))}
-      <text x={LEFT + 12} y={TOP - 22} fill="#7dd3fc" fontSize="11.5">
-        Current {current.toFixed(2)} m/s
+      <text x={190} y={(y0 + bed) / 2 + 4} fill={INK} fontSize={12} fontWeight={600} textAnchor="middle">
+        {depth} m of mesh, surface to seabed
       </text>
-      {/* Bloom */}
-      {jellies.map((j, i) => {
-        const cy = y(Math.min(j.d, seabed - 0.2));
-        const r = 5.2 * j.s;
-        return (
-          <g key={i} transform={`translate(${j.x} ${cy})`} opacity={0.75}>
-            <path d={`M${-r} 0 A${r} ${r} 0 0 1 ${r} 0 Z`} fill="#cfe3ff" fillOpacity="0.55" />
-            <path d={`M${-r * 0.5} 0 v${r * 1.1} M0 0 v${r * 1.4} M${r * 0.5} 0 v${r * 1.1}`} stroke="#cfe3ff" strokeOpacity="0.5" strokeWidth="0.8" />
-          </g>
-        );
-      })}
-      <line x1={LEFT + 4} x2={CURTAIN_X - 14} y1={y(p90)} y2={y(p90)} stroke="#B9CBD3" strokeOpacity="0.7" strokeDasharray="5 4" />
-      <text x={LEFT + 10} y={y(p90) - 6} fill="#B9CBD3" fontSize="11.5" {...HALO}>
-        Bloom P90 {p90.toFixed(1)} m
+      <text x={190} y={bed + 15} fill={INK} fontSize={12} textAnchor="middle">
+        Weighted ground line
       </text>
-      {/* Under-skirt escape path */}
-      {underPct !== null && underPct > 0 && (
-        <g>
-          <path
-            d={`M${CURTAIN_X - 110} ${y(Math.min(p90, seabed - 0.4))} Q${bx} ${Math.min(by + 34, ySea - 6)} ${CURTAIN_X + 120} ${y(Math.min(p90, seabed - 0.4)) + 6}`}
-            fill="none"
-            stroke="#f5b94c"
-            strokeWidth="1.6"
-            strokeDasharray="5 4"
-            markerEnd="url(#ss-esc)"
-          />
-          <text x={CURTAIN_X + 126} y={y(Math.min(p90, seabed - 0.4)) + 22} fill="#f5b94c" fontSize="11.5" {...HALO}>
-            Under-skirt escape {(underPct * 100).toFixed(1)}%
-          </text>
-        </g>
-      )}
-      {/* Active flow: conveyor jets run along the face (out of the page, toward the throat); foot jets push up at the hem */}
-      {jet > 0.01 && (
-        <g opacity={0.45 + 0.55 * jet}>
-          {Array.from({ length: Math.max(2, Math.floor((by - y(0) - 14) / 30)) }, (_, i) => {
-            const cy = y(0) + 18 + i * 30;
-            return (
-              <g key={i}>
-                <circle cx={CURTAIN_X - 16} cy={cy} r="6" fill="none" stroke="#22d3ee" strokeWidth="1.4" />
-                <circle cx={CURTAIN_X - 16} cy={cy} r="1.8" fill="#22d3ee" />
-              </g>
-            );
-          })}
-          {[0, 1, 2].map((i) => (
-            <line
-              key={i}
-              x1={bx - 12 - i * 12}
-              x2={bx - 12 - i * 12}
-              y1={Math.min(by + 34, ySea - 8)}
-              y2={by - 4}
-              stroke="#22d3ee"
-              strokeWidth="1.6"
-              markerEnd="url(#ss-jet)"
-            />
-          ))}
-          <text x={CURTAIN_X - 28} y={y(0) + 22} fill="#22d3ee" fontSize="11.5" textAnchor="end" {...HALO}>
-            Conveyor jets → throat
-          </text>
-          <text x={bx - 52} y={Math.min(by + 30, ySea - 10)} fill="#22d3ee" fontSize="11.5" textAnchor="end" {...HALO}>
-            Foot jets
-          </text>
-        </g>
-      )}
-      {/* Curtain: float, skirt with blow-back, ballast chain */}
-      <path d={`M${CURTAIN_X} ${y(0)} Q${CURTAIN_X + (bx - CURTAIN_X) * 0.2} ${(y(0) + by) / 2} ${bx} ${by}`} fill="none" stroke="#1f7480" strokeWidth="7" strokeLinecap="round" />
-      {[0, 1, 2, 3].map((i) => (
-        <circle key={i} cx={bx - 6 + i * 4} cy={by + 2} r="2" fill="#9aa4a8" />
-      ))}
-      <ellipse cx={CURTAIN_X} cy={TOP - 1} rx="13" ry="7" fill="#F59E0B" stroke="#fcd38a" strokeWidth="1" />
-      <text x={CURTAIN_X} y={TOP - 22} fill="#F5B94C" fontSize="11.5" textAnchor="middle">
-        Float line
-      </text>
-      {/* Dimensions */}
-      <line x1={dimX} x2={dimX} y1={y(0) + 3} y2={by - 3} stroke="#B9CBD3" markerStart="url(#ss-dim)" markerEnd="url(#ss-dim)" />
-      <text x={dimX + 10} y={(y(0) + by) / 2} fill="#E7F1F5" fontSize="12" fontWeight="600">
-        Skirt {skirt.toFixed(1)} m
-      </text>
-      <text x={dimX + 10} y={(y(0) + by) / 2 + 16} fill="#7992A0" fontSize="11">
-        adjustable 1.5–4.0 m · blow-back {liftDeg.toFixed(1)}°
-      </text>
-      <line x1={dimX} x2={dimX} y1={by + 3} y2={ySea - 3} stroke="#B9CBD3" markerStart="url(#ss-dim)" markerEnd="url(#ss-dim)" />
-      <text x={dimX + 10} y={(by + ySea) / 2 + 4} fill={clearance < minClearance ? '#f87171' : '#E7F1F5'} fontSize="12" fontWeight="600">
-        Clearance {clearance.toFixed(1)} m
-      </text>
-      <text x={dimX + 10} y={(by + ySea) / 2 + 20} fill="#7992A0" fontSize="11">
-        minimum {minClearance.toFixed(1)} m
-      </text>
-      <text x={W - 14} y={TOP - 22} fill="#7992A0" fontSize="11" textAnchor="end">
-        Lee side (toward intake) →
+      <text x={312} y={34} fill={MUTED} fontSize={12}>
+        Pile
       </text>
     </svg>
   );

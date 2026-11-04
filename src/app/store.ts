@@ -6,7 +6,7 @@ import type { CameraPreset } from '../three/cameras/CameraRig';
 
 export type Page = 'live' | 'how' | 'evidence';
 
-export type SelectionKind = 'curtain' | 'throat' | 'transfer' | 'intake' | 'bloom' | 'release' | 'jelly';
+export type SelectionKind = 'net' | 'collector' | 'intake' | 'bloom' | 'release' | 'jelly';
 
 export interface Selection {
   kind: SelectionKind;
@@ -47,6 +47,9 @@ interface AppState {
   intro: boolean;
   /** Booth kiosk caption while the self-running loop is on (`?kiosk=1`). */
   kiosk: KioskCaption | null;
+  /** The problem card being shown on the Live page. */
+  activeChallenge: string | null;
+  setActiveChallenge: (id: string | null) => void;
   setUI: (partial: Partial<UIState>) => void;
   setCamera: (camera: CameraPreset) => void;
   showToast: (message: string, tone?: Toast['tone']) => void;
@@ -108,6 +111,8 @@ export const useApp = create<AppState>((set) => ({
   toast: null,
   intro: playIntro(),
   kiosk: null,
+  activeChallenge: null,
+  setActiveChallenge: (id) => set({ activeChallenge: id }),
   setUI: (partial) => set((s) => ({ ui: { ...s.ui, ...partial } })),
   setCamera: (camera) => set((s) => ({ ui: { ...s.ui, camera, cameraNonce: s.ui.cameraNonce + 1 } })),
   showToast: (message, tone = 'info') => set({ toast: { id: toastId++, message, tone } }),

@@ -138,6 +138,7 @@ export class Water {
         uHazeDensity: SHARED.uHazeDensity,
         uFlowDim: SHARED.uFlowDim,
         uEnv: { value: envCube },
+        uSkyBright: { value: 1 },
         uNormalMap: { value: normalMap },
         uFoamNoise: { value: makeFoamNoise(256) },
         uShallow: { value: new THREE.Color(0.02, 0.52, 0.5) },
@@ -153,6 +154,7 @@ export class Water {
       vertexShader: SURFACE_VERTEX,
       fragmentShader: /* glsl */ `
         uniform samplerCube uEnv;
+        uniform float uSkyBright;
         uniform sampler2D uNormalMap;
         uniform sampler2D uFoamNoise;
         uniform vec3 uSunDir;
@@ -196,7 +198,12 @@ export class Water {
           vec3 n3 = texture2D(uNormalMap, uv3).xyz * 2.0 - 1.0;
           float chop = 0.55 + uWaveAmp * 0.9;
           vec2 detail = (n1.xy * 0.6 + n2.xy * 0.4 + n3.xy * 0.22 * (1.0 - smoothstep(20.0, 120.0, dist))) * 0.46 * chop;
-          detail *= 1.0 - smoothstep(180.0, 1600.0, dist) * 0.85;
+          float farField = smoothstep(240.0, 1000.0, dist);
+          if (farField > 0.0) {
+            vec3 n4 = texture2D(uNormalMap, mat2(0.80, -0.60, 0.60, 0.80) * vWorld.xz / 173.0 + vec2(uTime * 0.004, -uTime * 0.003)).xyz * 2.0 - 1.0;
+            vec3 n5 = texture2D(uNormalMap, mat2(0.28, 0.96, -0.96, 0.28) * vWorld.xz / 611.0 + vec2(-uTime * 0.002, uTime * 0.002)).xyz * 2.0 - 1.0;
+            detail = mix(detail, (n4.xy * 0.6 + n5.xy * 0.5) * 0.2 * chop, farField);
+          }
           vec3 N = normalize(vec3(-vSlope.x - detail.x, 1.0, -vSlope.y - detail.y));
           vec3 V = normalize(cameraPosition - vWorld);
 
@@ -206,7 +213,7 @@ export class Water {
             float F = 0.02 + 0.98 * pow(1.0 - NdV, 5.0);
             vec3 R = reflect(-V, N);
             R.y = abs(R.y);
-            vec3 refl = textureCube(uEnv, R).rgb;
+            vec3 refl = textureCube(uEnv, R).rgb * uSkyBright;
             float sr = max(dot(R, uSunDir), 0.0);
             // Sun glitter comes from facets far finer than the shading normal: tilt the normal by two
             // fast, short ripple octaves so the glare breaks into sparkles instead of smooth blotches.
@@ -336,6 +343,11 @@ export class Water {
     this.depthCap.frustumCulled = false;
     this.depthCap.renderOrder = 1000;
     this.depthCap.name = 'water-depth-cap';
+  }
+
+  /** Dim what the surface reflects (night). */
+  setSkyBright(k: number): void {
+    this.material.uniforms.uSkyBright.value = k;
   }
 
   /** Render the surface after submerged content from above, and first (opaque) from below. */

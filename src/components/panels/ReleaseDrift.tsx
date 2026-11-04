@@ -15,7 +15,7 @@ const Z0 = -800;
 const Z1 = 2800;
 
 const TONE: Record<string, { stroke: string; text: string; bar: string; label: string }> = {
-  'as-built': { stroke: '#f5b94c', text: 'text-amber', bar: 'bg-amber', label: 'Near the intake' },
+  'as-built': { stroke: '#f5b94c', text: 'text-amber', bar: 'bg-amber', label: 'Just outside the breakwater' },
   'offshore-2000': { stroke: '#93a9b6', text: 'text-ink-2', bar: 'bg-ink-2', label: 'Straight out, 2 km offshore' },
   design: { stroke: '#2dd4bf', text: 'text-teal', bar: 'bg-teal', label: `One line, ${ASSUMPTIONS.release.design.along / 1000} km down-drift (WSW)` },
 };
@@ -58,16 +58,7 @@ export function ReleaseDriftPanel() {
             <rect x={X0} y={Z0} width={X1 - X0} height={Z1 - Z0} fill="#0b2a33" />
             <path d={coast} fill="#3a3527" stroke="#7a6a48" strokeWidth={10} fillRule="evenodd" />
             {/* Back at the plant: the intake's approach band. */}
-            <rect
-              x={xc - zone.returnHalfWidth}
-              y={Z0}
-              width={zone.returnHalfWidth * 2}
-              height={zone.returnMaxZ - Z0}
-              fill="rgba(248,113,113,0.16)"
-              stroke="#f87171"
-              strokeWidth={14}
-              strokeDasharray="60 40"
-            />
+            <circle cx={xc} cy={SITE.channel.mouthZ} r={zone.returnRadius} fill="rgba(248,113,113,0.16)" stroke="#f87171" strokeWidth={14} strokeDasharray="60 40" />
             {D.shown.map((id) =>
               (D.tracks[id] ?? []).map((t, i) => (
                 <polyline
@@ -82,9 +73,7 @@ export function ReleaseDriftPanel() {
               )),
             )}
             {/* Release points: the design outlet(s), and the offshore option. */}
-            {(R.side === 'down-tide' ? [-1, 1] : [1]).map((s) => (
-              <circle key={`d${s}`} cx={xc + s * R.along} cy={R.offshore} r={80} fill="#2dd4bf" stroke="#04131a" strokeWidth={20} />
-            ))}
+            <circle cx={xc + R.along} cy={R.offshore} r={80} fill="#2dd4bf" stroke="#04131a" strokeWidth={20} />
             <circle cx={xc} cy={2000} r={70} fill="#93a9b6" stroke="#04131a" strokeWidth={20} />
             <rect x={xc - 60} y={-160} width={120} height={120} fill="#e7f1f5" stroke="#04131a" strokeWidth={16} />
             <text x={xc} y={-260} fill="#e7f1f5" fontSize={150} textAnchor="middle">
@@ -100,7 +89,7 @@ export function ReleaseDriftPanel() {
           <figcaption className="flex flex-wrap gap-x-4 gap-y-1 px-3 py-2 text-[11.5px] text-muted">
             <span>
               <span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm border border-red bg-red/20 align-[-1px]" />
-              Back at the plant
+              Water the plant draws in
             </span>
             {D.shown.map((id) => (
               <span key={id}>
@@ -113,7 +102,7 @@ export function ReleaseDriftPanel() {
         </figure>
 
         <div className="flex min-w-0 flex-col gap-3">
-          <div className="text-[12px] font-semibold tracking-[0.08em] text-muted uppercase">Back at the plant within {D.horizonDays} days</div>
+          <div className="text-[12px] font-semibold tracking-[0.08em] text-muted uppercase">Back in the water the plant draws in, within {D.horizonDays} days</div>
           {D.shown.map((id) => {
             const o = byId[id];
             const r = range(id);
@@ -139,10 +128,9 @@ export function ReleaseDriftPanel() {
             );
           })}
           <p className="text-[12.5px] leading-relaxed text-pretty text-ink-2">
-            Released next to the intake, about one in six animals is back at the plant within hours. Sending them offshore does not help: the season&rsquo;s
-            onshore drift ({(Math.abs(TIDE.stats.offshoreMean) * 100).toFixed(1)} cm/s) and wind carry them back. Along the shore they stay away: from one
-            release line {R.along / 1000} km down-drift, shared by both guide lines, only {pct(design.backAtSite)} come back, as few as from two lines with a valve
-            choosing the down-tide side ({pct(byId['downtide-2000']?.backAtSite ?? 0)}), with half the pipe.
+            Released just outside the breakwater, {pct(byId['as-built']?.backAtSite ?? 0)} are back in the water the plant draws in. Sending them straight offshore
+            does not help: the season&rsquo;s onshore drift ({(Math.abs(TIDE.stats.offshoreMean) * 100).toFixed(1)} cm/s) and wind carry them back. Along the shore
+            they stay away: from one line {R.along / 1000} km down-drift, {pct(design.backAtSite)} come back.
           </p>
           <p className="text-[12px] leading-relaxed text-pretty text-muted">
             In this season almost everything near the surface reaches the shore within a week: {pct(design.stranded)} of the released animals, and{' '}

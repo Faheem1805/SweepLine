@@ -65,9 +65,12 @@ export const ASSUMPTIONS = {
   /** Fixed integration step for the agent model (simulated seconds). */
   timeStep: 0.1,
 
-  /** The plant. Condenser flow about 6,000 m³/min per unit (world-nuclear-news, published for a 1.4 GW unit). */
+  /**
+   * The plant. Design flow 2 million m³/h across four units. Published condenser flow for a unit this
+   * size is lower (about 100 m³/s), so this is the harder case. Check it against the real plant.
+   */
   plant: {
-    unitFlowM3s: 100,
+    unitFlowM3s: 138.9,
     units: 4,
   },
 
@@ -158,9 +161,12 @@ export const ASSUMPTIONS = {
     designFlowM3h: Math.round((Math.PI / 4) * 1.0 * 1.0 * 1.5 * 3600),
     /** Largest share of the transfer water by volume taken up by jellyfish, for gentle handling. To be set by bell-damage tests. */
     maxJellyFraction: 0.05,
-    /** Pump wire-to-water efficiency and the line's minor-loss coefficient. */
-    pumpEfficiency: 0.6,
+    /** Screw lift wire-to-water efficiency and the line's minor-loss coefficient. */
+    pumpEfficiency: 0.7,
     minorLossK: 5,
+    /** Water levels (m above still water): wet well when drawn down, and the head tank. The tank must stand above the pipe's crest over the breakwater so the line never runs below atmospheric. */
+    wetWellLevel: -1,
+    headTankLevel: 6.5,
     /** Time for the standby pump to reach full capacity after a fault (s). */
     standbyActivationTime: 12,
     /** Line length to the outlet (m). */

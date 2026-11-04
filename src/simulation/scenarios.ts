@@ -42,7 +42,7 @@ export const SCENARIOS: Scenario[] = [
     name: 'Heavy bloom',
     tagline: 'Top of the documented range, 25 t/h',
     question: 'What does a normal response look like?',
-    description: 'Blue Blubber at the top of the documented intake range. The panels go in, the warning starts the pumps, and the plant’s own flow sweeps the bloom along the net to the collector.',
+    description: 'Blue Blubber at the top of the documented intake range. The panels go in, the warning starts the lifts, and the plant’s own flow sweeps the bloom along the net to the collector.',
     params: {},
     start: 'sequence',
     tone: 'nominal',
@@ -113,10 +113,10 @@ export const SCENARIOS: Scenario[] = [
   },
   {
     id: 'pump',
-    name: 'Collector pumps fail',
-    tagline: 'Duty pump, then standby',
+    name: 'Screw lifts stop',
+    tagline: 'Duty lift, then standby',
     question: 'What happens when a part fails?',
-    description: 'The duty pump trips and the standby takes over. Then the standby fails too. The pockets fill and the bloom stacks up along the net, which is passive and goes on holding it, buying time for repair.',
+    description: 'The duty lift stops and the standby takes over. Then the standby fails too. The pockets fill and the bloom stacks up along the net, which is passive and goes on holding it, buying time for repair.',
     params: {},
     start: 'steady',
     script: [
@@ -139,9 +139,9 @@ export const SCENARIOS: Scenario[] = [
   {
     id: 'overload',
     name: 'Everything at once',
-    tagline: 'Pumps down, triple bloom',
-    question: 'Can the net ever become a dam?',
-    description: 'No collector and three times the bloom. The net loads up until the head reaches the relief limit, then the float line dips at the upstream end and water spills over, so cooling flow always comes first.',
+    tagline: 'Lifts down, triple bloom',
+    question: 'How much can the net hold?',
+    description: 'No collector and three times the bloom. The net goes on holding it, and the head stays far below the relief limit.',
     params: { foulingWeeks: 6 },
     start: 'steady',
     script: [
@@ -149,6 +149,17 @@ export const SCENARIOS: Scenario[] = [
       { at: 20, action: { kind: 'fail', failure: 'pumpStandby' } },
       { at: 60, action: { kind: 'fail', failure: 'surge' } },
     ],
+    tone: 'failure',
+  },
+  {
+    id: 'debris',
+    name: 'Debris blinds the net',
+    tagline: 'A mat across net A',
+    question: 'Can the net ever become a dam?',
+    description: 'A mat of weed and rubbish blinds net A. Head climbs to the relief limit, the float line dips and water spills over, so cooling flow comes first. Anything that crosses meets net B.',
+    params: {},
+    start: 'steady',
+    script: [{ at: 20, action: { kind: 'fail', failure: 'debris' } }],
     tone: 'failure',
   },
 ];

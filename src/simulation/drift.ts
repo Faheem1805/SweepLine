@@ -256,7 +256,7 @@ export function forecastArrival(start: { x: number; z: number; radius: number },
         stranded++;
         break;
       }
-      if (Math.abs(x - xc) <= D.returnHalfWidth && z <= D.returnMaxZ) {
+      if (Math.hypot(x - xc, z - SITE.channel.mouthZ) <= D.returnRadius) {
         const t = (s * dt) / HOUR;
         arrivals.push(t);
         perHour[Math.min(perHour.length - 1, Math.floor(t))] += 1 / n;
@@ -357,7 +357,7 @@ export function runDrift(
           fate = 2;
           break;
         }
-        if (age >= D.returnGrace && Math.abs(x - xc) <= D.returnHalfWidth && z <= D.returnMaxZ) {
+        if (age >= D.returnGrace && Math.hypot(x - xc, z - SITE.channel.mouthZ) <= D.returnRadius) {
           fate = 1;
           returnTimes.push(age / HOUR);
           if (age <= 86400) back1++;
