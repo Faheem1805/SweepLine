@@ -332,22 +332,22 @@
  "stats": [
   {
    "value": "44–50 t → under 0.1 t",
-   "color": "#07877B",
+   "color": "#05796F",
    "label": "at the screens in 3 h, without vs with. 5 simulated blooms"
   },
   {
    "value": "0.11 m/s",
-   "color": "#D97F0E",
+   "color": "#C96F00",
    "label": "through the mesh. Limit: 0.12"
   },
   {
    "value": "217 t/h",
-   "color": "#0B7FA8",
-   "label": "collector capacity, over 5,000 t a day"
+   "color": "#0A73A5",
+   "label": "collector capacity, 5,000+ t a day"
   },
   {
    "value": "≈ 130 kW",
-   "color": "#0B2B3D",
+   "color": "#062C45",
    "label": "only while collecting"
   }
  ],

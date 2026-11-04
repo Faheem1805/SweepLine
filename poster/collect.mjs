@@ -44,10 +44,10 @@ const out = {
 
 const b = out.blooms;
 out.stats = [
-  { value: `${b.baseLow.toFixed(0)}–${b.baseHigh.toFixed(0)} t → under 0.1 t`, color: '#07877B', label: `at the screens in 3 h, without vs with. ${b.n} simulated blooms` },
-  { value: '0.11 m/s', color: '#D97F0E', label: 'through the mesh. Limit: 0.12' },
-  { value: '217 t/h', color: '#0B7FA8', label: 'collector capacity, over 5,000 t a day' },
-  { value: '≈ 130 kW', color: '#0B2B3D', label: 'only while collecting' },
+  { value: `${b.baseLow.toFixed(0)}–${b.baseHigh.toFixed(0)} t → under 0.1 t`, color: '#05796F', label: `at the screens in 3 h, without vs with. ${b.n} simulated blooms` },
+  { value: '0.11 m/s', color: '#C96F00', label: 'through the mesh. Limit: 0.12' },
+  { value: '217 t/h', color: '#0A73A5', label: 'collector capacity, 5,000+ t a day' },
+  { value: '≈ 130 kW', color: '#062C45', label: 'only while collecting' },
 ];
 
 const row = (failure, response, r, sum) => {
