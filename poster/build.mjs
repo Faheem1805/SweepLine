@@ -42,7 +42,7 @@ const at = (k) => [H.points[k][0] * HERO_W, H.points[k][1] * HERO_H];
 
 function callout(n, key, tx, ty, text, opts = {}) {
   const [x, y] = Array.isArray(key) ? key : at(key);
-  const w = text.length * 7.95 + 46;
+  const w = text.length * 8.3 + 46;
   const left = opts.end ? tx - w : tx;
   const cx = left + 15;
   return `<line x1="${x}" y1="${y}" x2="${opts.end ? tx - 15 : cx}" y2="${ty}" stroke="#fff" stroke-width="1.5"/>
@@ -61,7 +61,7 @@ function heroOverlay() {
     ${callout(2, 'mouth', 742, 384, 'The plant’s own flow draws it in')}
     ${callout(3, 'netA', 118, 352, 'Net A sweeps it along')}
     ${callout(4, 'netB', 118, 308, 'Net B catches what gets past')}
-    ${callout(6, 'intake', 118, 264, 'All four intakes untouched')}
+    ${callout(6, 'intake', 118, 264, 'Every intake untouched')}
     ${callout(5, 'collector', 690, 264, 'Screw lift, no impeller')}
     ${callout(7, [H.points.r3[0] * HERO_W + 60, H.points.r3[1] * HERO_H - 1.6], 1156, 306, 'Released 2 km along the coast', { end: true })}
   </svg>`;
@@ -251,7 +251,7 @@ function planSvg() {
     <text x="${px(2040) + 3}" y="${py(300) - 6}" font-size="10.5" font-weight="800" fill="${TEAL}" text-anchor="end">Release, 2 km along</text>
     <text x="${px(1150)}" y="${py(190) + 18}" font-size="10.5" font-weight="700" fill="${TEAL}" text-anchor="middle">1 m line over the breakwater</text>
     <text x="${px(0) + 300 * k + 4}" y="${py(640)}" font-size="10.5" font-weight="700" fill="${RED}">Water the plant draws in</text>
-    <text x="${px(ch + 20)}" y="${land + 13}" font-size="10.5" font-weight="700" fill="${INK}">Four intakes</text>
+    <text x="${px(ch + 20)}" y="${land + 13}" font-size="10.5" font-weight="700" fill="${INK}">Intakes</text>
     <line x1="${W - 62}" y1="17" x2="${W - 62 + 500 * k}" y2="17" stroke="${INK}" stroke-width="1.2"/><text x="${W - 62 + 250 * k}" y="12" font-size="10" fill="${INK}" text-anchor="middle">500 m</text>
   </svg>`;
 }
@@ -268,6 +268,7 @@ const ICON = {
   foul: 'M4 12a8 8 0 0 1 14-5l2 2M20 12a8 8 0 0 1-14 5l-2-2M20 4v5h-5M4 20v-5h5',
   screw: 'M12 2v20M6 6c4-3 8-2 12 0M6 11c4-3 8-2 12 0M6 16c4-3 8-2 12 0M6 21c4-3 8-2 12 0',
   species: 'M12 3a8 8 0 0 0-8 8v1h16v-1a8 8 0 0 0-8-8zM7 12c0 4-1 6-2 8M12 12v9M17 12c0 4 1 6 2 8',
+  fish: 'M2 12c3-5 9-7 14-4 2 1 3 3 4 4-1 1-2 3-4 4-5 3-11 1-14-4zM20 12l2-3v6l-2-3M15 11v.1',
   alert: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7.500v6M12 16.800v.1',
   bulb: 'M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.500c.8.8 1 1.500 1 2.500h6c0-1 .2-1.700 1-2.500A6 6 0 0 0 12 3z',
   gear: 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2',
@@ -314,7 +315,7 @@ header{display:flex;align-items:center;justify-content:space-between;gap:24mm;pa
 .problem{position:relative;margin:10mm 44mm 0}
 .problem .box{display:grid;grid-template-columns:1.2fr 1fr;gap:15mm;padding:14mm 92mm 10mm 13mm}
 .problem .q{font-size:22.5mm;font-weight:800;line-height:1.12;letter-spacing:-.6mm}
-.problem p{font-size:13.2mm;line-height:1.28;color:${INK2};border-left:.7mm solid ${LINE};padding-left:13mm}
+.problem p{font-size:12.4mm;line-height:1.24;color:${INK2};border-left:.7mm solid ${LINE};padding-left:13mm}
 .pill{position:relative;z-index:2;align-self:flex-start;display:inline-flex;align-items:center;gap:4mm;height:20.5mm;padding:0 12mm 0 8mm;margin:0 0 -9mm 7mm;border-radius:11mm;background:linear-gradient(90deg,${DEEP},#0B7C97);color:#fff;font-size:15.6mm;font-weight:800;letter-spacing:-.2mm;white-space:nowrap}
 .pill svg{width:12.5mm;height:12.5mm;color:#fff;flex:none}
 .sec{display:flex;flex-direction:column;min-width:0}
@@ -348,7 +349,8 @@ header{display:flex;align-items:center;justify-content:space-between;gap:24mm;pa
 .step span{display:block;font-size:10.9mm;line-height:1.18;color:${INK2}}
 .fut{display:flex;flex-direction:column}
 .fut .pill{margin:0 0 3mm 7mm}
-footer{position:absolute;left:44mm;right:44mm;bottom:11mm;display:flex;justify-content:space-between;gap:18mm;font-size:9.8mm;line-height:1.2;color:${INK}}
+footer{position:absolute;left:44mm;right:44mm;bottom:11mm;display:flex;justify-content:space-between;gap:14mm;font-size:9.6mm;line-height:1.2;color:${INK}}
+footer span{flex:1}
 footer b{color:${INK}}
 </style></head><body><div class="page">
 <img class="bg" src="${img('water.jpg')}" alt="">
@@ -373,19 +375,19 @@ ${heroOverlay()}
   <div class="tiles">
     ${tile(photo('net.jpg'), 'At the nets', 'The bloom on the face of net A')}
     ${tile(photo('collector.jpg'), 'Screw lift', 'Duty and standby, over the breakwater')}
-    ${tile(planSvg(), 'Where it sits', 'To scale: nets ahead of every intake')}
+    ${tile(planSvg(), 'Where it sits', 'Reference layout. Drift model: 2 % come back')}
     ${tile(photo('under.jpg'), 'Under water', 'Mesh from surface to seabed')}
   </div>
   <div class="row r3">
     ${sec('chart', 'Same bloom, both ways', `${bloomChart()}<p class="note">${R.captions.bloom}</p>`)}
-    ${sec('tide', 'The tide doesn’t matter', `${tideChart()}<p class="note">${R.captions.tide}</p>`)}
-    ${sec('warn', 'When something fails', `${faultChart()}<p class="note">${R.captions.failures}</p>`)}
+    ${sec('tide', 'The flow never reverses', `${tideChart()}<p class="note">${R.captions.tide}</p>`)}
+    ${sec('warn', 'When something fails', `${faultChart()}<p class="note"><span style="color:${RED};font-weight:800">Without SweepLine</span> · <span style="color:${TEAL};font-weight:800">With SweepLine</span>. ${R.captions.failures}</p>`)}
   </div>
   ${sec('star', 'Solution features: what goes wrong, and what we did', `<div class="feat">${C.features.map(([k, a, b]) => `<div>${icon(k)}<p><b>${a}</b><span>${b}</span></p></div>`).join('')}</div>`)}
   <section class="fut">${pill('next', 'Future improvements')}<div class="steps">${C.future.map(([a, b]) => `<div class="step"><b>${a}</b><span>${b}</span></div>`).join('')}</div></section>
 </div>
 ${decorFront}
-<footer><span><b>Built:</b> ${C.builtSimulatedNext.built}</span><span><b>Simulated:</b> ${C.builtSimulatedNext.simulated} ${C.footnote}</span></footer>
+<footer><span><b>Built:</b> ${C.builtSimulatedNext.built}</span><span><b>Simulated:</b> ${C.builtSimulatedNext.simulated}</span><span><b>Missing:</b> ${C.builtSimulatedNext.missing} ${C.footnote}</span></footer>
 </div></body></html>`;
 
 const out = resolve(here, 'poster.html');

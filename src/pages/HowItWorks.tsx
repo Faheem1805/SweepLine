@@ -106,7 +106,11 @@ const QUESTIONS: Array<{ q: string; a: string }> = [
   },
   {
     q: 'What does it do to the animals?',
-    a: 'A screw lift has no impeller to chop them, and there is no air on the way. Screws are proven on live fish. Survival of jellyfish is not yet measured, which is why it is the first test.',
+    a: 'A screw lift has no impeller to chop them, and the line runs full with no air. Screws are proven on live fish. Survival of jellyfish is not yet measured, which is why it is an early test.',
+  },
+  {
+    q: 'What about fish and turtles?',
+    a: 'The mesh runs at fish-screen speed, so a swimming animal can turn away, and taut 50 mm mesh is not a gill net. That is a design argument, not a test: bycatch is watched in the panel test at sea.',
   },
   {
     q: 'Does it leave debris?',

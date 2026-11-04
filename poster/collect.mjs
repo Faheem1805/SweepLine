@@ -44,7 +44,7 @@ const out = {
 
 const b = out.blooms;
 out.stats = [
-  { value: `${b.baseLow.toFixed(0)}–${b.baseHigh.toFixed(0)} t → under 0.1 t`, color: '#05796F', label: `at the screens in 3 h, without vs with. ${b.n} simulated blooms` },
+  { value: `${b.baseLow.toFixed(0)}–${b.baseHigh.toFixed(0)} t → under 0.1 t`, color: '#05796F', label: `at the screens in 3 h, no nets vs nets. ${b.n} simulated blooms` },
   { value: '0.11 m/s', color: '#C96F00', label: 'through the mesh. Limit: 0.12' },
   { value: '217 t/h', color: '#0A73A5', label: 'collector capacity, 5,000+ t a day' },
   { value: '≈ 130 kW', color: '#062C45', label: 'only while collecting' },
@@ -73,8 +73,8 @@ row('Deep-living species', 'Nets run to the seabed', deep);
 
 out.captions = {
   bloom: 'Tonnes at the screens. Model run, every jellyfish accounted for.',
-  tide: 'Copernicus current at the site. 5,856 h of records checked.',
-  failures: 'Tonnes at the screens over 3 h (lifts 5 h). Behaviour at the net is assumed.',
+  tide: 'Current, m/s. Outside: Copernicus record, 5,856 h checked. Inside: calculated.',
+  failures: 'Tonnes at the screens, 3 h (lifts 5 h).',
 };
 
 writeFileSync(resolve(here, 'data/results.json'), JSON.stringify(out, null, 1));

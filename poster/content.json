@@ -12,15 +12,15 @@
   "university": "Al Ain University",
   "problem": {
     "question": "How might we advance the sustainable management of seasonal jellyfish blooms in coastal environments?",
-    "context": "Early warning already exists. The challenge starts after it: manage large, continuous swarms with less manual effort, no harm to marine life and no redesign of plant systems."
+    "context": "Early warning already exists. The challenge starts after it: manage large, continuous swarms with less manual effort, less specialised equipment and less field support, with no harm to marine life and no redesign of plant systems."
   },
-  "solution": "Two full-depth nets stand across the intake channel at 20°, ahead of every intake. Water passes through. Jellyfish cannot, so the plant’s own flow sweeps them along the net to a collector. A slow screw lift sends them over the breakwater and 2 km down the coast. No boats. No crews. No change to the plant.",
-  "technical": "2 million m³/h through a 140 × 12 m channel runs at 0.33 m/s. A 20° net splits that: 0.11 m/s through the mesh, inside the 0.12 m/s fish-screen limit, and 0.31 m/s along it, so animals slide instead of pinning. For any channel, net length = flow ÷ (depth × 0.12 m/s). At 0.12 m of head the float line dips, so it can never act as a dam.",
+  "solution": "Two full-depth nets stand across the intake channel at 20°, ahead of every intake. Water passes through. Jellyfish are held back, so the plant’s own flow sweeps them along the net to a collector. A slow screw lift sends them over the breakwater and 2 km down the coast. No boats chasing the bloom: crews only swap panels. Plant systems unchanged.",
+  "technical": "2 million m³/h through a 140 × 12 m channel runs at 0.33 m/s. A 20° net splits that: 0.11 m/s through the mesh, inside the 0.12 m/s limit used for fish screens, and 0.31 m/s along it, so animals should slide, not pin. Any channel needs at least flow ÷ (depth × 0.12 m/s) of net. At 0.12 m of head the float line dips: cooling comes first.",
   "features": [
     [
-      "tide",
-      "The tide turns",
-      "The plant sets the flow. It never reverses."
+      "fish",
+      "Fish and turtles",
+      "Mesh speed is fish-screen grade. Bycatch to be tested."
     ],
     [
       "under",
@@ -40,7 +40,7 @@
     [
       "power",
       "Power fails",
-      "Nets need none. They hold the bloom."
+      "Nets need none. Model: 90 t held for 5 h."
     ],
     [
       "waves",
@@ -55,17 +55,17 @@
     [
       "foul",
       "Gulf fouling",
-      "Panels swapped every 4 weeks, out off-season."
+      "Load cells flag swaps, about every 4 weeks. Out off-season."
     ],
     [
       "screw",
-      "Pumps shred animals",
-      "A screw lift has no impeller. No air either."
+      "Pumps can injure",
+      "A slow screw has no impeller. Survival test planned."
     ],
     [
       "species",
       "A new species",
-      "50 mm mesh stops every bell size modelled."
+      "Mesh sized for Blue Blubber, moon and Crambionella."
     ]
   ],
   "future": [
@@ -79,7 +79,7 @@
     ],
     [
       "Panel at sea",
-      "Six weeks of Gulf fouling"
+      "Six weeks of fouling and bycatch"
     ],
     [
       "Pilot",
@@ -87,13 +87,14 @@
     ],
     [
       "Full design",
-      "Real channel, real price"
+      "Rough US$4–15M, US$0.4–1.1M/yr"
     ]
   ],
   "builtSimulatedNext": {
     "built": "Live 3D digital twin, hydraulic net model, recorded current and wave data, mass balance on every run.",
-    "simulated": "Jellyfish behaviour at the net is assumed. All results are model estimates, not field results."
+    "simulated": "Jellyfish behaviour at the net is assumed. All results are model estimates, not field results.",
+    "missing": "Live jellyfish tests, the real channel, a safety review of nets at an intake."
   },
-  "footnote": "Reference site is schematic and does not represent any real plant. Jellyfish are drawn enlarged.",
+  "footnote": "Schematic reference site, no real plant. Jellyfish drawn enlarged.",
   "heroCaption": "Live render from the SweepLine digital twin: minute 72 of a simulated 25 t/h bloom"
 }

@@ -35,7 +35,7 @@ const STATUS = [
     title: 'Missing',
     tone: 'text-red',
     icon: <FlaskRound size={16} />,
-    items: ['Any test on live jellyfish', 'The real channel: width, depth, flow', 'Survival through the lift and line', 'A contractor’s price', 'Environmental approval'],
+    items: ['Any test on live jellyfish', 'The real channel: width, depth, flow', 'Survival through the lift and line', 'A contractor’s price', 'Environmental approval and a safety review of nets at an intake'],
   },
 ];
 

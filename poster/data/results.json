@@ -333,7 +333,7 @@
   {
    "value": "44–50 t → under 0.1 t",
    "color": "#05796F",
-   "label": "at the screens in 3 h, without vs with. 5 simulated blooms"
+   "label": "at the screens in 3 h, no nets vs nets. 5 simulated blooms"
   },
   {
    "value": "0.11 m/s",
@@ -391,7 +391,7 @@
  ],
  "captions": {
   "bloom": "Tonnes at the screens. Model run, every jellyfish accounted for.",
-  "tide": "Copernicus current at the site. 5,856 h of records checked.",
-  "failures": "Tonnes at the screens over 3 h (lifts 5 h). Behaviour at the net is assumed."
+  "tide": "Current, m/s. Outside: Copernicus record, 5,856 h checked. Inside: calculated.",
+  "failures": "Tonnes at the screens, 3 h (lifts 5 h)."
  }
 }
