@@ -18,7 +18,7 @@ const UAE = MAP_INTRO_DATA.labels.find((l) => l.id === 'country-are');
 /** Map-km rectangle as path data (SVG y is south). */
 const rectPath = (r: MapRect) => `M${r.x0} ${-r.y1}H${r.x1}V${-r.y0}H${r.x0}Z`;
 const scale = (u: number) => `scale(${u})`;
-const STEPS = ['Deploy', 'Sweep', 'Transfer', 'Release'];
+const STEPS = ['Net', 'Sweep', 'Lift', 'Release'];
 
 type Paint = SVGProps<SVGPathElement>;
 const thin = { vectorEffect: 'non-scaling-stroke', strokeLinejoin: 'round' } as const;
@@ -236,7 +236,7 @@ export function MapIntro() {
         <LogoMark size={30} />
         <span className="sl-intro-wordmark-name">SweepLine</span>
         <span className="sl-intro-wordmark-tag" data-o="tagline">
-          Adaptive live jellyfish bypass
+          Live jellyfish bypass
         </span>
       </div>
 

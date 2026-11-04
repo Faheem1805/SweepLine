@@ -263,7 +263,7 @@ function buildBreakwaters(mats: Record<string, THREE.Material>, rockMat: THREE.M
         x = side * a;
         y = crestY - t * (crestY + 3);
         // Keep the slope clear under the collector platform.
-        if (side > 0 && z > 54 && z < 96) y -= 9;
+        if (side > 0 && inner && z > 54 && z < 96) y -= 9;
       }
       const sc = rng.range(1.1, 2.3) * (vi === 2 ? 0.85 : 1);
       p.set(x, y + sc * 0.3, z);

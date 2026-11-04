@@ -222,12 +222,14 @@ export const ASSUMPTIONS = {
 
   sequence: {
     /** Pre-roll used when a run starts in steady operation (s). */
-    steadyPreRoll: 1500,
+    steadyPreRoll: 2200,
     /** Integration step used only during pre-roll (s). Both engines use it, so the comparison stays fair. */
-    preRollStep: 0.4,
+    preRollStep: 1,
     /** Run speed while the panels go in, and after. */
     openingSpeed: 3,
     runSpeed: 20,
+    /** Time-lapse while the bloom is still on its way to the net. */
+    approachSpeed: 120,
   },
 
   metrics: {

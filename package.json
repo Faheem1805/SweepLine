@@ -2,7 +2,7 @@
   "name": "sweepline",
   "private": true,
   "version": "1.0.0",
-  "description": "SweepLine — Adaptive Live Jellyfish Bypass Visualiser (engineering design visualiser)",
+  "description": "SweepLine — Live Jellyfish Bypass Digital Twin (engineering design visualiser)",
   "type": "module",
   "scripts": {
     "dev": "vite",

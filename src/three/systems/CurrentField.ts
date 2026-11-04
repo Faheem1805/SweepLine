@@ -73,7 +73,7 @@ export class CurrentField {
         this.arrowPos.push([x, z]);
       }
     }
-    const arrowMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.75, depthWrite: false, side: THREE.DoubleSide });
+    const arrowMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.4, depthWrite: false, side: THREE.DoubleSide });
     this.arrows = new THREE.InstancedMesh(arrowGeo, arrowMat, this.arrowPos.length);
     this.arrows.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.arrows.frustumCulled = false;
@@ -156,7 +156,7 @@ export class CurrentField {
       pos[o + 4] = y;
       pos[o + 5] = z - this.vz[i] * trail;
       const t = Math.min(1, speed / 0.42);
-      const k = fade * (this.flowMode ? 0.85 : 0.07);
+      const k = fade * (this.flowMode ? 0.42 : 0.07);
       col[o] = (0.08 + 0.6 * t * t) * k;
       col[o + 1] = (0.5 + 0.5 * t) * k;
       col[o + 2] = (0.75 + 0.25 * t) * k;

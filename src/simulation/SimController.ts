@@ -171,6 +171,8 @@ export class SimController {
   readonly baseline: SimulationEngine;
   readonly sweepline: SimulationEngine;
   speed: number = ASSUMPTIONS.sequence.runSpeed;
+  /** The viewer picked a speed, so the approach time-lapse stays out of the way. */
+  private userSpeed = false;
   paused = false;
   ready = false;
   /** Main-thread budget per pre-roll chunk (ms). */
@@ -229,6 +231,7 @@ export class SimController {
   /** Restart both engines with the same seed and bloom. */
   async restart(start: 'sequence' | 'steady', scenario: Scenario | null = this.scenario): Promise<void> {
     const token = ++this.runToken;
+    this.userSpeed = false;
     this.ready = false;
     this.scenario = scenario;
     this.params = { ...this.params, ...this.savedParams };
@@ -299,6 +302,7 @@ export class SimController {
   }
 
   setSpeed(speed: number): void {
+    this.userSpeed = true;
     this.speed = speed;
     this.opening = false;
     this.publish(true);
@@ -454,8 +458,10 @@ export class SimController {
   /** Advance by real elapsed seconds. */
   frame(dtReal: number): void {
     if (this.ready && !this.paused) {
-      const h = ASSUMPTIONS.timeStep;
-      this.acc += Math.min(dtReal, 0.1) * this.speed;
+      // Until the bloom reaches the net there is nothing to watch, so the wait is time-lapsed.
+      const approach = !this.opening && !this.userSpeed && this.sweepline.counters.encountered === 0;
+      const h = approach ? ASSUMPTIONS.sequence.preRollStep : ASSUMPTIONS.timeStep;
+      this.acc += Math.min(dtReal, 0.1) * (approach ? ASSUMPTIONS.sequence.approachSpeed : this.speed);
       let n = 0;
       while (this.acc >= h && n < 80) {
         this.stepAll(h);

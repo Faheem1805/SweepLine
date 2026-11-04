@@ -281,7 +281,7 @@ export class Water {
               float f = clamp(max(foam, edgeFoam * (0.75 + 0.35 * uWaveAmp)), 0.0, 0.78) * (1.0 - smoothstep(160.0, 650.0, dist));
               vec3 lit = foamCol * (0.45 + 0.5 * max(dot(N, uSunDir), 0.0));
               col = mix(col, mix(lit, uHazeColor, hz) * dim, f);
-              gl_FragColor = vec4(col, 1.0);
+              gl_FragColor = vec4(col * mix(0.14, 1.0, uSkyBright), 1.0);
             } else {
               // ---- Fallback: partially transparent surface over the submerged scene.
               vec3 col = body * 0.68 + sss;
@@ -291,7 +291,7 @@ export class Water {
               alpha = max(alpha, clamp(foam, 0.0, 0.85));
               alpha = mix(alpha, 1.0, smoothstep(250.0, 1800.0, dist));
               col = slMedium(col, vWorld);
-              gl_FragColor = vec4(col, alpha);
+              gl_FragColor = vec4(col * mix(0.14, 1.0, uSkyBright), alpha);
             }
           } else {
             // Seen from below: Snell's window to the sky, total internal reflection outside it.
