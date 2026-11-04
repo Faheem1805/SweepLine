@@ -47,9 +47,9 @@ export const CAPEX: CostItem[] = [
   },
   {
     item: 'Release line, 2.2 km of 1.0 m bore HDPE',
-    low: 1.2,
+    low: 2.0,
     high: 6.3,
-    basis: 'PE100 pipe list price (US$526/m, 2023) up to an installed power-plant fish-return flume (US$2,861/m in 2025 dollars, EPA).',
+    basis: 'PE100 pipe list price (US$526/m, 2023) plus our estimate for laying and weighting it, up to an installed power-plant fish-return flume (US$2,861/m in 2025 dollars, EPA).',
     sources: ['https://matrix-piping.prod01.sydney.platformos.com/pages/poly-pipe-prices', 'https://www.epa.gov/sites/default/files/2015-04/documents/cooling-water_phase-2_tdd_2004.pdf'],
   },
   {
@@ -94,4 +94,6 @@ export const UNIT_DAY = {
 };
 
 export const capexTotal = () => ({ low: CAPEX.reduce((s, c) => s + c.low, 0), high: CAPEX.reduce((s, c) => s + c.high, 0) });
+/** With engineering, permits and contingency: 30 % on the low figure, 50 % on the high. */
+export const capexAllIn = () => ({ low: capexTotal().low * 1.3, high: capexTotal().high * 1.5 });
 export const runningTotal = () => ({ low: RUNNING.reduce((s, c) => s + c.low, 0), high: RUNNING.reduce((s, c) => s + c.high, 0) });

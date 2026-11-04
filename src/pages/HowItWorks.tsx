@@ -6,7 +6,7 @@ import { ComparisonPanel } from '../components/panels/Comparison';
 import { FailureModes } from '../components/panels/FailureModes';
 import { FlowArrow, Panel } from '../components/ui/Panel';
 import { ASSUMPTIONS } from '../config/assumptions';
-import { CAPEX, CAPEX_EXCLUDED, capexTotal, MANUAL_PER_YEAR, RUNNING, runningTotal, UNIT_DAY } from '../config/costs';
+import { CAPEX, CAPEX_EXCLUDED, capexAllIn, capexTotal, MANUAL_PER_YEAR, RUNNING, runningTotal, UNIT_DAY } from '../config/costs';
 import { SITE } from '../config/site';
 import { STUDY } from '../data/study.generated';
 import { sizeLine, sizeNet } from '../simulation/sizing';
@@ -171,7 +171,9 @@ function Costs() {
               </li>
             ))}
           </ul>
-          <p className="mt-1 text-[11.5px] text-muted">{CAPEX_EXCLUDED}</p>
+          <p className="mt-1 text-[11.5px] text-muted">
+            {CAPEX_EXCLUDED} All in, about US${capexAllIn().low.toFixed(0)}–{capexAllIn().high.toFixed(0)}M.
+          </p>
         </div>
         <div>
           <div className="mb-1 flex items-baseline justify-between">

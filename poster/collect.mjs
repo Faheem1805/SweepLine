@@ -72,8 +72,8 @@ row('Moon jellyfish', 'Softer, so more leak past net A; net B catches it', moon)
 row('Deep-living species', 'Nets run to the seabed', deep);
 
 out.captions = {
-  bloom: 'Tonnes at the screens. Model run, every jellyfish accounted for.',
-  tide: 'Current, m/s. Outside: Copernicus record, 5,856 h checked. Inside: calculated.',
+  bloom: 'Tonnes at the screens. Model, every jellyfish accounted for.',
+  tide: 'Current, m/s. Copernicus record, 5,856 h checked.',
   failures: 'Tonnes at the screens, 3 h (lifts 5 h).',
 };
 

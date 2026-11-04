@@ -127,6 +127,8 @@ const decorBack = `<svg class="decor" viewBox="0 0 1200 1600">${defs}
 </svg>`;
 const decorFront = `<svg class="decor" viewBox="0 0 1200 1600">${jelly(1136, 206, 0.95, 14, 0.95, 1)}</svg>`;
 
+const legendBox = (items) => `<div class="legend">${items.map(([c, t]) => `<span><i style="background:${c}"></i>${t}</span>`).join('')}</div>`;
+
 // ------------------------------------------------------------------ charts
 const axisText = (x, y, t, a = 'end') => `<text x="${x}" y="${y}" text-anchor="${a}" font-size="11.5" fill="${MUTED}">${t}</text>`;
 
@@ -227,10 +229,10 @@ function speedDiagram() {
 /** Plan of the system, to scale, drawn for print. */
 function planSvg() {
   const W = 262;
-  const H2 = 124;
+  const H2 = 112;
   const k = 0.104;
   const px = (x) => 30 + x * k;
-  const py = (z) => 100 - z * k;
+  const py = (z) => 90 - z * k;
   const ch = 70;
   const land = py(-62);
   const [A, B] = F.nets;
@@ -308,7 +310,7 @@ header{display:flex;align-items:center;justify-content:space-between;gap:24mm;pa
 .brand h1{font-size:118mm;font-weight:850;letter-spacing:-5mm;line-height:.94;color:${DEEP}}
 .brand p{font-size:26mm;font-weight:700;font-style:italic;color:${INK};letter-spacing:-.5mm;margin-top:9mm}
 .brand p em{color:${CYAN};font-style:italic}
-.who{display:grid;grid-template-columns:auto;padding-left:16mm;border-left:.9mm solid ${DEEP};text-align:left}
+.who{display:grid;grid-template-columns:auto;padding:6mm 13mm 6mm;background:rgba(255,255,255,.82);border:.8mm solid rgba(255,255,255,.96);border-radius:8mm;text-align:left}
 .who .tag{font-size:17.5mm;font-weight:800;color:${CYAN}}
 .who .names{font-size:15.6mm;font-weight:700;margin-top:3mm;line-height:1.23}
 .who .uni{font-size:15mm;color:${INK2};margin-top:2.6mm;font-weight:600}
@@ -326,16 +328,19 @@ header{display:flex;align-items:center;justify-content:space-between;gap:24mm;pa
 .stat svg{width:19mm;height:19mm;color:${CYAN}}
 .stat b{display:block;font-size:30.5mm;line-height:1.02;font-weight:850;letter-spacing:-1.3mm;white-space:nowrap}
 .stat span{display:block;font-size:11.6mm;line-height:1.2;color:${INK2};margin-top:1.4mm}
-.rows{position:absolute;left:44mm;right:44mm;top:699mm;bottom:40mm;display:flex;flex-direction:column;justify-content:space-between}
+.rows{position:absolute;left:44mm;right:44mm;top:696mm;bottom:44mm;display:flex;flex-direction:column;justify-content:space-between}
 .row{display:grid;gap:15mm}
 .r1{grid-template-columns:1fr 1.08fr .92fr}
 .r3{grid-template-columns:1fr 1fr 1fr}
 .r1 .box p{font-size:14.6mm;line-height:1.3}
 .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:12mm}
 .tile{background:rgba(255,255,255,.82);border:.8mm solid rgba(255,255,255,.96);border-radius:8mm;padding:4mm 4mm 4.4mm}
-.tile .ph{display:block;width:100%;height:124mm;object-fit:cover;border-radius:5mm}
+.tile .ph{display:block;width:100%;height:112mm;object-fit:cover;border-radius:5mm}
 .tile figcaption{font-size:11mm;line-height:1.2;color:${INK2};margin:2.6mm 2.6mm 0}
 .tile figcaption b{display:block;font-size:13.2mm;color:${INK};font-weight:800}
+.legend{display:inline-flex;gap:8mm;margin-top:2mm;padding:1.4mm 5mm;background:#fff;border:.6mm solid ${LINE};border-radius:3mm;font-size:10.8mm;font-weight:700;color:${INK}}
+.legend span{display:inline-flex;align-items:center;gap:2.6mm;white-space:nowrap}
+.legend i{display:inline-block;width:7mm;height:7mm;border-radius:1.2mm}
 .note{font-size:10.2mm;line-height:1.22;color:${MUTED};margin-top:1.6mm}
 .feat{display:grid;grid-template-columns:repeat(5,1fr);gap:5.5mm 10mm}
 .feat div{display:grid;grid-template-columns:18mm 1fr;gap:0 4mm;align-items:start}
@@ -379,9 +384,9 @@ ${heroOverlay()}
     ${tile(photo('under.jpg'), 'Under water', 'Mesh from surface to seabed')}
   </div>
   <div class="row r3">
-    ${sec('chart', 'Same bloom, both ways', `${bloomChart()}<p class="note">${R.captions.bloom}</p>`)}
-    ${sec('tide', 'The flow never reverses', `${tideChart()}<p class="note">${R.captions.tide}</p>`)}
-    ${sec('warn', 'When something fails', `${faultChart()}<p class="note"><span style="color:${RED};font-weight:800">Without SweepLine</span> · <span style="color:${TEAL};font-weight:800">With SweepLine</span>. ${R.captions.failures}</p>`)}
+    ${sec('chart', 'Same bloom, both ways', `${bloomChart()}${legendBox([[RED, 'Without SweepLine'], [TEAL, 'With SweepLine']])}<p class="note">${R.captions.bloom}</p>`)}
+    ${sec('tide', 'The flow never reverses', `${tideChart()}${legendBox([[CYAN, 'Inside, calculated'], [AMBER, 'Outside, recorded']])}<p class="note">${R.captions.tide}</p>`)}
+    ${sec('warn', 'When something fails', `${faultChart()}${legendBox([[RED, 'Without SweepLine'], [TEAL, 'With SweepLine']])}<p class="note">${R.captions.failures}</p>`)}
   </div>
   ${sec('star', 'Solution features: what goes wrong, and what we did', `<div class="feat">${C.features.map(([k, a, b]) => `<div>${icon(k)}<p><b>${a}</b><span>${b}</span></p></div>`).join('')}</div>`)}
   <section class="fut">${pill('next', 'Future improvements')}<div class="steps">${C.future.map(([a, b]) => `<div class="step"><b>${a}</b><span>${b}</span></div>`).join('')}</div></section>

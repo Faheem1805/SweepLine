@@ -6,7 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { ASSUMPTIONS } from '../src/config/assumptions';
 import { CHALLENGES } from '../src/config/challenges';
-import { capexTotal, runningTotal } from '../src/config/costs';
+import { capexAllIn, runningTotal } from '../src/config/costs';
 import { SITE } from '../src/config/site';
 import { NETS } from '../src/simulation/geometry';
 import { SCENARIOS } from '../src/simulation/scenarios';
@@ -47,7 +47,7 @@ said('relief head', tech, `${ASSUMPTIONS.net.reliefHead} m of head`);
 said('line capacity', stats, `${L.capacityTph.toFixed(0)} t/h`);
 said('power', stats, `≈ ${Math.round(L.kW / 10) * 10} kW`);
 const cost: string = poster.future.at(-1)[1];
-said('capital cost', cost, `US$${Math.round(capexTotal().low)}–${Math.round(capexTotal().high)}M`);
+said('capital cost', cost, `US$${Math.round(capexAllIn().low)}–${Math.round(capexAllIn().high)}M`);
 said('running cost', cost, `US$${(runningTotal().low / 1000).toFixed(1)}–${(runningTotal().high / 1000).toFixed(1)}M`);
 
 // Every problem card runs something real.
