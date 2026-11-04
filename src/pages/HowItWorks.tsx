@@ -84,12 +84,11 @@ function SizingTool() {
 
 const LINE = sizeLine();
 const net = sizeNet(DESIGN_FLOW, SITE.channel.halfWidth * 2, SITE.channel.depth, SITE.net.angle);
-const warningMin = ASSUMPTIONS.sonar.range / net.channelSpeed / 60;
 const liftKW = Math.round(LINE.kW / 10) * 10;
 
 const STEPS = [
-  { title: 'Warning', value: `${warningMin.toFixed(0)} min`, text: `Offshore detection gives hours. Sonar at the mouth sees a bloom ${ASSUMPTIONS.sonar.range} m out, day or night, and starts the lift.` },
-  { title: 'Net', value: `${net.through.toFixed(2)} m/s`, text: `Water passes through ${ASSUMPTIONS.net.meshBar * 1000} mm mesh. Jellyfish cannot, and the flow sweeps them along the face.` },
+  { title: 'Warning', value: '30 min', text: 'Offshore detection gives hours. In the model, sonar at the mouth sees a bloom at least 30 minutes before it reaches the net, day or night, and starts the lift.' },
+  { title: 'Net', value: `${net.through.toFixed(2)} m/s`, text: `Water passes through ${ASSUMPTIONS.net.meshBar * 1000} mm mesh. Jellyfish are held back, and the flow sweeps them along the face.` },
   { title: 'Pocket', value: `${Math.round(net.rideMin)} min ride`, text: 'They arrive at a funnel where each net meets the wall. A second net 60 m behind takes what gets past.' },
   { title: 'Screw lift', value: `≈ ${liftKW} kW`, text: `A slow screw, no impeller, lifts them ${LINE.lift.toFixed(1)} m into a head tank. Duty and standby.` },
   { title: 'Release', value: `${LINE.transitMin.toFixed(0)} min`, text: `A ${ASSUMPTIONS.transfer.pipeBore} m line over the breakwater and ${ASSUMPTIONS.transfer.length / 1000} km along the bed, with no air, to the sea down-drift.` },
