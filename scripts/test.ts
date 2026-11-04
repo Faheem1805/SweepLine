@@ -3,8 +3,10 @@
  *
  * Short runs only: the full results come from `npm run study`.
  */
+import { readFileSync } from 'node:fs';
 import { ASSUMPTIONS } from '../src/config/assumptions';
 import { CHALLENGES } from '../src/config/challenges';
+import { capexTotal, runningTotal } from '../src/config/costs';
 import { SITE } from '../src/config/site';
 import { NETS } from '../src/simulation/geometry';
 import { SCENARIOS } from '../src/simulation/scenarios';
@@ -29,6 +31,24 @@ check('the shortest net does not depend on width', Math.abs(sizeNet(Q, 140, 12, 
 const L = sizeLine();
 check('the line carries its stated capacity', Math.abs(L.capacityTph - TRANSFER_TPH) < 1, `${L.capacityTph.toFixed(0)} t/h`);
 check('the head tank stands above the pipe crest and the line loss', ASSUMPTIONS.transfer.headTankLevel > SITE.breakwater.crestY + 1 && ASSUMPTIONS.transfer.headTankLevel > L.head);
+
+// The poster is printed: the twin must keep saying what it says.
+const poster = JSON.parse(readFileSync(new URL('../poster/content.json', import.meta.url), 'utf8'));
+const results = JSON.parse(readFileSync(new URL('../poster/data/results.json', import.meta.url), 'utf8'));
+const stats: string = results.stats.map((x: { value: string }) => x.value).join(' ');
+const tech: string = poster.technical;
+const said = (name: string, text: string, needle: string) => check(`poster: ${name}`, text.includes(needle), needle);
+said('channel', tech, `${SITE.channel.halfWidth * 2} × ${SITE.channel.depth} m channel`);
+said('channel speed', tech, `${s.channelSpeed.toFixed(2)} m/s`);
+said('angle', tech, `${SITE.net.angle}° net`);
+said('through-mesh speed', tech, `${s.through.toFixed(2)} m/s through the mesh`);
+said('sweep', tech, `${s.sweep.toFixed(2)} m/s along it`);
+said('relief head', tech, `${ASSUMPTIONS.net.reliefHead} m of head`);
+said('line capacity', stats, `${L.capacityTph.toFixed(0)} t/h`);
+said('power', stats, `≈ ${Math.round(L.kW / 10) * 10} kW`);
+const cost: string = poster.future.at(-1)[1];
+said('capital cost', cost, `US$${Math.round(capexTotal().low)}–${Math.round(capexTotal().high)}M`);
+said('running cost', cost, `US$${(runningTotal().low / 1000).toFixed(1)}–${(runningTotal().high / 1000).toFixed(1)}M`);
 
 // Every problem card runs something real.
 const ids = new Set(Object.values(SCENARIOS).map((x) => x.id));
