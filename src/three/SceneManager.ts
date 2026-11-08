@@ -19,6 +19,7 @@ import { Water } from './environment/Water';
 import { Annotations } from './systems/Annotations';
 import { CollectorSystem } from './systems/CollectorSystem';
 import { CurrentField } from './systems/CurrentField';
+import { FunnelSystem } from './systems/FunnelSystem';
 import { jellyShader, JellyfishSystem } from './systems/JellyfishSystem';
 import { LabelSystem, type LabelViewport } from './systems/LabelSystem';
 import { NetSystem } from './systems/NetSystem';
@@ -52,6 +53,7 @@ export class SceneManager {
   private readonly underwaterFx = new UnderwaterFx();
   private readonly nets = new NetSystem(NETS);
   private readonly collector = new CollectorSystem(NETS);
+  private readonly funnels = new FunnelSystem();
   private readonly release = new ReleaseSystem();
   private readonly sonar = new SonarSystem();
   private readonly annotations = new Annotations();
@@ -162,7 +164,7 @@ export class SceneManager {
 
     // ------------------------------------------------ SweepLine installation (its world only)
     this.sweepGroup.name = 'sweepline-installation';
-    this.sweepGroup.add(this.nets.group, this.collector.group, this.release.group);
+    this.sweepGroup.add(this.nets.group, this.collector.group, this.funnels.group, this.release.group);
     this.scene.add(this.sweepGroup);
     this.scene.add(this.sonar.mesh);
     this.scene.add(this.annotations.group);
@@ -321,6 +323,16 @@ export class SceneManager {
     this.labels.setContent('intake-base', 'Plant screens', body(s.baseline), tone(s.baseline));
     this.labels.setContent('intake-left', 'Plant screens', body(s.baseline), tone(s.baseline));
     this.labels.setContent('intake-right', 'Plant screens', body(s.sweepline), tone(s.sweepline));
+    const f = s.funnels[0];
+    if (f) {
+      const rc = FunnelSystem.rackCheck(s.params.species);
+      this.labels.setContent('funnel-rack', `Bar rack: ${rc.gapCm} cm gaps`, rc.blocks ? `Smaller than a ${rc.bellCm[0]}–${rc.bellCm[1]} cm bell: as drawn it would stop them. The model lets them through. Gap and bycatch not validated.` : `Passes ${rc.bellCm[0]}–${rc.bellCm[1]} cm bells. Gap and bycatch not validated.`, rc.blocks ? 'red' : 'amber');
+      this.labels.setContent('funnel-throat', 'Throat: collected from here', `Funnel ${f.funnelT.toFixed(2)} t, not counted · pocket ${f.pocketT.toFixed(2)} of ${f.pocketCapT.toFixed(1)} t`, f.pocketT >= f.pocketCapT * 0.99 ? 'amber' : 'teal');
+      const a = f.assist;
+      this.labels.setContent('funnel-assist', `Sweep assist ${a.mode === 'off' ? 'off' : a.mode === 'auto' ? 'Auto' : 'manual test'} · experimental`, a.reason, a.interlock && a.mode !== 'off' ? 'amber' : a.speed > 0.01 ? 'amber' : 'default');
+    }
+    const ti = this.funnels.trackInfo;
+    this.labels.setContent('funnel-track', 'One jellyfish, tracked', ti ? `${ti.phase}${ti.since !== null ? ` · ${Math.round(ti.since)} s since the mouth` : ''}` : '', 'cyan');
   }
 
   private setupLabels(): void {
@@ -347,6 +359,12 @@ export class SceneManager {
       view: above,
       pick: 'collector',
     });
+    // Funnel close-up only.
+    const close = { viewports: ['single'] as LabelViewport[], view: above, maxDistance: 150 };
+    this.labels.add({ id: 'funnel-rack', title: 'Bar rack', anchor: () => this.funnels.rackAnchor, ...close });
+    this.labels.add({ id: 'funnel-throat', title: 'Throat', anchor: () => this.funnels.throatAnchor, placement: 'right', ...close });
+    this.labels.add({ id: 'funnel-assist', title: 'Sweep assist', anchor: () => this.funnels.barAnchor, ...close });
+    this.labels.add({ id: 'funnel-track', title: 'One jellyfish, tracked', anchor: () => (this.funnels.trackInfo ? this.funnels.trackAnchor : null), placement: 'right', ...close });
     const intakeAnchor = new THREE.Vector3(SITE.basin.units[1], SITE.intake.deckY + 16, SITE.basin.wallZ);
     for (const [id, vp] of [
       ['intake', ['single']],
@@ -485,6 +503,7 @@ export class SceneManager {
     this.nets.update(sw.nets, this.realTime, hs, this.ui.flowView, this.camera);
     const flowFraction = Math.min(1, tr.availability() * (0.35 + tr.processedEMA / Math.max(tr.capacityRate(), 1e-3) * 4));
     this.collector.update(tr.primaryStatus, tr.standbyStatus, flowFraction, this.realTime);
+    this.funnels.update(sw, this.camera, dt, this.realTime);
     this.release.update(sw.releaseEMA, tr.running, this.realTime, this.realTime, hs);
     this.sonar.update((this.ui.flowView || params.night) && !ctrl.failures.sonarLoss, dt);
 

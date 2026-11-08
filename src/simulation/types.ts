@@ -2,6 +2,9 @@ import type { SpeciesKey } from '../config/assumptions';
 
 export type EngineKind = 'baseline' | 'sweepline';
 
+/** Experimental sweep assist at the funnel mouths: off (passive, the default), automatic, or a manual test run. */
+export type AssistMode = 'off' | 'auto' | 'manual';
+
 /** Net A stands upstream, net B catches what gets past it. */
 export type NetIndex = 0 | 1;
 
@@ -28,6 +31,8 @@ export interface SimParams {
   secondNet: boolean;
   /** Standby collector pump installed and armed. */
   standbyEnabled: boolean;
+  /** Experimental sweep assist at the funnel mouths. Off means passive guidance only. */
+  assistMode: AssistMode;
   /** Night or turbid water: cameras are blind, the sonar and load cells carry on. */
   night: boolean;
   /** Drive the outside current from the recorded tide at the site instead of the fixed speed and bearing. */
@@ -54,6 +59,7 @@ export const DEFAULT_PARAMS: SimParams = {
   foulingWeeks: 2,
   secondNet: true,
   standbyEnabled: true,
+  assistMode: 'off',
   night: false,
   tide: false,
   tideStart: 0,

@@ -4,7 +4,7 @@ import { useApp } from '../../app/store';
 import { SPECIES, type SpeciesKey } from '../../config/assumptions';
 import { CHALLENGES, type Challenge } from '../../config/challenges';
 import { controller, FAILURE_LABELS, type Constraint } from '../../simulation/SimController';
-import type { FailureKey } from '../../simulation/types';
+import type { AssistMode, FailureKey } from '../../simulation/types';
 import { cn, mmss } from '../../utils/format';
 import { useOutsideClose } from '../layout/TopBar';
 import { Segmented, Slider, Toggle } from '../ui/Controls';
@@ -120,6 +120,12 @@ function useProof(id: string | null): string | null {
       return `Head ${(a.head * 1000).toFixed(0)} mm, relief at 120 mm · ${a.onNetT.toFixed(1)} t on the net`;
     case 'pump':
       return `${w.onNetT[0].toFixed(1)} t held on the net · ${w.screensT.toFixed(1)} t at the screens`;
+    case 'stall': {
+      const f = s.funnels[0];
+      if (!f) return null;
+      const m2t = f.mouthToThroatS;
+      return `Assist ${f.assist.mode === 'off' ? 'off' : Math.round(f.assist.speed * 100) + ' %'} · sweep ${f.assist.sweep === null ? '–' : f.assist.sweep.toFixed(2) + ' m/s'} · mouth to throat ${m2t === null ? '–' : Math.round(m2t) + ' s'} · ${f.assist.energyKWh.toFixed(1)} kWh`;
+    }
     case 'fouling':
       return `Panels ${s.params.foulingWeeks} weeks old · head ${(a.head * 1000).toFixed(1)} mm · margin ${a.marginT.toFixed(0)} t`;
     case 'dark':
@@ -198,9 +204,10 @@ export function PipelineStrip() {
   const cur = stages.findIndex((x) => x.key === s.stage);
   const cells: Array<{ label: string; value: string; tone: string }> = [
     { label: 'Sonar, in range', value: s.sonar.on ? `${s.sonar.inRangeT.toFixed(1)} t` : 'offline', tone: s.sonar.on ? 'text-white' : 'text-amber' },
-    { label: 'Coming in', value: `${s.sonar.arrivalTph.toFixed(1)} t/h`, tone: 'text-white' },
     { label: 'On the nets', value: `${(w.onNetT[0] + w.onNetT[1]).toFixed(1)} t`, tone: 'text-amber' },
+    { label: 'In the funnels', value: `${w.funnelT.toFixed(1)} t`, tone: 'text-[#8fa5ff]' },
     { label: 'Collected', value: `${w.collectedT.toFixed(1)} t`, tone: 'text-teal' },
+    { label: 'In the line', value: `${w.inPipeT.toFixed(1)} t`, tone: 'text-white' },
     { label: 'Released', value: `${w.releasedT.toFixed(1)} t`, tone: 'text-teal' },
   ];
   return (
@@ -214,7 +221,7 @@ export function PipelineStrip() {
           </div>
         ))}
       </div>
-      <div className="mt-2 grid grid-cols-5 gap-3 border-t border-line pt-2">
+      <div className="mt-2 grid grid-cols-6 gap-3 border-t border-line pt-2">
         {cells.map((c) => (
           <div key={c.label} className="min-w-0">
             <div className="truncate text-[11px] text-muted">{c.label}</div>
@@ -268,6 +275,22 @@ export function WhatIfMenu() {
             <Slider label="Units running" value={p.unitsRunning} min={1} max={4} step={1} display={`${p.unitsRunning} of 4`} onChange={(v) => controller.setParams({ unitsRunning: v })} />
             <Slider label="Panel age" value={p.foulingWeeks} min={0} max={12} step={1} display={`${p.foulingWeeks} weeks`} onChange={(v) => controller.setParams({ foulingWeeks: v })} />
             <Toggle checked={p.secondNet} onChange={(v) => controller.setParams({ secondNet: v })} label="Second net" />
+            <div className="flex items-center justify-between gap-2 text-[12.5px] text-ink-2">
+              <span>
+                Sweep assist <span className="text-[11px] text-amber">experimental</span>
+              </span>
+              <Segmented<AssistMode>
+                size="sm"
+                className="w-[180px]"
+                value={p.assistMode}
+                onChange={(v) => controller.setParams({ assistMode: v })}
+                options={[
+                  { value: 'off', label: 'Off' },
+                  { value: 'auto', label: 'Auto' },
+                  { value: 'manual', label: 'Test' },
+                ]}
+              />
+            </div>
             <Toggle checked={p.night} onChange={(v) => controller.setParams({ night: v })} label="Night, turbid water" />
           </div>
           <div className="mt-3 flex gap-2">

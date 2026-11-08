@@ -200,6 +200,37 @@ function toLine(pts: Array<[number, number]>): LinePoint[] {
   return out;
 }
 
+/**
+ * Where the east breakwater has a vertical sheet-pile face instead of a rock slope (z range, m): the
+ * collector at the end of net A, whose funnel and pocket need a wall to stand against. The model's
+ * channel walls are vertical; the drawn rock slope elsewhere is display only.
+ */
+const COLLECTOR_CELL: readonly [number, number] = [84, 134];
+
+/** Split a line into the run inside a z range and the runs outside it, each sharing its boundary point. */
+function splitByZ(line: LinePoint[], z0: number, z1: number): { inside: LinePoint[]; outside: LinePoint[][] } {
+  const inside: LinePoint[] = [];
+  const outside: LinePoint[][] = [];
+  let run: LinePoint[] = [];
+  for (let i = 0; i < line.length; i++) {
+    const p = line[i];
+    const inn = p.z >= z0 && p.z <= z1;
+    if (inn) {
+      if (run.length) {
+        run.push(p);
+        outside.push(run);
+        run = [];
+      }
+      inside.push(p);
+    } else {
+      if (!run.length && inside.length && i > 0) run.push(line[i - 1]);
+      run.push(p);
+    }
+  }
+  if (run.length > 1) outside.push(run);
+  return { inside, outside };
+}
+
 /** A strip along a line, between offsets a and b (right of travel) at heights ya and yb. */
 function ribbon(line: LinePoint[], a: number, ya: number, b: number, yb: number): THREE.BufferGeometry {
   const pos: number[] = [];
@@ -258,7 +289,25 @@ function buildBreakwaters(mats: Record<string, THREE.Material>, rockMat: THREE.M
       [sea * outerToe, bottom],
     ];
     if (basinSide > 0) profile.reverse();
-    for (let i = 0; i < profile.length - 1; i++) mb.add('rockCore', ribbon(line, profile[i][0], profile[i][1], profile[i + 1][0], profile[i + 1][1]));
+    for (let i = 0; i < profile.length - 1; i++) {
+      if (basinSide < 0 && i === 0) {
+        // East inner slope, with a vertical sheet-pile face along the collector at the end of net A.
+        const { inside, outside } = splitByZ(line, COLLECTOR_CELL[0], COLLECTOR_CELL[1]);
+        for (const run of outside) mb.add('rockCore', ribbon(run, profile[0][0], profile[0][1], profile[1][0], profile[1][1]));
+        const w0 = half + crestY * W.slope;
+        mb.add('concrete', ribbon(inside, -w0, bottom, -w0, 0.6));
+        mb.add('rockCore', ribbon(inside, -w0, 0.6, -half, crestY));
+        for (const q of [inside[0], inside[inside.length - 1]]) {
+          const at = (o: number, y: number) => [q.x + q.rx * o, y, q.z + q.rz * o];
+          const tri = [...at(-innerToe, bottom), ...at(-w0, bottom), ...at(-w0, 0.6)];
+          const cap = new THREE.BufferGeometry();
+          cap.setAttribute('position', new THREE.Float32BufferAttribute([...tri, ...tri.slice(0, 3), ...tri.slice(6, 9), ...tri.slice(3, 6)], 3));
+          cap.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 1, 0], 2));
+          cap.computeVertexNormals();
+          mb.add('rockCore', cap);
+        }
+      } else mb.add('rockCore', ribbon(line, profile[i][0], profile[i][1], profile[i + 1][0], profile[i + 1][1]));
+    }
     mb.add('concrete', ribbon(line, -half + 0.8, crestY + 0.22, half - 0.8, crestY + 0.22));
     // Lamp posts along the road.
     for (let i = 0; i < line.length; i += 10) {
@@ -325,8 +374,9 @@ function buildBreakwaters(mats: Record<string, THREE.Material>, rockMat: THREE.M
         const o = sign * (half + t * ((inner ? innerStone : outerStone) - half));
         x = a0.x + (a1.x - a0.x) * f + (a0.rx + (a1.rx - a0.rx) * f) * o;
         z = a0.z + (a1.z - a0.z) * f + (a0.rz + (a1.rz - a0.rz) * f) * o;
-        // Keep the slope clear under the collector platform.
-        if (!pickWest && inner && z > 54 && z < 96 && x < hx + 4) y -= 9;
+        // Keep the slope clear under the collector platform, and off the sheet-pile face.
+        if (!pickWest && inner && z >= COLLECTOR_CELL[0] - 4 && z <= COLLECTOR_CELL[1] + 4 && x < hx) y = -80;
+        else if (!pickWest && inner && z > 54 && z < 96 && x < hx + 4) y -= 9;
       }
       const sc = rng.range(1.1, 2.3) * (vi === 2 ? 0.85 : 1);
       p.set(x, y + sc * 0.3, z);

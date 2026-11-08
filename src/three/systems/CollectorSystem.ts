@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { SITE, seabedDepth } from '../../config/site';
-import { collectorPoint, pointOnNet, type NetLine } from '../../simulation/geometry';
+import { collectorPoint, type NetLine } from '../../simulation/geometry';
 import type { ModuleStatus } from '../../simulation/types';
 import { mediumMaterial, SHARED } from '../environment/shaderChunks';
 
@@ -188,33 +188,11 @@ export class CollectorSystem {
     platform.traverse((o) => (o.userData.pick = 'collector'));
     this.group.add(platform);
 
-    // Funnels at each net's end, and a low flume to the wet well.
-    const wing = mediumMaterial({ color: 0xc7b78e, roughness: 0.8, side: THREE.DoubleSide, transparent: true, opacity: 0.5 });
+    // At each funnel's wet-well entry: the suction frame, and a low flume to the wet well. The funnel itself is FunnelSystem.
     for (const L of nets) {
       const c = collectorPoint(L);
-      const m = pointOnNet(L, L.pocketS);
-      const wx = m.x + L.nx * K.mouthHalfWidth;
-      const wz = m.z + L.nz * K.mouthHalfWidth;
-      // Outer funnel wing, from the mouth to the suction.
-      const len2 = Math.hypot(c.x - wx, c.z - wz);
-      const w = new THREE.Mesh(new THREE.PlaneGeometry(len2, SITE.channel.depth + 0.8), wing);
-      w.position.set((c.x + wx) / 2, (0.8 - SITE.channel.depth) / 2, (c.z + wz) / 2);
-      w.rotation.y = -Math.atan2(c.z - wz, c.x - wx);
-      w.userData.pick = 'collector';
-      this.group.add(w);
-      // Bar rack across the funnel mouth: jellyfish pass, turtles and large debris do not.
-      const bars = Math.round(K.mouthHalfWidth / K.rackGap);
-      const rack = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.05, 0.05, SITE.channel.depth + 1.4, 6), steel, bars);
-      const barAt = new THREE.Matrix4();
-      for (let i = 0; i < bars; i++) {
-        const s = (K.mouthHalfWidth * (i + 0.5)) / bars;
-        barAt.setPosition(m.x + L.nx * s, (1.4 - SITE.channel.depth) / 2, m.z + L.nz * s);
-        rack.setMatrixAt(i, barAt);
-      }
-      rack.userData.pick = 'collector';
-      this.group.add(rack);
       // Suction frame.
-      const frame = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, SITE.channel.depth + 5, 16), steel);
+      const frame = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, SITE.channel.depth + 5, 16), steel);
       frame.position.set(c.x, (4.6 - SITE.channel.depth) / 2, c.z);
       frame.castShadow = true;
       frame.userData.pick = 'collector';

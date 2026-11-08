@@ -25,11 +25,21 @@ export interface EngineMetrics {
   intakeContactPct: number | null;
   /** On the nets, by net (t). */
   onNetT: [number, number];
-  /** In the pockets (t), in the release line (t), released alive (t). */
+  /** In the funnels now (t): past a mouth, short of the throat, so not collected yet. */
+  funnelT: number;
+  /** In the pockets now (t): collected, waiting for the lift. */
   pocketT: number;
+  /** In the release line now (t): in transfer. */
   inPipeT: number;
+  /** Through a throat into a pocket, all run (t). */
   collectedT: number;
+  /** Out of the line at the release point, all run (t). */
   releasedT: number;
+  /** Stalled, and snagged, at the funnels and their approach zones now (t). */
+  stalledT: number;
+  snaggedT: number;
+  /** Mean mouth-to-throat time of the latest animals through a throat (s), or null. */
+  mouthToThroatS: number | null;
   /** Past each net without being collected there (t). */
   leakedT: [number, number];
   /** Being collected now (t/h). */
@@ -65,10 +75,14 @@ export function computeEngineMetrics(e: SimulationEngine): EngineMetrics {
     trippedAt: scr.trippedAt,
     intakeContactPct: entered >= min ? c.intakeContacts / entered : null,
     onNetT: [e.onNet[0] * kg, e.onNet[1] * kg],
+    funnelT: (e.inFunnel[0] + e.inFunnel[1]) * kg,
     pocketT: tr ? tr.queueLength * kg : 0,
     inPipeT: tr ? e.countState(S_TRANSFERRED) * kg : 0,
     collectedT: c.diverted * kg,
     releasedT: c.released * kg,
+    stalledT: (e.stalled[0] + e.stalled[1]) * kg,
+    snaggedT: (e.snagged[0] + e.snagged[1]) * kg,
+    mouthToThroatS: e.transits.length ? e.transits.reduce((a, b) => a + b, 0) / e.transits.length : null,
     leakedT: [c.leaked[0] * kg, c.leaked[1] * kg],
     collectTph: e.collectEMA * kg * 3600,
     balance: e.balance(),

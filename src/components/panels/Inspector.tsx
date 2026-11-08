@@ -47,9 +47,11 @@ export function Inspector() {
       { k: 'Standby screw', v: t.standby, tone: t.standby === 'FAULT' ? 'text-red' : undefined },
       { k: 'Capacity now', v: `${t.capacityTph.toFixed(0)} t/h` },
       { k: 'Collecting', v: `${w.collectTph.toFixed(1)} t/h` },
-      { k: 'Pockets', v: `${Math.round(t.pocketFill * 100)} %` },
+      { k: 'In the funnels, not counted', v: `${w.funnelT.toFixed(2)} t` },
+      { k: 'In the pockets', v: `${w.pocketT.toFixed(2)} t, ${Math.round(t.pocketFill * 100)} %` },
+      { k: 'Sweep assist', v: snap.params.assistMode === 'off' ? 'off' : `${snap.params.assistMode}, ${Math.round((snap.funnels[0]?.assist.speed ?? 0) * 100)} %` },
     ];
-    note = 'Screw lifts have no impeller to cut the animals. Capacity is the line’s water flow at 5 % jellyfish by volume.';
+    note = 'Animals count as collected once through a funnel’s throat into its pocket. Screw lifts have no impeller to cut them. Capacity is the line’s water flow at 5 % jellyfish by volume.';
   } else if (sel.kind === 'intake') {
     title = 'Plant screens';
     rows = [

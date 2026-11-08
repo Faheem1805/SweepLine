@@ -1,5 +1,10 @@
 import * as THREE from 'three';
-import { S_FREE_DRIFT, S_INACTIVE, S_INTAKE_CONTACT, S_TRANSFERRED, S_PAST_NET } from '../../simulation/Agent';
+import { ASSUMPTIONS } from '../../config/assumptions';
+import { F_SNAGGED, S_FREE_DRIFT, S_FUNNEL, S_GUIDED, S_INACTIVE, S_INTAKE_CONTACT, S_TRANSFERRED, S_PAST_NET } from '../../simulation/Agent';
+
+/** Display-only state codes: stalled and snagged animals at the net or funnel. */
+const C_STALLED = 10;
+const C_SNAGGED = 11;
 import type { SimulationEngine } from '../../simulation/SimulationEngine';
 import { CAUSTIC_GLSL, MEDIUM_GLSL, SHARED } from '../environment/shaderChunks';
 
@@ -101,10 +106,13 @@ export function jellyShader(map: THREE.Texture | null): THREE.ShaderMaterial {
         if (s < 1.5) return vec3(0.75, 0.86, 1.0);       // approaching
         if (s < 2.5) return vec3(0.15, 0.85, 0.95);      // guided
         if (s < 3.5) return vec3(1.0, 0.36, 0.3);        // under skirt
-        if (s < 4.5) return vec3(1.0, 0.72, 0.25);       // transfer queue
+        if (s < 4.5) return vec3(0.3, 0.95, 0.5);        // in the pocket: collected
         if (s < 6.5) return vec3(0.3, 0.95, 0.6);        // released
         if (s < 7.5) return vec3(1.0, 0.25, 0.25);       // intake contact
-        return vec3(0.6, 0.7, 0.85);                     // free drift
+        if (s < 8.5) return vec3(0.6, 0.7, 0.85);        // free drift
+        if (s < 9.5) return vec3(0.45, 0.62, 1.0);       // in the funnel, not collected yet
+        if (s < 10.5) return vec3(1.0, 0.7, 0.12);       // stalled
+        return vec3(1.0, 0.3, 0.62);                     // snagged
       }
       void main() {
         bool selected = vData.w > 15.5;
@@ -158,10 +166,13 @@ export function jellyShader(map: THREE.Texture | null): THREE.ShaderMaterial {
         }
         // Caustics flicker over the animal from the waves above.
         if (vWorld.y < 0.0) col += base * uSunColor * wrap * (slCaustic(vWorld, foot) - 1.0) * uCaustics * 0.45;
-        if (uStateColors > 0.5) {
+        // Stalled and snagged animals always show close up; every state shows in the engineering view.
+        float flagged = state > 9.5 ? 1.0 - smoothstep(110.0, 170.0, length(vWorld - cameraPosition)) : 0.0;
+        float showState = max(step(0.5, uStateColors), flagged);
+        if (showState > 0.0) {
           vec3 sc = stateColor(state);
-          col = mix(col, sc * 0.9, 0.62);
-          alpha = max(alpha, 0.55);
+          col = mix(col, sc * 0.9, 0.62 * showState);
+          alpha = max(alpha, 0.55 * showState);
         }
         if (selected) {
           col = mix(col, vec3(0.3, 0.95, 1.0), 0.45) + rim * 0.5;
@@ -267,6 +278,7 @@ export class JellyfishSystem {
     const nearCap = near.slots.length;
     const farCap = far.slots.length;
     const { state, px, py, pz, vx, vz, size, phase, tint, fade, id } = p;
+    const stallAfter = ASSUMPTIONS.collector.stallAfter;
     for (let i = 0; i < p.capacity; i++) {
       const st = state[i];
       if (st === S_INACTIVE || st === S_TRANSFERRED) continue;
@@ -300,7 +312,11 @@ export class JellyfishSystem {
       const selected = id[i] === this.selectedId;
       let alpha = fade[i];
       if (st === S_INTAKE_CONTACT) alpha *= 0.85;
-      const stateCode = st === S_FREE_DRIFT && p.flags[i] & 2 ? S_PAST_NET : st;
+      let stateCode = st === S_FREE_DRIFT && p.flags[i] & 2 ? S_PAST_NET : st;
+      if (st === S_GUIDED || st === S_FUNNEL) {
+        if (p.flags[i] & F_SNAGGED) stateCode = C_SNAGGED;
+        else if (p.slow[i] >= stallAfter) stateCode = C_STALLED;
+      }
       const useNear = (dist < NEAR_DISTANCE || selected) && near.count < nearCap;
       if (useNear) {
         const k = near.count++;

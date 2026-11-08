@@ -5,8 +5,10 @@ import { getScenario, type Scenario, type ScenarioStep } from './scenarios';
 import { SimulationEngine, type AgentInfo } from './SimulationEngine';
 import { hoursToNextTurn, tideCurrent, tideCurrentVector, tideDate } from './tide';
 import { TRANSFER_TPH } from './transfer';
+import type { AssistInterlock } from './assist';
 import {
   DEFAULT_PARAMS,
+  type AssistMode,
   type EngineKind,
   type EventLevel,
   type FailureKey,
@@ -110,6 +112,39 @@ export interface SimSnapshot {
     turnIn: number | null;
     trace: number[];
   };
+  /** Each net's funnel, pocket and sweep assist. */
+  funnels: FunnelSnapshot[];
+}
+
+export interface FunnelSnapshot {
+  name: string;
+  active: boolean;
+  /** Past the mouth, short of the throat: not collected yet (t), and what the funnel holds (t). */
+  funnelT: number;
+  funnelCapT: number;
+  /** In the pocket: collected, waiting for the lift (t), and what it holds (t). */
+  pocketT: number;
+  pocketCapT: number;
+  stalledT: number;
+  snaggedT: number;
+  /** Mean of the latest mouth-to-throat times (s). */
+  mouthToThroatS: number | null;
+  assist: {
+    mode: AssistMode;
+    /** Pump speed, share of full. */
+    speed: number;
+    demand: boolean;
+    interlock: AssistInterlock | null;
+    reason: string;
+    powerKW: number;
+    runtimeS: number;
+    energyKWh: number;
+    starts: number;
+    /** The sweep the controller reads ahead of the spray bar (m/s), or null. */
+    sweep: number | null;
+    presentKg: number;
+    mouthKg: number;
+  };
 }
 
 export interface LoadingState {
@@ -206,6 +241,8 @@ export class SimController {
   private prevSweepStatus = 'CLEAR';
   private prevPrimary: ModuleStatus = 'STANDBY';
   private prevStandby: ModuleStatus = 'STANDBY';
+  private prevFunnelFull = false;
+  private prevAssist: Array<'off' | 'on' | 'held'> = ['off', 'off'];
 
   constructor() {
     this.baseline = new SimulationEngine('baseline', this.params);
@@ -251,6 +288,8 @@ export class SimController {
     this.prevSweepStatus = 'CLEAR';
     this.prevPrimary = 'STANDBY';
     this.prevStandby = 'STANDBY';
+    this.prevFunnelFull = false;
+    this.prevAssist = ['off', 'off'];
     if (this.params.tide) this.params = { ...this.params, ...this.tideAt(0) };
     this.baseline.reset(this.params, 'approach');
     this.sweepline.reset(this.params, 'approach');
@@ -336,6 +375,7 @@ export class SimController {
     if (partial.unitsRunning !== undefined && partial.unitsRunning !== prev.unitsRunning) this.log('info', `${partial.unitsRunning} of ${ASSUMPTIONS.plant.units} units running — channel flow ${(this.sweepline.flow.plantFlow).toFixed(0)} m³/s`);
     if (partial.foulingWeeks !== undefined && partial.foulingWeeks !== prev.foulingWeeks) this.log('info', partial.foulingWeeks === 0 ? 'Clean panels in the water' : `Panels ${partial.foulingWeeks} weeks in the water`);
     if (partial.secondNet !== undefined && partial.secondNet !== prev.secondNet) this.log(partial.secondNet ? 'info' : 'warn', partial.secondNet ? 'Net B in place' : 'Net B out of the water');
+    if (partial.assistMode !== undefined && partial.assistMode !== prev.assistMode) this.log('info', partial.assistMode === 'off' ? 'Sweep assist off: passive guidance only' : partial.assistMode === 'auto' ? 'Sweep assist on Auto (experimental)' : 'Sweep assist: manual test run (experimental)');
     this.publish(true);
   }
 
@@ -509,6 +549,8 @@ export class SimController {
       if (a.kind === 'fail') this.injectFailure(a.failure);
       else if (a.kind === 'clear') this.clearFailure(a.failure);
       else {
+        // A scripted change is part of the scenario: Replay starts again from before it.
+        for (const k of Object.keys(a.params) as Array<keyof SimParams>) if (!(k in this.savedParams)) (this.savedParams as Record<string, unknown>)[k] = this.params[k];
         this.log('warn', a.message);
         this.setParams(a.params);
       }
@@ -549,8 +591,23 @@ export class SimController {
     const pFull = tr.queues[0].length >= s.holdCapacity;
     if (pFull !== this.prevPocketFull) {
       this.prevPocketFull = pFull;
-      this.log(pFull ? 'warn' : 'ok', pFull ? 'Pocket full — the bloom is stacking up along the net' : 'Pocket clearing');
+      this.log(pFull ? 'warn' : 'ok', pFull ? 'Net A pocket full: throat closed, animals wait in the funnel' : 'Net A pocket clearing');
     }
+    const fFull = s.inFunnel[0] >= s.funnelCapacity;
+    if (fFull !== this.prevFunnelFull) {
+      this.prevFunnelFull = fFull;
+      this.log(fFull ? 'warn' : 'ok', fFull ? 'Net A funnel full: mouth closed, the bloom is stacking up along the net' : 'Net A funnel clearing');
+    }
+    s.assist.forEach((a, i) => {
+      const wanted = a.mode === 'manual' || (a.mode === 'auto' && a.demand);
+      const now = wanted && a.interlock ? 'held' : a.speed > 0.01 || wanted ? 'on' : 'off';
+      if (now === this.prevAssist[i]) return;
+      this.prevAssist[i] = now;
+      const name = s.nets[i].line.name;
+      if (now === 'on') this.log('info', `${name} sweep assist starting. ${a.reason}`);
+      else if (now === 'held') this.log('warn', `${name} sweep assist ${a.reason.charAt(0).toLowerCase()}${a.reason.slice(1)}`);
+      else this.log('ok', `${name} sweep assist back to idle`);
+    });
     if (tr.primaryStatus !== this.prevPrimary || tr.standbyStatus !== this.prevStandby) {
       if (this.prevStandby !== 'ONLINE' && tr.standbyStatus === 'ONLINE') this.log('ok', 'Standby lift carrying the load');
       this.prevPrimary = tr.primaryStatus;
@@ -722,6 +779,31 @@ export class SimController {
       bloom: { active: s.bloomActive, rate: this.params.bloomRate * s.surge, species: sp.name },
       selectedAgent,
       tide: this.tideSnapshot(),
+      funnels: s.assist.map((a, i) => ({
+        name: s.nets[i].line.name,
+        active: s.nets[i].active,
+        funnelT: (s.inFunnel[i] * kg) / 1000,
+        funnelCapT: (s.funnelCapacity * kg) / 1000,
+        pocketT: (tr.queues[i as 0 | 1].length * kg) / 1000,
+        pocketCapT: (s.holdCapacity * kg) / 1000,
+        stalledT: (s.stalled[i] * kg) / 1000,
+        snaggedT: (s.snagged[i] * kg) / 1000,
+        mouthToThroatS: i === 0 ? computeEngineMetrics(s).mouthToThroatS : null,
+        assist: {
+          mode: a.mode,
+          speed: a.speed,
+          demand: a.demand,
+          interlock: a.interlock,
+          reason: a.reason,
+          powerKW: a.powerKW,
+          runtimeS: a.runtime,
+          energyKWh: a.energyKWh,
+          starts: a.starts,
+          sweep: Number.isFinite(a.speedEMA) ? a.speedEMA : null,
+          presentKg: a.sensors.presentKg,
+          mouthKg: a.sensors.mouthKg,
+        },
+      })),
     };
   }
 
