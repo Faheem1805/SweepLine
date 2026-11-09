@@ -23,8 +23,9 @@ export interface JellyLod {
   inner: boolean;
 }
 
-export const NEAR_LOD: JellyLod = { thetaSegs: 48, bellRings: 12, lappets: 24, arms: 8, armRings: 16, armSides: 10, inner: true };
-export const FAR_LOD: JellyLod = { thetaSegs: 18, bellRings: 6, lappets: 0, arms: 4, armRings: 5, armSides: 6, inner: false };
+export const NEAR_LOD: JellyLod = { thetaSegs: 36, bellRings: 10, lappets: 24, arms: 8, armRings: 12, armSides: 8, inner: true };
+/** Far away an animal is a few pixels: a light dome and four arms. */
+export const FAR_LOD: JellyLod = { thetaSegs: 12, bellRings: 4, lappets: 0, arms: 4, armRings: 3, armSides: 4, inner: false };
 
 const BELL_R = 0.5;
 const BELL_H = 0.43;

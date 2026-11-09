@@ -62,8 +62,12 @@ export const SPECIES = {
 export type SpeciesKey = keyof typeof SPECIES;
 
 export const ASSUMPTIONS = {
-  /** Fixed integration step for the agent model (simulated seconds). */
-  timeStep: 0.1,
+  /**
+   * Fixed integration step for the agent model (simulated seconds): the same in the live twin and in
+   * every study (scripts/study-core.ts), so a run on screen is a study run. The 3D view draws the
+   * animals between steps, so motion stays smooth at any speed.
+   */
+  timeStep: 0.4,
 
   /**
    * The plant. Design flow 2 million m³/h across four units. Published condenser flow for a unit this

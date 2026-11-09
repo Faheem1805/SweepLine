@@ -22,8 +22,9 @@ function axisCoords(core: number, spacing: number, outer: number, outerSegs: num
 }
 
 function buildGrid(): THREE.BufferGeometry {
-  const xs = axisCoords(900, 4, 9000, 26);
-  const zs = axisCoords(760, 4, 9000, 26);
+  // 6 m cells near the site (the shortest waves drawn are tens of metres long), growing outward.
+  const xs = axisCoords(900, 6, 9000, 26);
+  const zs = axisCoords(760, 6, 9000, 26);
   const nx = xs.length;
   const nz = zs.length;
   const pos = new Float32Array(nx * nz * 3);

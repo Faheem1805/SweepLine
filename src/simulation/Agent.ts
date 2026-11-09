@@ -87,6 +87,10 @@ export class AgentPool {
   readonly slow: Float32Array;
   /** Sim time the animal crossed the funnel mouth, or −1. */
   readonly mouthTime: Float32Array;
+  /** Position at the start of the last step: the renderer draws between it and the current one. */
+  readonly ox: Float32Array;
+  readonly oy: Float32Array;
+  readonly oz: Float32Array;
   /** Twin-Line guide line whose throat holds the agent, then the outlet it is released from. */
   readonly lane: Int8Array;
   /** Visual fade-in 0..1. */
@@ -119,6 +123,9 @@ export class AgentPool {
     this.queueIndex = new Int16Array(capacity);
     this.slow = new Float32Array(capacity);
     this.mouthTime = new Float32Array(capacity);
+    this.ox = new Float32Array(capacity);
+    this.oy = new Float32Array(capacity);
+    this.oz = new Float32Array(capacity);
     this.lane = new Int8Array(capacity);
     this.fade = new Float32Array(capacity);
     this.freeList = new Int32Array(capacity);

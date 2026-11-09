@@ -196,6 +196,9 @@ const STORM_HS = 1.82;
 
 const nextFrame = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
+/** Most of a frame the simulation may take (ms); the rest is for drawing. */
+const SIM_BUDGET_MS = 5;
+
 /**
  * Runtime controller. Owns the baseline and SweepLine engines (same seed, same bloom), advances them
  * in lock-step, records the timeline, event log and metric history, and publishes snapshots to the
@@ -212,6 +215,8 @@ export class SimController {
   ready = false;
   /** Main-thread budget per pre-roll chunk (ms). */
   preRollSliceMs = 24;
+  /** How far the next step has come (0..1): the 3D view draws the animals this far between steps. */
+  alpha = 0;
   scenario: Scenario | null = null;
   failures = noFailures();
   events: SimEvent[] = [];
@@ -279,6 +284,7 @@ export class SimController {
     this.historyVersion++;
     this.timeline = STAGES.map((s) => ({ ...s, at: null }));
     this.acc = 0;
+    this.alpha = 0;
     this.historyTimer = 0;
     this.safetyTimer = 0;
     this.selection = null;
@@ -502,13 +508,19 @@ export class SimController {
       const approach = !this.opening && !this.userSpeed && this.sweepline.counters.encountered === 0;
       const h = approach ? ASSUMPTIONS.sequence.preRollStep : ASSUMPTIONS.timeStep;
       this.acc += Math.min(dtReal, 0.1) * (approach ? ASSUMPTIONS.sequence.approachSpeed : this.speed);
-      let n = 0;
-      while (this.acc >= h && n < 80) {
+      const t0 = performance.now();
+      while (this.acc >= h) {
         this.stepAll(h);
         this.acc -= h;
-        n++;
+        // The simulation never takes the whole frame: what is left over waits for the next frame
+        // (at most two steps' worth), so on a slow machine it runs a little slower than the set
+        // speed and the picture stays smooth, instead of every frame getting longer.
+        if (performance.now() - t0 > SIM_BUDGET_MS) {
+          if (this.acc > 2 * h) this.acc = 2 * h;
+          break;
+        }
       }
-      if (n >= 80) this.acc = 0;
+      this.alpha = Math.min(1, this.acc / h);
       if (this.opening) this.updateOpening(dtReal);
     }
     this.publish(false);
@@ -726,6 +738,7 @@ export class SimController {
     }
     const sp = SPECIES[this.params.species];
     const sweep = s.flow.channelSpeed * Math.cos((20 * Math.PI) / 180);
+    const sMetrics = computeEngineMetrics(s);
     return {
       ready: this.ready,
       simTime: s.time,
@@ -736,7 +749,7 @@ export class SimController {
       scenarioId: this.scenario?.id ?? null,
       scenarioName: this.scenario?.name ?? 'Custom conditions',
       baseline: computeEngineMetrics(this.baseline),
-      sweepline: computeEngineMetrics(s),
+      sweepline: sMetrics,
       status: this.computeStatus(),
       nets: s.nets.map((net, i) => {
         let foul = 0;
@@ -788,7 +801,7 @@ export class SimController {
         pocketCapT: (s.holdCapacity * kg) / 1000,
         stalledT: (s.stalled[i] * kg) / 1000,
         snaggedT: (s.snagged[i] * kg) / 1000,
-        mouthToThroatS: i === 0 ? computeEngineMetrics(s).mouthToThroatS : null,
+        mouthToThroatS: i === 0 ? sMetrics.mouthToThroatS : null,
         assist: {
           mode: a.mode,
           speed: a.speed,

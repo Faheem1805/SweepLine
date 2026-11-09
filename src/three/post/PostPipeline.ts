@@ -77,7 +77,8 @@ export class PostPipeline {
 
   constructor(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, sun: THREE.DirectionalLight) {
     this.renderer = renderer;
-    const samples = Math.min(4, renderer.capabilities.maxSamples);
+    // 2× MSAA: SMAA at the end takes the remaining edges, at half the scene-pass cost of 4×.
+    const samples = Math.min(2, renderer.capabilities.maxSamples);
     this.composer = new EffectComposer(renderer, { frameBufferType: THREE.HalfFloatType, multisampling: samples });
     this.composer.autoRenderToScreen = true;
 
@@ -130,6 +131,12 @@ export class PostPipeline {
     return this.composer.inputBuffer;
   }
 
+  /**
+   * Resolution scale (0.5..1) that SceneManager lowers when frames run long on a slower GPU and
+   * raises again when there is headroom. The final pass upsamples to the canvas.
+   */
+  renderScale = 1;
+
   /** Size every buffer for a view of `width × height` device pixels (no-op if unchanged). */
   private setSize(width: number, height: number): void {
     if (width === this.width && height === this.height) return;
@@ -151,7 +158,7 @@ export class PostPipeline {
     const pr = this.renderer.getPixelRatio();
     const w = rect.width * pr;
     const h = rect.height * pr;
-    const s = Math.min(1, Math.sqrt((PIXEL_BUDGET * share) / Math.max(1, w * h)));
+    const s = Math.min(1, Math.sqrt((PIXEL_BUDGET * this.renderScale * this.renderScale * share) / Math.max(1, w * h)));
     return [Math.max(1, Math.round(w * s)), Math.max(1, Math.round(h * s))];
   }
 

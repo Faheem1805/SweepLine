@@ -200,7 +200,7 @@ export class FunnelSystem {
     this.group.add(this.ring);
   }
 
-  update(engine: SimulationEngine, camera: THREE.Camera, dtReal: number, time: number): void {
+  update(engine: SimulationEngine, camera: THREE.Camera, dtReal: number, time: number, alpha = 1): void {
     this.closeness = camera.position.distanceTo(this.throatAnchor);
     const close = this.closeness < 150;
 
@@ -262,9 +262,9 @@ export class FunnelSystem {
       const phase = st === S_TRANSFER_QUEUE ? 2 : st === S_FUNNEL ? 1 : 0;
       if (phase === 1 && this.trackPhase === 0) this.trackMouthT = engine.time;
       this.trackPhase = Math.max(this.trackPhase, phase);
-      const x = p.px[i];
-      const y = Math.min(p.py[i], -0.3);
-      const z = p.pz[i];
+      const x = p.ox[i] + (p.px[i] - p.ox[i]) * alpha;
+      const y = Math.min(p.oy[i] + (p.py[i] - p.oy[i]) * alpha, -0.3);
+      const z = p.oz[i] + (p.pz[i] - p.oz[i]) * alpha;
       const n = this.trailN;
       const lx = n > 0 ? this.trailPos[(n - 1) * 3] : Infinity;
       const lz = n > 0 ? this.trailPos[(n - 1) * 3 + 2] : Infinity;

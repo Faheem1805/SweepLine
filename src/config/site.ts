@@ -196,6 +196,48 @@ export function seabedDepth(x: number, z: number): number {
   return d + (Math.max(d, C.depth) - d) * b;
 }
 
+/** {@link seabedDepth} sampled every 2.5 m over the agent domain, built on first use. */
+// A grid line sits exactly on the shoreline toe, where the seabed slope changes, so the table is exact there.
+const SEABED_GRID = { x0: SITE.domain.xMin - 40, z0: SITE.shore.toeZ - 2.5 * Math.ceil((SITE.shore.toeZ + 140) / 2.5), x1: SITE.domain.xMax + 40, z1: SITE.domain.zMax + 40, cell: 2.5 };
+let seabedGrid: Float32Array | null = null;
+let seabedNx = 0;
+let seabedNz = 0;
+
+function buildSeabedGrid(): Float32Array {
+  const G = SEABED_GRID;
+  seabedNx = Math.ceil((G.x1 - G.x0) / G.cell) + 1;
+  seabedNz = Math.ceil((G.z1 - G.z0) / G.cell) + 1;
+  const g = new Float32Array(seabedNx * seabedNz);
+  for (let j = 0; j < seabedNz; j++) {
+    const z = G.z0 + j * G.cell;
+    for (let i = 0; i < seabedNx; i++) g[j * seabedNx + i] = seabedDepth(G.x0 + i * G.cell, z);
+  }
+  return g;
+}
+
+/**
+ * Seabed depth from a 2.5 m lookup table (bilinear): what the agent model reads every step, at a
+ * fraction of the cost of {@link seabedDepth}. Within a few centimetres of it (`npm test` checks).
+ */
+export function seabedDepthFast(x: number, z: number): number {
+  const g = seabedGrid ?? (seabedGrid = buildSeabedGrid());
+  const G = SEABED_GRID;
+  let fx = (x - G.x0) / G.cell;
+  let fz = (z - G.z0) / G.cell;
+  if (fx < 0) fx = 0;
+  else if (fx > seabedNx - 1.001) fx = seabedNx - 1.001;
+  if (fz < 0) fz = 0;
+  else if (fz > seabedNz - 1.001) fz = seabedNz - 1.001;
+  const i = fx | 0;
+  const j = fz | 0;
+  const u = fx - i;
+  const v = fz - j;
+  const k = j * seabedNx + i;
+  const a = g[k] + (g[k + 1] - g[k]) * u;
+  const b = g[k + seabedNx] + (g[k + seabedNx + 1] - g[k + seabedNx]) * u;
+  return a + (b - a) * v;
+}
+
 /** GLSL twin of {@link seabedDepth}. Keep both in sync. */
 export const SEABED_DEPTH_GLSL = /* glsl */ `
 float seabedDepth(vec2 p) {

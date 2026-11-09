@@ -1,5 +1,5 @@
 import { ASSUMPTIONS, SPECIES } from '../config/assumptions';
-import { SITE, seabedDepth, waveExposure } from '../config/site';
+import { SITE, seabedDepth, seabedDepthFast, waveExposure } from '../config/site';
 import {
   AgentPool,
   F_DIVERTED,
@@ -389,6 +389,9 @@ export class SimulationEngine {
     p.queueIndex[slot] = -1;
     p.slow[slot] = 0;
     p.mouthTime[slot] = -1;
+    p.ox[slot] = x;
+    p.oy[slot] = -pref;
+    p.oz[slot] = z;
     p.fade[slot] = visible ? 1 : 0;
   }
 
@@ -455,6 +458,10 @@ export class SimulationEngine {
     const stepNo = Math.floor(t / dt);
     let sonar = 0;
 
+    // Where every animal starts this step, for drawing between steps.
+    pool.ox.set(px);
+    pool.oy.set(py);
+    pool.oz.set(pz);
     this.tally[0].fill(0);
     this.tally[1].fill(0);
     this.onNet[0] = 0;
@@ -519,7 +526,7 @@ export class SimulationEngine {
       dvz += (valueNoise(aid * 5 + 3, t * 0.07) - 0.5) * 2 * A.turbulence;
 
       // Vertical: swim toward the preferred depth of this individual within the bloom distribution.
-      const seabed = seabedDepth(x, z);
+      const seabed = seabedDepthFast(x, z);
       let pref = mean + sd * depthZ[i];
       if (pref < A.minDepth) pref = A.minDepth;
       if (pref > seabed - 0.8) pref = seabed - 0.8;
@@ -969,6 +976,10 @@ export class SimulationEngine {
     p.state[i] = S_RELEASED;
     p.stateTime[i] = 0;
     p.fade[i] = 0.25;
+    // A jump to the outlet, not a move: nothing to draw in between.
+    p.ox[i] = p.px[i];
+    p.oy[i] = p.py[i];
+    p.oz[i] = p.pz[i];
     this.counters.released++;
     this.releasesThisStep++;
     if ((this.counters.released & 3) === 0) this.pushMarker(p.px[i], p.py[i], p.pz[i], 'release');

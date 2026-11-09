@@ -226,6 +226,8 @@ export class JellyfishSystem {
   private readonly up = new THREE.Vector3(0, 1, 0);
   private readonly pos = new THREE.Vector3();
   private readonly scl = new THREE.Vector3();
+  private readonly frustum = new THREE.Frustum();
+  private readonly viewProj = new THREE.Matrix4();
   selectedId = -1;
 
   constructor(nearGeo: THREE.BufferGeometry, farGeo: THREE.BufferGeometry, material: THREE.ShaderMaterial, capacity: number, name: string) {
@@ -267,6 +269,11 @@ export class JellyfishSystem {
     const p = engine.pool;
     this.ensureCapacity(p.capacity);
     const cam = camera.position;
+    // Only the animals in view are drawn.
+    camera.updateMatrixWorld();
+    this.viewProj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    this.frustum.setFromProjectionMatrix(this.viewProj);
+    const planes = this.frustum.planes;
     const near = this.near;
     const far = this.far;
     near.count = 0;
@@ -277,14 +284,16 @@ export class JellyfishSystem {
     const fd = far.data.array as Float32Array;
     const nearCap = near.slots.length;
     const farCap = far.slots.length;
-    const { state, px, py, pz, vx, vz, size, phase, tint, fade, id } = p;
+    const { state, px, py, pz, ox, oy, oz, vx, vz, size, phase, tint, fade, id } = p;
     const stallAfter = ASSUMPTIONS.collector.stallAfter;
+    // Drawn between the last two simulation steps, so motion is smooth whatever the step rate.
+    const a = this.alpha;
     for (let i = 0; i < p.capacity; i++) {
       const st = state[i];
       if (st === S_INACTIVE || st === S_TRANSFERRED) continue;
-      const x = px[i];
-      const y = py[i];
-      const z = pz[i];
+      const x = ox[i] + (px[i] - ox[i]) * a;
+      const y = oy[i] + (py[i] - oy[i]) * a;
+      const z = oz[i] + (pz[i] - oz[i]) * a;
       const dx = x - cam.x;
       const dy = y - cam.y;
       const dz = z - cam.z;
@@ -292,6 +301,20 @@ export class JellyfishSystem {
       let boost = 1;
       if (dist > LEGIBILITY.start) boost = Math.min(LEGIBILITY.max, 1 + (dist - LEGIBILITY.start) * LEGIBILITY.perMetre);
       const s = size[i] * boost;
+      const selected = id[i] === this.selectedId;
+      if (!selected) {
+        // Bounding sphere against the six frustum planes.
+        const r = -s * 2.2;
+        let out = false;
+        for (let k = 0; k < 6; k++) {
+          const pl = planes[k];
+          if (pl.normal.x * x + pl.normal.y * y + pl.normal.z * z + pl.constant < r) {
+            out = true;
+            break;
+          }
+        }
+        if (out) continue;
+      }
       // Enlarged bells are flattened a little and kept below the surface, so they never sit on top of the water.
       const flat = boost > 1 ? 1 - 0.22 * Math.min(1, (boost - 1) / 6) : 1;
       const yv = boost > 1 ? Math.min(y, -BELL_TOP * s * flat - 0.35) : y;
@@ -309,7 +332,6 @@ export class JellyfishSystem {
       this.pos.set(x, yv, z);
       this.scl.set(s, s * flat, s);
       this.m.compose(this.pos, this.q, this.scl);
-      const selected = id[i] === this.selectedId;
       let alpha = fade[i];
       if (st === S_INTAKE_CONTACT) alpha *= 0.85;
       let stateCode = st === S_FREE_DRIFT && p.flags[i] & 2 ? S_PAST_NET : st;
@@ -346,6 +368,9 @@ export class JellyfishSystem {
       lod.data.needsUpdate = true;
     }
   }
+
+  /** How far between the last two simulation steps to draw (0..1), from the controller. */
+  alpha = 1;
 
   setStateColors(on: boolean): void {
     this.material.uniforms.uStateColors.value = on ? 1 : 0;

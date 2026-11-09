@@ -16,8 +16,8 @@ export class Seabed {
     this.group.name = 'seabed';
     const W = 5200;
     const D = 2360;
-    const segX = 640;
-    const segZ = 322;
+    const segX = 420;
+    const segZ = 212;
     const geo = new THREE.PlaneGeometry(W, D, segX, segZ);
     geo.rotateX(-Math.PI / 2);
     geo.translate(500, 0, 1000);

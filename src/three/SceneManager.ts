@@ -101,7 +101,8 @@ export class SceneManager {
     this.ui = useApp.getState().ui;
     this.container = document.createElement('div');
     this.container.className = 'sl-viewport-root';
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', stencil: false, preserveDrawingBuffer: false });
+    // No canvas MSAA: the scene is drawn into the post-processing buffers (2× MSAA, then SMAA) and only a full-screen pass reaches the canvas.
+    this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', stencil: false, preserveDrawingBuffer: false });
     this.pixelRatio = Math.min(window.devicePixelRatio || 1, 1.75);
     this.renderer.setPixelRatio(this.pixelRatio);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -503,7 +504,7 @@ export class SceneManager {
     this.nets.update(sw.nets, this.realTime, hs, this.ui.flowView, this.camera);
     const flowFraction = Math.min(1, tr.availability() * (0.35 + tr.processedEMA / Math.max(tr.capacityRate(), 1e-3) * 4));
     this.collector.update(tr.primaryStatus, tr.standbyStatus, flowFraction, this.realTime);
-    this.funnels.update(sw, this.camera, dt, this.realTime);
+    this.funnels.update(sw, this.camera, dt, this.realTime, ctrl.alpha);
     this.release.update(sw.releaseEMA, tr.running, this.realTime, this.realTime, hs);
     this.sonar.update((this.ui.flowView || params.night) && !ctrl.failures.sonarLoss, dt);
 
@@ -540,6 +541,8 @@ export class SceneManager {
 
     this.rig.update(dt);
     if (!this.slot || this.renderSuspended) return;
+    this.adaptResolution(dtReal, ctrl.ready);
+    this.gpuBegin();
 
     // Static shadow map: refresh for the first few frames, quickly while panels move, else about once a second.
     this.shadowTimer -= dt;
@@ -549,9 +552,11 @@ export class SceneManager {
     if (this.shadowFrames < 3) {
       refreshShadows = true;
       this.shadowFrames++;
-    } else if (this.shadowTimer <= 0) {
+    } else if (this.shadowTimer <= 0 && sw.nets.some((n) => n.arming || n.reliefFraction > 0)) {
+      // The shadow map is static: it is redrawn only while net panels move (going in, relief dipping),
+      // not on a timer, which used to cost a visible hitch every second.
       refreshShadows = true;
-      this.shadowTimer = sw.nets.some((n) => n.arming) ? 0.2 : 1.2;
+      this.shadowTimer = 0.25;
     }
     if (refreshShadows && !this.ui.compare) this.renderer.shadowMap.needsUpdate = true;
 
@@ -570,6 +575,7 @@ export class SceneManager {
       for (const [i, w] of (['baseline', 'sweepline'] as EngineKind[]).entries()) {
         const x0 = i === 0 ? 0 : this.width - half;
         this.setWorld(w);
+        this.jellies[w].alpha = ctrl.alpha;
         this.jellies[w].update(ctrl.engine(w), this.camera);
         if (i === 0 && refreshShadows) this.renderer.shadowMap.needsUpdate = true;
         this.post.render({ x: x0, y: 0, width: half, height: this.height }, dt, 0.5);
@@ -581,10 +587,12 @@ export class SceneManager {
       this.camera.aspect = this.width / this.height;
       this.camera.updateProjectionMatrix();
       this.setWorld(w);
+      this.jellies[w].alpha = ctrl.alpha;
       this.jellies[w].update(ctrl.engine(w), this.camera);
       this.post.render({ x: 0, y: 0, width: this.width, height: this.height }, dt);
       this.labels.place(this.camera, w === 'sweepline' ? 'single' : 'base', 0, this.width, this.height, underwater);
     }
+    this.gpuEnd();
     this.labels.endFrame();
 
     this.infoTimer -= dt;
@@ -600,6 +608,81 @@ export class SceneManager {
       if (ui.underwater !== underwater || Math.abs(ui.cameraDepth - depth) > 0.15 || Math.abs(ui.cameraHeading - heading) > 2) {
         useApp.getState().setUI({ underwater, cameraDepth: depth, cameraHeading: heading });
       }
+    }
+  }
+
+  private frameEMA = 1 / 60;
+  private slowFor = 0;
+  private fastFor = 0;
+  /** GPU time of the 3D view (ms, smoothed), from a timer query where the browser has one, else -1. */
+  gpuMs = -1;
+  private gpuExt: { TIME_ELAPSED_EXT: number; GPU_DISJOINT_EXT: number } | null | undefined;
+  private readonly gpuQueue: WebGLQuery[] = [];
+  private gpuQuery: WebGLQuery | null = null;
+
+  private gpuBegin(): void {
+    const gl = this.renderer.getContext() as WebGL2RenderingContext;
+    if (this.gpuExt === undefined) this.gpuExt = (gl.getExtension?.('EXT_disjoint_timer_query_webgl2') as typeof this.gpuExt) ?? null;
+    const ext = this.gpuExt;
+    if (!ext) return;
+    // Read the finished queries from earlier frames without waiting for the GPU.
+    while (this.gpuQueue.length) {
+      const q = this.gpuQueue[0];
+      if (!gl.getQueryParameter(q, gl.QUERY_RESULT_AVAILABLE)) break;
+      this.gpuQueue.shift();
+      const ns = gl.getQueryParameter(q, gl.QUERY_RESULT) as number;
+      gl.deleteQuery(q);
+      if (gl.getParameter(ext.GPU_DISJOINT_EXT)) continue;
+      const ms = ns / 1e6;
+      this.gpuMs = this.gpuMs < 0 ? ms : this.gpuMs + (ms - this.gpuMs) * 0.1;
+    }
+    if (this.gpuQueue.length > 8) return;
+    this.gpuQuery = gl.createQuery();
+    if (this.gpuQuery) gl.beginQuery(ext.TIME_ELAPSED_EXT, this.gpuQuery);
+  }
+
+  private gpuEnd(): void {
+    if (!this.gpuQuery || !this.gpuExt) return;
+    const gl = this.renderer.getContext() as WebGL2RenderingContext;
+    gl.endQuery(this.gpuExt.TIME_ELAPSED_EXT);
+    this.gpuQueue.push(this.gpuQuery);
+    this.gpuQuery = null;
+  }
+
+  /**
+   * Keep the frame rate up on a slower GPU: when the 3D view takes too long for a while, draw it at
+   * a lower internal resolution (down to half); when there is headroom again, step back up. Reads
+   * the GPU timer where there is one, so loading and other CPU work never blur the picture.
+   */
+  private adaptResolution(dtReal: number, ready: boolean): void {
+    if (!ready || dtReal <= 0 || dtReal > 0.5) {
+      this.slowFor = 0;
+      this.fastFor = 0;
+      return;
+    }
+    this.frameEMA += (dtReal - this.frameEMA) * 0.1;
+    const gpu = this.gpuMs >= 0;
+    // A 60 Hz frame is 16.7 ms: keep the GPU between about 12 and 15 ms of it.
+    const slow = gpu ? this.gpuMs > 15 : this.frameEMA > 1 / 45;
+    const fast = gpu ? this.gpuMs < 12 : this.frameEMA < 1 / 57;
+    const post = this.post;
+    if (slow) {
+      this.slowFor += dtReal;
+      this.fastFor = 0;
+      if (this.slowFor > 0.8 && post.renderScale > 0.5) {
+        post.renderScale = Math.max(0.5, post.renderScale * 0.88);
+        this.slowFor = 0;
+      }
+    } else if (fast) {
+      this.fastFor += dtReal;
+      this.slowFor = 0;
+      if (this.fastFor > 1.5 && post.renderScale < 1) {
+        post.renderScale = Math.min(1, post.renderScale * 1.1);
+        this.fastFor = 0;
+      }
+    } else {
+      this.slowFor = 0;
+      this.fastFor = 0;
     }
   }
 

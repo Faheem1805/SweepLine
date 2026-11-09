@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { ASSUMPTIONS } from '../src/config/assumptions';
 import { CHALLENGES } from '../src/config/challenges';
 import { capexAllIn, runningTotal } from '../src/config/costs';
-import { SITE } from '../src/config/site';
+import { SITE, seabedDepth, seabedDepthFast } from '../src/config/site';
 import { F_ENCOUNTERED, F_ENTERED, F_SNAGGED, S_FUNNEL, S_GUIDED, S_TRANSFER_QUEUE } from '../src/simulation/Agent';
 import { AssistUnit, assistFlowM3s, assistPowerKW, type AssistSensors } from '../src/simulation/assist';
 import { FUNNELS, NETS, netArc, netDistance, wallGap } from '../src/simulation/geometry';
@@ -73,6 +73,19 @@ const tear = (secondNet: boolean) =>
 const two = tear(true);
 const one = tear(false);
 check('a second net catches a torn panel', two < 0.5 && one > two * 10, `${two.toFixed(2)} t vs ${one.toFixed(1)} t`);
+
+// The agent model reads the seabed from a lookup table: it must match the exact formula wherever an
+// animal swims (seaward of the shoreline toe, and not behind the screens, where none is simulated).
+{
+  let worst = 0;
+  for (let i = 0; i < 40000; i++) {
+    const x = SITE.domain.xMin + ((i * 7919) % 3301) * ((SITE.domain.xMax - SITE.domain.xMin) / 3301);
+    const z = SITE.shore.toeZ + ((i * 104729) % 1297) * ((SITE.domain.zMax - SITE.shore.toeZ) / 1297);
+    if (z < SITE.intake.mouthZ && x > -SITE.channel.halfWidth - 40 && x < SITE.basin.endX + 40) continue;
+    worst = Math.max(worst, Math.abs(seabedDepthFast(x, z) - seabedDepth(x, z)));
+  }
+  check('seabed lookup table matches the formula', worst < 0.1, `worst ${(worst * 100).toFixed(1)} cm`);
+}
 
 // ---------------------------------------------------------------- the funnel
 const FA = FUNNELS[0];

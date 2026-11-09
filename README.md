@@ -33,6 +33,18 @@ npm run dev
 
 Open <http://localhost:5173>. `?intro=0` skips the map, `?kiosk=1` runs the unattended booth loop.
 
+For a presentation, run the production build: it is faster and smoother than the dev server.
+
+```bash
+npm run build
+```
+
+```bash
+npx vite preview
+```
+
+Open <http://localhost:4173>. The twin steps the model every 0.4 simulated seconds, as the studies do, and draws the animals between steps. The simulation never takes more than a few milliseconds of a frame: on a slow machine it runs a little below the set speed rather than dropping frames. The 3D view lowers its own resolution if the GPU falls behind, and raises it again when there is headroom.
+
 ```bash
 npm test
 ```
@@ -79,7 +91,7 @@ Each net ends in a funnel in the wedge between the net and the east wall: a mout
 - **When Auto stops.** The condition has to be clear for 180 s, and the pump runs at least 300 s once started.
 - **Interlocks.** In either active mode, the pump is held off if the pocket is full, no lift is running, head is at 90 mm or more, or relief is open.
 
-`npm run study:assist` replays the Funnel assist scenario on five seeds with the assist Off and on Auto, through the app's own controller, and writes `src/data/assist.generated.ts`. In the model, Auto shortens mouth-to-throat time while the sweep is weak, from about 197 s to 156 s. It does not change what is collected or what reaches the screens.
+`npm run study:assist` replays the Funnel assist scenario on five seeds with the assist Off and on Auto, through the app's own controller, and writes `src/data/assist.generated.ts`. In the model, Auto shortens mouth-to-throat time while the sweep is weak, from about 195 s to 155 s. It does not change what is collected or what reaches the screens.
 
 ## Studies
 
