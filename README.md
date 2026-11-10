@@ -4,21 +4,35 @@
 
 A digital twin of a way to keep jellyfish blooms off a coastal plant's cooling intake. Built for the ENEC challenge, Demo Days 2026, stand 54.
 
-Everything a plant pumps comes down one channel, so inside it the water always runs one way, whatever the tide is doing outside. SweepLine uses that flow. Two nets stand across the channel at 20°, ahead of every intake. Water passes through the mesh. Jellyfish cannot, so the plant's own flow sweeps them along the net to a collector. A slow screw lift sends them over the breakwater and 2 km down the coast. Nothing in the plant changes.
+Everything a plant pumps comes down one channel, so inside it the water always runs one way, whatever the tide is doing outside. SweepLine uses that flow. Two nets stand across the channel at 20°, ahead of every intake. Water passes through the mesh. Jellyfish cannot, so the plant's own flow sweeps them along the nets to one collector. A bucket elevator lifts them in water and sends them over the breakwater and 2 km down the coast. Nothing in the plant changes.
 
 ```
-Warning → Net → Pocket → Screw lift → Release
+Warning → Nets → Funnel → Bucket elevator → Release
 ```
 
-## The screw lift
+## The site
 
-Each net ends in a funnel against the east wall, and the funnel ends in a hopper. Two inclined screws stand in each hopper, a duty and a standby, and rise along the wall to a deck between the nets. They are enclosed screws: the flights are welded inside a 2 m tube that turns, so there is no gap for a bell to be caught in. Every part-turn closes off a pocket of water at the bottom and carries it up the 30° incline; a jellyfish rides up in its pocket, in water all the way, spills into a launder and runs to the head tank, and the line takes it 2.2 km to the release. A pocket holds about 0.75 m³ of water and at most 38 kg of jellyfish (5 % by volume), so at 31.5 rpm one screw lifts the line's design flow.
+The layout follows the reference plant's satellite image, with no names: a long straight breakwater on the west side, and an east breakwater that bends round a side basin along the plant wall, where the four intakes are. The overview looks out to sea from behind the plant, as the image does, so west is on the left and the bloom comes in from the left. The recorded current's slow net drift runs the other way, toward the west, over days, which is why the release outlet is 2 km to the west.
 
-A lift turns only while it has work. An imaging sonar looks down each funnel into the hopper. A lift starts when its sensor sees about a pocket's worth, or anything at all that has waited 10 minutes, and stops once the funnel is clear and its last pocket has reached the top. The line only moves while a screw feeds it, so the last lift to stop runs on until the line is flushed and no animal is left in a still pipe. In the reference run lift A sits idle, drawing nothing, until the bloom reaches its funnel; lift B, which sees only strays past net A, starts a few times an hour. The duty screws share one power feed and the standby screws the other: if the duty feed trips, the animals already in the duty screws stay there in their pockets of water until it is back.
+## Two nets, one lift
 
-The **Lift** camera shows net A's lift cut away, with each section labelled and a card with what is in each one. **Follow one jellyfish** rides along with one animal from the hopper to the head tank. The view drops to real time while lift A turns.
+Net A is coarse (80 mm bar) and net B, 60 m behind it, is fine (30 mm). Net A stops the adult bells and carries less load; the small young bells that work through it are what net B is for. In the model a bell narrower than 1.6 bars works through a mesh, and a tenth of the bloom (by mass) is young bells of 6 to 14 cm, so about 9 % of the bloom goes through A and is caught by B. Both figures are for the flume to set.
 
-There is no bar rack: a 20 cm rack would stop the 30–45 cm bells it is there to pass. A camera at each hopper mouth lets the operator stop a lift for a turtle.
+Net A's last panel, at the west wall, is left open. What A has guided along its face goes through the gap and the channel's own flow carries it down the wall into net B's funnel, with what B caught itself. So one lift serves both nets, with no pump between them: water cannot carry animals back up the channel, so the lift stands at net B's end, not A's.
+
+## The bucket elevator
+
+The funnel ends in a hopper against a short sheet-pile cell. An inclined chain of pivoted buckets, like an escalator, dips through the hopper: each bucket scoops up water with the jellyfish in it, hangs level all the way up over the breakwater's crest, and is tipped by a cam at the head into a chute to the head tank. Nothing passes through a pump, and the animals are in water the whole way. A bucket brings up 0.35 m³ of water and at most 40 kg of jellyfish; at 1.2 m/s, 1.5 buckets a second, that is about the line's 217 t/h. A clean-water feed pump, drawing from behind both nets, tops the head tank up to the line's design flow. Twin drives on the head shaft, duty and standby: if the duty drive stops, the buckets pause and the standby takes over.
+
+The elevator runs only while it has work. An imaging sonar looks down the funnel into the hopper. It starts on about a bucket's worth, or on anything that has waited 10 minutes, and stops once the funnel is clear, the last bucket has tipped and the line has flushed (the line moves only while the feed pump runs, so no animal is left in a still pipe).
+
+The **Lift** camera shows the elevator side-on with each section labelled, and a card with what is in each one. **Follow one jellyfish** rides along with one animal from the hopper, up in its bucket, down the chute. The view drops to real time while the elevator runs.
+
+## Stuck bells, fish and turtles
+
+The piles stand behind the mesh, so the face the bloom slides along has no bump. A bell can still be held against the mesh: each panel has a jet manifold on its downstream side, and when its load cell and camera see animals held for 90 s it fires a 12 s burst back through the mesh that pushes them into the sweep. The twin counts bursts and bells freed.
+
+Fish and turtles are drawn and modelled, illustratively. The mesh runs at fish-screen speed, so a fish that meets a net turns and swims back out of the channel against a current it easily beats; small fish slip through net A's coarse mesh. A fish that ends up in the hopper rides up in a bucket of water and goes out to sea alive with the bloom, not onto the plant's screens. Turtles follow jellyfish into the funnel; the hopper camera sees one and the elevator waits until it has swum back out. There is no bar rack: a 20 cm rack would stop the 30–45 cm bells it is there to pass.
 
 ## What is real here
 

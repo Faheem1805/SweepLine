@@ -22,8 +22,13 @@ export interface NetLine {
   length: number;
   panels: number;
   panelLength: number;
-  /** Where the collection pocket starts, as arc length along the net. */
+  /** Where the collection funnel starts, as arc length along the net (net B; net A has none). */
   pocketS: number;
+  /**
+   * Arc length past which the net is open. Net A's last panel is left out: what it has guided
+   * along its face goes through the gap and on down the wall into net B's funnel.
+   */
+  openFrom: number;
 }
 
 const DEG = Math.PI / 180;
@@ -53,6 +58,7 @@ function makeNet(index: NetIndex): NetLine {
     panels,
     panelLength: length / panels,
     pocketS: length - SITE.collector.pocketLength,
+    openFrom: index === 0 ? length - length / panels : length,
   };
 }
 
@@ -73,7 +79,7 @@ export function netArc(L: NetLine, x: number, z: number): number {
   return (x - L.ax) * L.tx + (z - L.az) * L.tz;
 }
 
-/** Where a net's collector draws the animals in (near its end, against the east wall). */
+/** Where a net's funnel draws the animals in (near its end, against the west breakwater). */
 export function collectorPoint(L: NetLine): { x: number; z: number } {
   return pointOnNet(L, L.length - 3);
 }

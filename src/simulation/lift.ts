@@ -1,41 +1,21 @@
 import { ASSUMPTIONS } from '../config/assumptions';
+import { SITE } from '../config/site';
 import { NETS } from './geometry';
-import type { NetIndex } from './types';
 
 /**
- * Layout and numbers of the screw lifts, shared by the simulation and the 3D scene so a jellyfish is
- * drawn in the pocket the model has it in.
+ * Layout and numbers of the bucket elevator, shared by the simulation and the 3D scene so a
+ * jellyfish is drawn in the bucket the model has it in.
  *
- * Each net ends in a hopper against the east wall. The funnel along the net delivers into the
- * hopper's mouth; two inclined screws (duty and standby) stand in it and rise along the wall to a
- * deck between the nets, where each spills into a launder that runs to the head tank.
+ * One elevator serves both nets. It stands at net B's end against the west breakwater: net A's
+ * catch leaves A through the open panel at its end and the channel flow carries it down the wall
+ * into net B's funnel, where it joins what net B caught. The funnel delivers into a hopper. An
+ * inclined chain of pivoted buckets dips through the hopper, each bucket scooping water and the
+ * jellyfish in it, carries them up over the breakwater's crest and tips them into a chute to the
+ * head tank on the crest. The release line runs from the tank.
  */
 
 const K = ASSUMPTIONS.lift;
 const DEG = Math.PI / 180;
-
-/** Pockets closed off at the bottom per second at full speed: one per flight start each turn. */
-export const POCKET_RATE = (K.starts * K.rpm) / 60;
-/** Spacing of the pockets along the axis (m). */
-export const POCKET_SPACING = K.pitch / K.starts;
-/** Speed a pocket rides up the axis at full speed (m/s). */
-export const AXIAL_SPEED = POCKET_SPACING * POCKET_RATE;
-/** Water in one pocket (m³): at full speed a screw lifts the line's design flow. */
-export const POCKET_M3 = ASSUMPTIONS.transfer.designFlowM3h / 3600 / POCKET_RATE;
-/** Jellyfish one pocket carries at most (kg), at the line's limit by volume. */
-export const POCKET_KG = POCKET_M3 * ASSUMPTIONS.transfer.maxJellyFraction * 1025;
-/** Axis length from the bottom pocket to the discharge (m). */
-export const SCREW_LENGTH = (K.dischargeY - K.inletY) / Math.sin(K.incline * DEG);
-/** The flights run on this far below the bottom pocket, into the hopper (m along the axis). */
-export const SCREW_TAIL = 1.0;
-/** How far below the axis an animal rides, in the water at the bottom of its pocket (m). */
-export const POCKET_DROP = 0.6;
-/** Launder water level (m above still water): below the spout lip, above the head tank's level. */
-export const LAUNDER_Y = 6.8;
-/** Head tank on the deck between the nets (plan centre and radius, m). */
-export const HEAD_TANK = { x: 74.8, z: 62.8, r: 2.6 };
-/** Deck between the nets that the screws rise to (plan extent, m) and the top of its slab. */
-export const LIFT_DECK = { x0: 63, x1: 79.5, z0: 48.2, z1: 75, top: 4.85 };
 
 export interface Vec3 {
   x: number;
@@ -43,94 +23,104 @@ export interface Vec3 {
   z: number;
 }
 
-export interface Screw {
-  /** Axis point at the bottom pocket (a = 0) and at the discharge (a = SCREW_LENGTH). */
-  inlet: Vec3;
-  top: Vec3;
-  /** Unit vectors: up the axis, from the axis to the floor of the tube, and across it (horizontal). */
-  axis: Vec3;
-  down: Vec3;
-  across: Vec3;
-  /** Launder from this screw's spout to the head tank, and its length (m). */
-  launder: Vec3[];
-  launderLength: number;
-}
+const L = NETS[1];
+const hw = SITE.channel.halfWidth;
+/** Plane the elevator runs in (z): across the hopper, just downstream of net B's end. */
+export const ELEVATOR_Z = L.bz - 4;
+const ci = Math.cos(K.incline * DEG);
+const si = Math.sin(K.incline * DEG);
+/** Unit vector up the incline, and its normal (up and back), in the x-y plane. */
+export const UP = { x: ci, y: si, z: 0 };
+export const NORMAL = { x: -si, y: ci, z: 0 };
+/** Tail sprocket (in the hopper) and head sprocket (over the crest) centres. */
+export const TAIL: Vec3 = { x: hw - 8.4, y: -3.9, z: ELEVATOR_Z };
+export const HEAD: Vec3 = { x: TAIL.x + ci * K.length, y: TAIL.y + si * K.length, z: ELEVATOR_Z };
+/** Chain loop length (m), the number of buckets on it and their spacing along it (m). */
+export const LOOP = 2 * K.length + 2 * Math.PI * K.sprocketRadius;
+export const BUCKETS = Math.round(LOOP / K.pitch);
+export const PITCH = LOOP / BUCKETS;
+/** Buckets past the scoop each second at full speed. */
+export const BUCKET_RATE = K.chainSpeed / PITCH;
+/** Chain distance from the scoop to where a bucket tips at the head (m). */
+export const TIP_AT = K.length + (Math.PI / 2) * K.sprocketRadius;
+/** How far below its pivot a bucket's centre hangs (m). */
+export const HANG = 0.1 + K.bucket.depth / 2;
+/** Water depth in a full bucket (m). */
+export const BUCKET_FILL = K.bucketWater / (K.bucket.width * K.bucket.length);
 
-export interface Station {
-  net: NetIndex;
-  name: string;
-  /** Hopper mouth, where the funnel ends: the net's end against the east wall. */
-  mouth: { x: number; z: number };
-  /** Hopper in plan (m) and the level of its floor. */
-  hopper: { x0: number; x1: number; z0: number; z1: number; floor: number };
-  /** +1 if the screws rise toward +z, −1 toward −z. */
-  rise: number;
-  /** Duty [0] and standby [1]. */
-  screws: [Screw, Screw];
-}
+/** Hopper in plan (m), its floor, and its mouth: the funnel's end, at net B's end against the wall. */
+export const HOPPER = { x0: TAIL.x - 2.3, x1: hw - 0.2, z0: L.bz - 8.2, z1: L.bz + 0.2, floor: -7 };
+export const MOUTH = { x: L.bx - 1.4, z: L.bz + 0.6 };
+/** Head tank on the breakwater crest, past the head. */
+export const HEAD_TANK = { x: HEAD.x + 3.6, z: ELEVATOR_Z, r: 1.9 };
+/** Platform on the crest that carries the head, the tank, the drives and the feed pump. */
+export const CREST_DECK = { x0: HEAD.x - 2.2, x1: HEAD.x + 8.2, z0: ELEVATOR_Z - 6, z1: ELEVATOR_Z + 6, top: SITE.breakwater.crestY + 0.45 };
+/** Where a tipped bucket's contents fall: down the chute into the tank (polyline, m). */
+export const CHUTE: Vec3[] = [
+  { x: HEAD.x + 0.9, y: HEAD.y - 0.2, z: ELEVATOR_Z },
+  { x: HEAD_TANK.x - 0.6, y: ASSUMPTIONS.transfer.headTankLevel + 0.6, z: ELEVATOR_Z },
+  { x: HEAD_TANK.x, y: ASSUMPTIONS.transfer.headTankLevel - 0.3, z: ELEVATOR_Z },
+];
+export const CHUTE_LENGTH = CHUTE.slice(1).reduce((a, p, k) => a + Math.hypot(p.x - CHUTE[k].x, p.y - CHUTE[k].y, p.z - CHUTE[k].z), 0);
 
-/** Duty screw on the channel side, standby against the wall (x, m). */
-const SCREW_X = [65.2, 67.9] as const;
-
-function makeStation(net: NetIndex): Station {
-  const L = NETS[net];
-  // Net A's screws rise downstream, away from its pocket; net B's rise upstream, over its own end, to the same deck.
-  const rise = net === 0 ? -1 : 1;
-  const inletZ = net === 0 ? L.bz - 2.8 : L.bz - 4.8;
-  const i = K.incline * DEG;
-  const axis = { x: 0, y: Math.sin(i), z: rise * Math.cos(i) };
-  const down = { x: 0, y: -Math.cos(i), z: rise * Math.sin(i) };
-  const across = { x: 1, y: 0, z: 0 };
-  const T = HEAD_TANK;
-  const screws = SCREW_X.map((x) => {
-    const inlet = { x, y: K.inletY, z: inletZ };
-    const top = { x, y: K.inletY + axis.y * SCREW_LENGTH, z: inletZ + axis.z * SCREW_LENGTH };
-    const lz = top.z + down.z * (K.diameter / 2) + rise * 0.2;
-    const launder = [
-      { x, y: LAUNDER_Y, z: lz },
-      { x: T.x, y: LAUNDER_Y, z: lz },
-      { x: T.x, y: LAUNDER_Y, z: T.z - rise * T.r },
-    ];
-    let len = 0;
-    for (let k = 1; k < launder.length; k++) len += Math.hypot(launder[k].x - launder[k - 1].x, launder[k].z - launder[k - 1].z);
-    return { inlet, top, axis, down, across, launder, launderLength: len };
-  }) as [Screw, Screw];
-  return {
-    net,
-    name: net === 0 ? 'Lift A' : 'Lift B',
-    mouth: { x: L.bx - 1.2, z: L.bz + 0.4 },
-    hopper: { x0: 63.4, x1: 69.8, z0: L.bz - 7, z1: L.bz + 0.2, floor: -7 },
-    rise,
-    screws,
-  };
-}
-
-export const STATIONS: readonly [Station, Station] = [makeStation(0), makeStation(1)];
-
-/** Point on a screw's axis at `a` metres up from the bottom pocket. */
-export function axisPoint(s: Screw, a: number, out: Vec3): Vec3 {
-  out.x = s.inlet.x + s.axis.x * a;
-  out.y = s.inlet.y + s.axis.y * a;
-  out.z = s.inlet.z + s.axis.z * a;
+/**
+ * Pivot of the bucket at chain coordinate `s` (m from the scoop, around the loop): up the carrying
+ * run, over the head sprocket, down the return run and round the tail sprocket in the hopper.
+ */
+export function pivotAt(s: number, out: Vec3): Vec3 {
+  const r = K.sprocketRadius;
+  const Ln = K.length;
+  s = ((s % LOOP) + LOOP) % LOOP;
+  out.z = ELEVATOR_Z;
+  if (s < Ln) {
+    out.x = TAIL.x + NORMAL.x * r + UP.x * s;
+    out.y = TAIL.y + NORMAL.y * r + UP.y * s;
+    return out;
+  }
+  s -= Ln;
+  const arc = Math.PI * r;
+  if (s < arc) {
+    // Over the head: the normal turns forward and down.
+    const a = s / r;
+    out.x = HEAD.x + r * (NORMAL.x * Math.cos(a) + UP.x * Math.sin(a));
+    out.y = HEAD.y + r * (NORMAL.y * Math.cos(a) + UP.y * Math.sin(a));
+    return out;
+  }
+  s -= arc;
+  if (s < Ln) {
+    out.x = HEAD.x - NORMAL.x * r - UP.x * s;
+    out.y = HEAD.y - NORMAL.y * r - UP.y * s;
+    return out;
+  }
+  s -= Ln;
+  const a = Math.min(1, s / arc) * Math.PI;
+  out.x = TAIL.x + r * (-NORMAL.x * Math.cos(a) - UP.x * Math.sin(a));
+  out.y = TAIL.y + r * (-NORMAL.y * Math.cos(a) - UP.y * Math.sin(a));
   return out;
 }
 
-/** Point `d` metres along a launder. */
-export function launderPoint(s: Screw, d: number, out: Vec3): Vec3 {
-  const P = s.launder;
-  for (let k = 1; k < P.length; k++) {
-    const seg = Math.hypot(P[k].x - P[k - 1].x, P[k].z - P[k - 1].z);
-    if (d <= seg || k === P.length - 1) {
+/** How far a bucket at chain coordinate `s` is tipped (rad): the trip cam turns it over at the head. */
+export function tipAt(s: number): number {
+  s = ((s % LOOP) + LOOP) % LOOP;
+  const a = (s - K.length) / (Math.PI * K.sprocketRadius);
+  if (a <= 0 || a >= 1.6) return 0;
+  return 2.3 * Math.sin((Math.min(a, 1.6) / 1.6) * Math.PI);
+}
+
+/** Point `d` metres down the chute. */
+export function chutePoint(d: number, out: Vec3): Vec3 {
+  for (let k = 1; k < CHUTE.length; k++) {
+    const a = CHUTE[k - 1];
+    const b = CHUTE[k];
+    const seg = Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+    if (d <= seg || k === CHUTE.length - 1) {
       const f = seg > 0 ? Math.min(1, Math.max(0, d / seg)) : 1;
-      out.x = P[k - 1].x + (P[k].x - P[k - 1].x) * f;
-      out.y = P[k - 1].y;
-      out.z = P[k - 1].z + (P[k].z - P[k - 1].z) * f;
+      out.x = a.x + (b.x - a.x) * f;
+      out.y = a.y + (b.y - a.y) * f;
+      out.z = a.z + (b.z - a.z) * f;
       return out;
     }
     d -= seg;
   }
-  out.x = P[P.length - 1].x;
-  out.y = P[P.length - 1].y;
-  out.z = P[P.length - 1].z;
   return out;
 }

@@ -8,22 +8,22 @@ export const STUDY = {
   "n": 5,
   "baseLow": 43.9,
   "baseHigh": 49.6,
-  "withHigh": 0,
-  "collectedLow": 43.8,
-  "collectedHigh": 49.6,
+  "withHigh": 0.04,
+  "collectedLow": 43,
+  "collectedHigh": 48.9,
   "balanced": true
  },
  "reference": {
   "hours": 3,
-  "with": 0,
+  "with": 0.016,
   "without": 49.6,
-  "collected": 49.6,
-  "peakOnNet": 6.8,
-  "maxHead": 0.0017,
+  "collected": 48.9,
+  "peakOnNet": 5.9,
+  "maxHead": 0.0019,
   "reliefAt": null,
   "closes": true,
-  "deratedAt": 3870.800000000606,
-  "trippedAt": 4546.800000000247,
+  "deratedAt": 3873.6000000006065,
+  "trippedAt": 4551.200000000243,
   "series": [
    {
     "t": 0,
@@ -77,270 +77,270 @@ export const STUDY = {
    },
    {
     "t": 3000,
-    "b": 0.14,
+    "b": 0.13,
     "s": 0
    },
    {
     "t": 3300,
-    "b": 0.77,
+    "b": 0.79,
     "s": 0
    },
    {
     "t": 3600,
-    "b": 2.23,
+    "b": 2.22,
     "s": 0
    },
    {
     "t": 3900,
-    "b": 4.47,
-    "s": 0
+    "b": 4.56,
+    "s": 0.008
    },
    {
     "t": 4200,
-    "b": 6.79,
-    "s": 0
+    "b": 6.78,
+    "s": 0.008
    },
    {
     "t": 4500,
     "b": 8.9,
-    "s": 0
+    "s": 0.008
    },
    {
     "t": 4800,
-    "b": 10.8,
-    "s": 0
+    "b": 10.81,
+    "s": 0.008
    },
    {
     "t": 5100,
-    "b": 12.79,
-    "s": 0
+    "b": 12.85,
+    "s": 0.008
    },
    {
     "t": 5400,
-    "b": 14.83,
-    "s": 0
+    "b": 14.89,
+    "s": 0.008
    },
    {
     "t": 5700,
-    "b": 16.4,
-    "s": 0
+    "b": 16.42,
+    "s": 0.008
    },
    {
     "t": 6000,
-    "b": 18.02,
-    "s": 0
+    "b": 18.01,
+    "s": 0.008
    },
    {
     "t": 6300,
-    "b": 19.74,
-    "s": 0
+    "b": 19.76,
+    "s": 0.008
    },
    {
     "t": 6600,
-    "b": 21.72,
-    "s": 0
+    "b": 21.71,
+    "s": 0.008
    },
    {
     "t": 6900,
-    "b": 23.7,
-    "s": 0
+    "b": 23.77,
+    "s": 0.008
    },
    {
     "t": 7200,
-    "b": 25.86,
-    "s": 0
+    "b": 25.9,
+    "s": 0.008
    },
    {
     "t": 7500,
-    "b": 27.84,
-    "s": 0
+    "b": 27.91,
+    "s": 0.008
    },
    {
     "t": 7800,
     "b": 29.96,
-    "s": 0
+    "s": 0.008
    },
    {
     "t": 8100,
-    "b": 31.87,
-    "s": 0
+    "b": 31.85,
+    "s": 0.008
    },
    {
     "t": 8400,
     "b": 33.94,
-    "s": 0
+    "s": 0.008
    },
    {
     "t": 8700,
-    "b": 35.67,
-    "s": 0
+    "b": 35.73,
+    "s": 0.008
    },
    {
     "t": 9000,
-    "b": 37.82,
-    "s": 0
+    "b": 37.78,
+    "s": 0.008
    },
    {
     "t": 9300,
-    "b": 39.93,
-    "s": 0
+    "b": 39.94,
+    "s": 0.016
    },
    {
     "t": 9600,
-    "b": 42.02,
-    "s": 0
+    "b": 42,
+    "s": 0.016
    },
    {
     "t": 9900,
-    "b": 43.86,
-    "s": 0
+    "b": 43.89,
+    "s": 0.016
    },
    {
     "t": 10200,
-    "b": 45.83,
-    "s": 0
+    "b": 45.81,
+    "s": 0.016
    },
    {
     "t": 10500,
-    "b": 47.87,
-    "s": 0
+    "b": 47.86,
+    "s": 0.016
    },
    {
     "t": 10800,
-    "b": 49.57,
-    "s": 0
+    "b": 49.61,
+    "s": 0.016
    }
   ]
  },
  "cases": {
   "single": {
    "hours": 3,
-   "with": 0.304,
+   "with": 47.488,
    "without": 49.6,
-   "collected": 49.3,
-   "peakOnNet": 6.8,
-   "maxHead": 0.0017,
+   "collected": 0,
+   "peakOnNet": 5.2,
+   "maxHead": 0.0012,
    "reliefAt": null,
    "closes": true
   },
   "moon": {
    "hours": 3,
-   "with": 0,
-   "without": 35.8,
-   "collected": 35.9,
-   "peakOnNet": 4.9,
+   "with": 0.096,
+   "without": 35.7,
+   "collected": 35,
+   "peakOnNet": 4.3,
    "maxHead": 0.0021,
    "reliefAt": null,
    "closes": true
   },
   "deep": {
    "hours": 3,
-   "with": 0.008,
+   "with": 0.04,
    "without": 38.9,
-   "collected": 39,
-   "peakOnNet": 5.6,
-   "maxHead": 0.0019,
+   "collected": 38.2,
+   "peakOnNet": 4.8,
+   "maxHead": 0.002,
    "reliefAt": null,
    "closes": true
   },
   "fouled": {
    "hours": 3,
-   "with": 0,
+   "with": 0.016,
    "without": 49.6,
-   "collected": 49.5,
-   "peakOnNet": 6.9,
-   "maxHead": 0.0065,
+   "collected": 48.9,
+   "peakOnNet": 5.9,
+   "maxHead": 0.0071,
    "reliefAt": null,
    "closes": true
   },
   "storm": {
    "hours": 3,
-   "with": 0,
+   "with": 0.016,
    "without": 49.6,
-   "collected": 49.6,
-   "peakOnNet": 6.8,
-   "maxHead": 0.0017,
+   "collected": 48.9,
+   "peakOnNet": 5.9,
+   "maxHead": 0.0019,
    "reliefAt": null,
    "closes": true
   },
   "tide": {
    "hours": 3,
    "with": 0,
-   "without": 10.2,
-   "collected": 10.2,
-   "peakOnNet": 2.9,
-   "maxHead": 0.0014,
+   "without": 2,
+   "collected": 1.8,
+   "peakOnNet": 1.5,
+   "maxHead": 0.0019,
    "reliefAt": null,
    "closes": true
   },
   "tearBusy": {
    "hours": 3,
-   "with": 0.128,
+   "with": 0.104,
    "without": 49.6,
-   "collected": 48.6,
-   "peakOnNet": 6.6,
-   "maxHead": 0.0012,
+   "collected": 49.2,
+   "peakOnNet": 5.7,
+   "maxHead": 0.0021,
    "reliefAt": null,
    "closes": true
   },
   "tearBusySingle": {
    "hours": 3,
-   "with": 48.296,
+   "with": 48.752,
    "without": 49.6,
    "collected": 0,
-   "peakOnNet": 4.7,
-   "maxHead": 0.0012,
+   "peakOnNet": 3.5,
+   "maxHead": 0.0009,
    "reliefAt": null,
    "closes": true
   },
   "leak10": {
    "hours": 3,
-   "with": 0.112,
+   "with": 0.36,
    "without": 49.6,
-   "collected": 49.3,
-   "peakOnNet": 6.7,
-   "maxHead": 0.0017,
+   "collected": 48.5,
+   "peakOnNet": 5.9,
+   "maxHead": 0.002,
    "reliefAt": null,
    "closes": true
   },
   "leak10Single": {
    "hours": 3,
-   "with": 3.072,
+   "with": 47.576,
    "without": 49.6,
-   "collected": 46.5,
-   "peakOnNet": 6.5,
-   "maxHead": 0.0017,
+   "collected": 0,
+   "peakOnNet": 5.1,
+   "maxHead": 0.0012,
    "reliefAt": null,
    "closes": true
   },
   "pumps": {
    "hours": 5,
-   "with": 0,
+   "with": 0.008,
    "without": 92.5,
-   "collected": 1,
-   "peakOnNet": 98.1,
-   "maxHead": 0.0061,
+   "collected": 0.9,
+   "peakOnNet": 96.5,
+   "maxHead": 0.0033,
    "reliefAt": null,
    "closes": true
   },
   "overload": {
    "hours": 5,
-   "with": 0,
+   "with": 0.008,
    "without": 225.1,
-   "collected": 1,
-   "peakOnNet": 186.4,
-   "maxHead": 0.0159,
+   "collected": 0.9,
+   "peakOnNet": 185.9,
+   "maxHead": 0.0086,
    "reliefAt": null,
    "closes": true
   },
   "debris": {
    "hours": 3,
-   "with": 0,
+   "with": 0.008,
    "without": 49.6,
-   "collected": 50.1,
-   "peakOnNet": 6.6,
-   "maxHead": 0.1265,
-   "reliefAt": 2907.200000000387,
+   "collected": 49,
+   "peakOnNet": 5.9,
+   "maxHead": 0.1222,
+   "reliefAt": 2932.0000000003924,
    "closes": true
   }
  },
@@ -348,21 +348,21 @@ export const STUDY = {
   "slide": {
    "low": {
     "hours": 3,
-    "with": 0,
+    "with": 0.008,
     "without": 49.6,
-    "collected": 46.9,
-    "peakOnNet": 9.6,
+    "collected": 46.5,
+    "peakOnNet": 8.4,
     "maxHead": 0.002,
     "reliefAt": null,
     "closes": true
    },
    "high": {
     "hours": 3,
-    "with": 0,
+    "with": 0.048,
     "without": 49.6,
-    "collected": 50.4,
-    "peakOnNet": 5.9,
-    "maxHead": 0.0016,
+    "collected": 49.6,
+    "peakOnNet": 5.1,
+    "maxHead": 0.0019,
     "reliefAt": null,
     "closes": true
    }
@@ -372,19 +372,19 @@ export const STUDY = {
     "hours": 3,
     "with": 0,
     "without": 49.6,
-    "collected": 49.6,
-    "peakOnNet": 6.8,
-    "maxHead": 0.0017,
+    "collected": 48.9,
+    "peakOnNet": 5.9,
+    "maxHead": 0.0019,
     "reliefAt": null,
     "closes": true
    },
    "high": {
     "hours": 3,
-    "with": 0.112,
+    "with": 0.36,
     "without": 49.6,
-    "collected": 49.3,
-    "peakOnNet": 6.7,
-    "maxHead": 0.0017,
+    "collected": 48.5,
+    "peakOnNet": 5.9,
+    "maxHead": 0.002,
     "reliefAt": null,
     "closes": true
    }
@@ -392,21 +392,21 @@ export const STUDY = {
   "snag": {
    "low": {
     "hours": 3,
-    "with": 0,
+    "with": 0.008,
     "without": 49.6,
-    "collected": 50,
-    "peakOnNet": 6.4,
-    "maxHead": 0.0017,
+    "collected": 49,
+    "peakOnNet": 5.8,
+    "maxHead": 0.0019,
     "reliefAt": null,
     "closes": true
    },
    "high": {
     "hours": 3,
-    "with": 0,
+    "with": 0.008,
     "without": 49.6,
-    "collected": 47.5,
-    "peakOnNet": 8.7,
-    "maxHead": 0.0019,
+    "collected": 48.6,
+    "peakOnNet": 6.2,
+    "maxHead": 0.002,
     "reliefAt": null,
     "closes": true
    }
@@ -414,21 +414,21 @@ export const STUDY = {
   "swim": {
    "low": {
     "hours": 3,
-    "with": 0,
+    "with": 0.008,
     "without": 49.6,
-    "collected": 49.6,
-    "peakOnNet": 6.8,
-    "maxHead": 0.0017,
+    "collected": 48.9,
+    "peakOnNet": 5.9,
+    "maxHead": 0.002,
     "reliefAt": null,
     "closes": true
    },
    "high": {
     "hours": 3,
-    "with": 0,
-    "without": 49.5,
-    "collected": 49.5,
-    "peakOnNet": 6.7,
-    "maxHead": 0.0017,
+    "with": 0.04,
+    "without": 49.6,
+    "collected": 48.8,
+    "peakOnNet": 5.8,
+    "maxHead": 0.002,
     "reliefAt": null,
     "closes": true
    }
@@ -437,20 +437,20 @@ export const STUDY = {
    "low": {
     "hours": 3,
     "with": 0.008,
-    "without": 40,
-    "collected": 40.5,
-    "peakOnNet": 8.1,
+    "without": 40.1,
+    "collected": 39.2,
+    "peakOnNet": 7.2,
     "maxHead": 0.001,
     "reliefAt": null,
     "closes": true
    },
    "high": {
     "hours": 3,
-    "with": 0,
-    "without": 53,
-    "collected": 52.8,
-    "peakOnNet": 6.5,
-    "maxHead": 0.0022,
+    "with": 0.016,
+    "without": 52.9,
+    "collected": 52.4,
+    "peakOnNet": 5.5,
+    "maxHead": 0.0026,
     "reliefAt": null,
     "closes": true
    }

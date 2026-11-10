@@ -1,5 +1,5 @@
 import { ASSUMPTIONS, SPECIES } from '../config/assumptions';
-import { SITE, seabedDepth, seabedDepthFast, waveExposure } from '../config/site';
+import { basinX, SITE, seabedDepth, seabedDepthFast, waveExposure } from '../config/site';
 import {
   AgentPool,
   F_DIVERTED,
@@ -24,7 +24,8 @@ import {
 } from './Agent';
 import { FlowField } from './flowField';
 import { collectorPoint, NETS, pointOnNet, type NetLine } from './geometry';
-import { AXIAL_SPEED, axisPoint, launderPoint, POCKET_DROP, POCKET_KG, POCKET_SPACING, SCREW_LENGTH, STATIONS, type Vec3 } from './lift';
+import { BycatchState } from './bycatch';
+import { BUCKET_FILL, CHUTE_LENGTH, chutePoint, HANG, PITCH, pivotAt, TAIL, TIP_AT, type Vec3 } from './lift';
 import { NetState } from './net';
 import { ScreenState } from './screens';
 import { fbm1, hash01, SeededRandom, valueNoise } from './seededRandom';
@@ -131,8 +132,12 @@ export class SimulationEngine {
   readonly onNet = [0, 0];
   /** Pocket capacity (agents). */
   holdCapacity = 100;
-  /** Animals one pocket of a screw lift may carry (agents), at the line's limit by volume. */
+  /** Animals one bucket may carry (agents). */
   pocketCap = 5;
+  /** Something that must not be lifted (a turtle) is in the hopper: the elevator waits. */
+  liftHold = false;
+  /** Fish and turtles in the channel (SweepLine world only). */
+  bycatch: BycatchState | null = null;
   /** Releases per second (EMA). */
   releaseEMA = 0;
   /** Agents arriving at a pocket per second (EMA). */
@@ -141,17 +146,24 @@ export class SimulationEngine {
   enterEMA = 0;
   /** Biomass inside the sonar's range, heading in (kg). */
   sonarKg = 0;
-  /** Agents in each lift now, by section: drawn across the hopper, riding up a screw (duty, standby), in the launder. */
-  readonly lift = {
-    hopper: [0, 0],
-    screw: [
-      [0, 0],
-      [0, 0],
-    ],
-    launder: [0, 0],
-    /** In the release line. */
-    line: 0,
+  /** Agents in the elevator now, by section: drawn across the hopper, riding a bucket, down the chute; and in the release line. */
+  readonly lift = { hopper: 0, bucket: 0, chute: 0, line: 0 };
+  /** Agents that worked through each net's mesh because they were small enough (net A's are what net B is for). */
+  readonly sieved = [0, 0];
+  /** Jet purge: seconds each panel has held a snagged animal, seconds left of each panel's burst and of its cooldown; bursts fired and animals freed. */
+  readonly jets = {
+    held: [new Float32Array(NETS[0].panels), new Float32Array(NETS[1].panels)] as [Float32Array, Float32Array],
+    firing: [new Float32Array(NETS[0].panels), new Float32Array(NETS[1].panels)] as [Float32Array, Float32Array],
+    cooldown: [new Float32Array(NETS[0].panels), new Float32Array(NETS[1].panels)] as [Float32Array, Float32Array],
+    bursts: 0,
+    freed: 0,
+    energyKWh: 0,
+    lastPanel: -1,
+    lastNet: -1,
+    lastFreed: 0,
   };
+  /** Snagged animals on each panel this step. */
+  private readonly snagged: [Uint16Array, Uint16Array] = [new Uint16Array(NETS[0].panels), new Uint16Array(NETS[1].panels)];
 
   readonly markers: Marker[] = [];
   markerSeq = 0;
@@ -201,6 +213,17 @@ export class SimulationEngine {
     this.sonarKg = 0;
     this.clearLiftCounts();
     this.transfersThisStep = 0;
+    this.sieved.fill(0);
+    for (let n = 0; n < 2; n++) {
+      this.jets.held[n].fill(0);
+      this.jets.firing[n].fill(0);
+      this.jets.cooldown[n].fill(0);
+    }
+    this.jets.bursts = 0;
+    this.jets.freed = 0;
+    this.jets.energyKWh = 0;
+    this.jets.lastPanel = -1;
+    this.jets.lastNet = -1;
     this.markers.length = 0;
     this.markerSeq = 0;
     this.screens.reset();
@@ -208,9 +231,13 @@ export class SimulationEngine {
     if (this.kind === 'sweepline') {
       this.nets = NETS.map((L) => new NetState(L));
       this.transfer = new TransferState();
+      this.bycatch = new BycatchState(params.seed);
+      this.liftHold = false;
     } else {
       this.nets = [];
       this.transfer = null;
+      this.bycatch = null;
+      this.liftHold = false;
     }
     this.applyParams(params);
     if (fill === 'approach') this.initialFill();
@@ -223,7 +250,7 @@ export class SimulationEngine {
     this.flow.plantFlow = ASSUMPTIONS.plant.unitFlowM3s * params.unitsRunning;
     this.kgPerAgent = (ASSUMPTIONS.agent.kgPerAgent * ASSUMPTIONS.agent.referenceBudget) / params.agentBudget;
     this.holdCapacity = Math.max(8, Math.round(ASSUMPTIONS.collector.holdKg / this.kgPerAgent));
-    this.pocketCap = Math.max(1, Math.ceil(POCKET_KG / this.kgPerAgent));
+    this.pocketCap = Math.max(1, Math.ceil(ASSUMPTIONS.lift.bucketKg / this.kgPerAgent));
     for (const net of this.nets) net.setFouling(params.foulingWeeks);
     if (this.nets.length === 2) this.nets[1].active = params.secondNet;
     if (this.transfer) {
@@ -341,7 +368,8 @@ export class SimulationEngine {
     p.vx[slot] = this.tmp.x;
     p.vy[slot] = 0;
     p.vz[slot] = this.tmp.z;
-    p.size[slot] = S.bellMin + u4 * (S.bellMax - S.bellMin);
+    const B = ASSUMPTIONS.bloom;
+    p.size[slot] = hash01(agentId, 51) < B.juvenileShare ? B.juvenileBell[0] + hash01(agentId, 53) * (B.juvenileBell[1] - B.juvenileBell[0]) : S.bellMin + u4 * (S.bellMax - S.bellMin);
     p.phase[slot] = u5;
     p.tint[slot] = u6;
     p.depthZ[slot] = n2;
@@ -371,14 +399,9 @@ export class SimulationEngine {
     if (this.transfer) {
       const tr = this.transfer;
       const lc = this.lift;
-      const k = tr.activeScrew;
       tr.update(dt);
-      tr.control(
-        dt,
-        [(tr.queues[0].length + lc.hopper[0]) * this.kgPerAgent, (tr.queues[1].length + lc.hopper[1]) * this.kgPerAgent],
-        [lc.hopper[0] + lc.screw[0][k] > 0, lc.hopper[1] + lc.screw[1][k] > 0],
-        lc.line > 0,
-      );
+      tr.control(dt, (tr.queueLength + lc.hopper) * this.kgPerAgent, lc.hopper + lc.bucket > 0, lc.line > 0, this.liftHold);
+      this.updateJets(dt);
     }
     this.flow.releaseJet = Math.min(1, this.releaseEMA * 8);
 
@@ -392,6 +415,7 @@ export class SimulationEngine {
 
     this.updateAgents(dt);
     if (this.transfer) this.processTransfer(dt);
+    if (this.bycatch) this.liftHold = this.bycatch.update(dt, this.time, this.flow, !!this.transfer?.lift.turning);
     this.screens.update(dt);
 
     const r = 1 - Math.exp(-dt / 30);
@@ -439,6 +463,8 @@ export class SimulationEngine {
     this.backedNext[0] = 0;
     this.backedNext[1] = 0;
     this.clearLiftCounts();
+    this.snagged[0].fill(0);
+    this.snagged[1].fill(0);
     const lineFlow = transfer ? transfer.lineFlow() : 1;
 
     for (let i = 0; i < pool.capacity; i++) {
@@ -447,7 +473,7 @@ export class SimulationEngine {
       if (fade[i] < 1) fade[i] = Math.min(1, fade[i] + dt * 0.25);
 
       if (st === S_TRANSFERRED) {
-        // Carried down the line at the speed of the water the screws are feeding it.
+        // Carried down the line at the speed of the water the elevator and feed pump are sending.
         timer[i] -= dt * lineFlow;
         if (timer[i] <= 0) this.releaseAgent(i);
         else this.lift.line++;
@@ -518,9 +544,18 @@ export class SimulationEngine {
           const d = (x - L.ax) * L.nx + (z - L.az) * L.nz;
           if (d < -0.2 || d > N.guideDistance) continue;
           const s = (x - L.ax) * L.tx + (z - L.az) * L.tz;
-          if (s < 0 || s > L.length) continue;
+          if (s < 0 || s > L.openFrom) continue;
           const k = Math.min(net.n - 1, Math.floor(s / L.panelLength));
           if (net.drop[k] < 1) continue;
+          if (pool.size[i] < N.passFactor * N.mesh[ni]) {
+            // Small enough to work through this mesh: on to the next net, which is finer.
+            if (d > -0.1 && d < N.standoff + 0.3) {
+              x -= L.nx * (d + 0.5);
+              z -= L.nz * (d + 0.5);
+              this.sieved[ni]++;
+            }
+            continue;
+          }
           if (net.torn[k]) {
             // Straight through the hole.
             const bit = ni === 0 ? F_LEAKED : F_LEAKED_B;
@@ -554,11 +589,19 @@ export class SimulationEngine {
           const press = d > N.standoff ? vn : Math.max(0, vn);
           let sweep = Math.max(vt, 0) * N.slide;
 
-          // A snagged animal stays put until the flow works it free.
+          // A snagged animal stays put until the flow works it free, or the panel's jets push it off.
           if (fl & F_SNAGGED) {
             timer[i] -= dt;
-            if (timer[i] <= 0) fl &= ~F_SNAGGED;
-            sweep = 0;
+            if (this.jets.firing[ni][k] > 0) {
+              fl &= ~F_SNAGGED;
+              timer[i] = 0;
+              this.jets.freed++;
+              this.jets.lastFreed++;
+            } else if (timer[i] <= 0) fl &= ~F_SNAGGED;
+            else {
+              sweep = 0;
+              this.snagged[ni][k]++;
+            }
           } else {
             const u = net.through[k] / ASSUMPTIONS.screenCriteria.approachMax;
             if (hash01(aid, stepNo) < N.snagRate * u * u * dt) {
@@ -567,8 +610,8 @@ export class SimulationEngine {
             }
           }
 
-          // Behind a full pocket the animals stack up along the net.
-          if (transfer) {
+          // Behind a full funnel the animals stack up along the net (only net B has one).
+          if (transfer && ni === 1) {
             const full = transfer.queues[ni as NetIndex].length >= this.holdCapacity;
             const stop = L.pocketS - this.backed[ni] * stackSpacing;
             if (full && s >= stop) {
@@ -595,8 +638,8 @@ export class SimulationEngine {
             break;
           }
 
-          // Into the pocket.
-          if (transfer && s >= L.pocketS && transfer.queues[ni as NetIndex].length < this.holdCapacity) {
+          // Into the funnel.
+          if (transfer && ni === 1 && s >= L.pocketS && transfer.queues[ni as NetIndex].length < this.holdCapacity) {
             flags[i] = fl;
             px[i] = x;
             pz[i] = z;
@@ -769,21 +812,53 @@ export class SimulationEngine {
 
   private clearLiftCounts(): void {
     const c = this.lift;
-    c.hopper[0] = c.hopper[1] = 0;
-    c.launder[0] = c.launder[1] = 0;
-    c.screw[0][0] = c.screw[0][1] = c.screw[1][0] = c.screw[1][1] = 0;
+    c.hopper = 0;
+    c.bucket = 0;
+    c.chute = 0;
     c.line = 0;
   }
 
-  /** Each lift takes animals from the head of its funnel into the hopper, as fast as its pockets have room. */
+  /**
+   * Jet purge: a panel that has held a snagged animal for `holdTime` s fires its jets for a
+   * `burst`, which frees every snagged animal on it (see the snag branch in `updateAgents`).
+   */
+  private updateJets(dt: number): void {
+    const J = ASSUMPTIONS.jets;
+    const jets = this.jets;
+    for (let n = 0; n < this.nets.length; n++) {
+      const held = jets.held[n];
+      const firing = jets.firing[n];
+      const cool = jets.cooldown[n];
+      const snag = this.snagged[n];
+      for (let k = 0; k < held.length; k++) {
+        if (firing[k] > 0) {
+          firing[k] = Math.max(0, firing[k] - dt);
+          jets.energyKWh += (J.kW * dt) / 3600;
+          if (firing[k] === 0) cool[k] = J.cooldown;
+          continue;
+        }
+        if (cool[k] > 0) cool[k] = Math.max(0, cool[k] - dt);
+        held[k] = snag[k] > 0 ? held[k] + dt : 0;
+        if (held[k] >= J.holdTime && cool[k] === 0) {
+          firing[k] = J.burst;
+          held[k] = 0;
+          jets.bursts++;
+          jets.lastNet = n;
+          jets.lastPanel = k;
+          jets.lastFreed = 0;
+        }
+      }
+    }
+  }
+
+  /** The elevator takes animals from the head of net B's funnel into the hopper, as fast as its buckets have room. */
   private processTransfer(dt: number): void {
     const tr = this.transfer!;
     const p = this.pool;
-    for (const ni of [0, 1] as const) {
-      const queue = tr.queues[ni];
-      const st = tr.stations[ni];
-      if (queue.length === 0 || st.credit < 1) continue;
-      const end = collectorPoint(NETS[ni]);
+    const st = tr.lift;
+    const queue = tr.queues[1];
+    if (queue.length > 0 && st.credit >= 1) {
+      const end = collectorPoint(NETS[1]);
       let n = 0;
       while (st.credit >= 1 && queue.length > 0) {
         const i = queue[0];
@@ -795,8 +870,8 @@ export class SimulationEngine {
         p.stateTime[i] = 0;
         p.queueIndex[i] = 0;
         p.timer[i] = 0;
-        p.lane[i] = ni;
-        this.lift.hopper[ni]++;
+        p.lane[i] = 1;
+        this.lift.hopper++;
       }
       if (n > 0) for (let j = 0; j < queue.length; j++) p.queueIndex[queue[j]] = j;
     }
@@ -805,46 +880,38 @@ export class SimulationEngine {
   }
 
   /**
-   * An animal in a lift. `queueIndex` holds the section: 0 drawn across the hopper to the bottom
-   * pocket, 1 riding up in a pocket (`timer` = distance up the axis, m), 2 in the launder (`timer` =
-   * distance along it, m). `lane` holds the net, plus 2 on the standby screw.
+   * An animal in the elevator. `queueIndex` holds the section: 0 drawn across the hopper to the
+   * scoop, 1 riding a bucket (`timer` = its bucket's chain coordinate, m from the scoop), 2 sliding
+   * down the chute to the head tank (`timer` = m down it).
    */
   private liftDynamics(i: number, dt: number): void {
     const p = this.pool;
     const tr = this.transfer!;
-    const ni = p.lane[i] & 1;
-    const station = STATIONS[ni];
+    const st = tr.lift;
     const aid = p.id[i];
     const out = this.tmp3;
     const section = p.queueIndex[i];
     if (section === 0) {
-      // Drawn across the hopper to the bottom of the screw that is taking animals.
-      const k = tr.activeScrew;
-      const sc = station.screws[k];
-      const st = tr.stations[ni];
-      const lat = (hash01(aid, 41) - 0.5) * 0.9;
-      axisPoint(sc, -0.3, out);
-      const tx = out.x + sc.down.x * POCKET_DROP + lat;
-      const ty = out.y + sc.down.y * POCKET_DROP;
-      const tz = out.z + sc.down.z * POCKET_DROP;
+      // Drawn across the hopper to the tail, where the buckets come round full of water.
+      const tx = TAIL.x - 0.4 + (hash01(aid, 41) - 0.5) * 0.8;
+      const ty = TAIL.y - 0.2;
+      const tz = TAIL.z + (hash01(aid, 42) - 0.5) * 1.0;
       const dx = tx - p.px[i];
       const dy = ty - p.py[i];
       const dz = tz - p.pz[i];
       const d = Math.hypot(dx, dy, dz);
-      const pocket = Math.floor(st.phase[k]);
-      if (pocket !== st.fillPocket[k]) {
-        st.fillPocket[k] = pocket;
-        st.fillCount[k] = 0;
+      const bucket = Math.floor(st.phase);
+      if (bucket !== st.fillBucket) {
+        st.fillBucket = bucket;
+        st.fillCount = 0;
       }
-      if (d < 0.4 && st.speed[k] > 0.02 && st.fillCount[k] < this.pocketCap) {
-        // Into the pocket now closing at the bottom; a full one leaves it for the next.
-        st.fillCount[k]++;
-        const f = st.phase[k] - pocket;
-        p.timer[i] = (f - 1 + 0.25 + 0.5 * hash01(aid, 43)) * POCKET_SPACING;
+      if (d < 0.45 && st.speed > 0.02 && st.fillCount < this.pocketCap) {
+        // Scooped into the bucket now leaving the tail; a full one leaves it for the next.
+        st.fillCount++;
+        p.timer[i] = (st.phase - bucket) * PITCH;
         p.queueIndex[i] = 1;
-        p.lane[i] = ni + 2 * k;
-        this.lift.screw[ni][k]++;
-        this.placeInPocket(i);
+        this.lift.bucket++;
+        this.placeInBucket(i);
         return;
       }
       const m = d > 1e-6 ? Math.min(ASSUMPTIONS.lift.hopperSpeed * dt, d) / d : 0;
@@ -854,49 +921,43 @@ export class SimulationEngine {
       p.px[i] += dx * m;
       p.py[i] += dy * m;
       p.pz[i] += dz * m;
-      this.lift.hopper[ni]++;
+      this.lift.hopper++;
       return;
     }
-    const k = p.lane[i] >> 1;
-    const sc = station.screws[k];
     if (section === 1) {
-      // Riding up in its pocket: the pocket moves with the flights, so at the screw's speed.
-      p.timer[i] += AXIAL_SPEED * tr.stations[ni].speed[k] * dt;
-      if (p.timer[i] < SCREW_LENGTH) {
-        this.lift.screw[ni][k]++;
-        this.placeInPocket(i);
+      // In its bucket: the bucket moves with the chain.
+      p.timer[i] += ASSUMPTIONS.lift.chainSpeed * st.speed * dt;
+      if (p.timer[i] < TIP_AT) {
+        this.lift.bucket++;
+        this.placeInBucket(i);
         return;
       }
-      // Spilled from the top pocket into the launder.
+      // Tipped at the head: into the chute with its water.
       p.queueIndex[i] = 2;
       p.timer[i] = 0;
     }
-    p.timer[i] += ASSUMPTIONS.lift.launderSpeed * dt;
-    if (p.timer[i] >= sc.launderLength) {
+    p.timer[i] += ASSUMPTIONS.lift.chuteSpeed * dt;
+    if (p.timer[i] >= CHUTE_LENGTH) {
       this.transferAgent(i);
       this.transfersThisStep++;
       return;
     }
-    launderPoint(sc, p.timer[i], out);
-    // A little to one side of the launder's centre line.
-    const lat = (hash01(aid, 47) - 0.5) * 0.4;
-    const alongX = Math.abs(out.z - sc.launder[0].z) < 0.01;
-    p.px[i] = out.x + (alongX ? 0 : lat);
-    p.pz[i] = out.z + (alongX ? lat : 0);
-    p.py[i] = out.y - 0.22;
+    chutePoint(p.timer[i], out);
+    p.px[i] = out.x;
+    p.py[i] = out.y + 0.15;
+    p.pz[i] = out.z + (hash01(aid, 47) - 0.5) * 0.5;
     p.vx[i] = p.vy[i] = p.vz[i] = 0;
-    this.lift.launder[ni]++;
+    this.lift.chute++;
   }
 
-  /** Where an animal riding a screw is: on the floor of its pocket, a little to one side. */
-  private placeInPocket(i: number): void {
+  /** Where an animal riding a bucket is: in the water in the bottom of its bucket, a little to one side. */
+  private placeInBucket(i: number): void {
     const p = this.pool;
-    const sc = STATIONS[p.lane[i] & 1].screws[p.lane[i] >> 1];
-    const out = axisPoint(sc, p.timer[i], this.tmp3);
-    const lat = (hash01(p.id[i], 45) - 0.5) * 0.9;
-    p.px[i] = out.x + sc.down.x * POCKET_DROP + sc.across.x * lat;
-    p.py[i] = out.y + sc.down.y * POCKET_DROP;
-    p.pz[i] = out.z + sc.down.z * POCKET_DROP;
+    const out = pivotAt(p.timer[i], this.tmp3);
+    const B = ASSUMPTIONS.lift.bucket;
+    p.px[i] = out.x + (hash01(p.id[i], 44) - 0.5) * (B.length - 0.35);
+    p.py[i] = out.y - HANG - B.depth / 2 + BUCKET_FILL * 0.55;
+    p.pz[i] = out.z + (hash01(p.id[i], 45) - 0.5) * (B.width - 0.45);
     p.vx[i] = p.vy[i] = p.vz[i] = 0;
   }
 
@@ -937,7 +998,7 @@ export class SimulationEngine {
   /** The unit whose intake this animal ends up at. */
   private intakeX(i: number): number {
     const u = SITE.basin.units;
-    return u[Math.min(u.length - 1, Math.floor(hash01(this.pool.id[i], 31) * u.length))];
+    return basinX(u[Math.min(u.length - 1, Math.floor(hash01(this.pool.id[i], 31) * u.length))]);
   }
 
   /** Past the channel nothing can stop it: it rides the flow along the basin to its unit's intake. */

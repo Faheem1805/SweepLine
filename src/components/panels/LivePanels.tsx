@@ -1,5 +1,5 @@
-import { Activity, ChevronDown, Play, RotateCcw, ScrollText, ShieldQuestion, SlidersHorizontal, Zap } from 'lucide-react';
-import { useState } from 'react';
+import { Activity, ChevronDown, Play, RotateCcw, ScrollText, ShieldQuestion, SlidersHorizontal, X, Zap } from 'lucide-react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useApp } from '../../app/store';
 import { SPECIES, type SpeciesKey } from '../../config/assumptions';
 import { CHALLENGES, type Challenge } from '../../config/challenges';
@@ -131,60 +131,126 @@ function useProof(id: string | null): string | null {
   }
 }
 
+/** The trap, what we did, and one live line of proof, for the problem being shown. */
+function ChallengeDetail({ c }: { c: Challenge }) {
+  const proof = useProof(c.id);
+  return (
+    <>
+      <div className="text-[12.5px] leading-snug text-pretty text-ink-2">
+        <span className="font-semibold text-red">The trap: </span>
+        {c.trap}
+      </div>
+      <div className="mt-1.5 text-[12.5px] leading-snug text-pretty text-ink">
+        <span className="font-semibold text-teal">What we did: </span>
+        {c.answer}
+      </div>
+      {proof && <div className="num mt-2 rounded-lg bg-base/60 px-2.5 py-1.5 text-[11.5px] text-cyan">{proof}</div>}
+    </>
+  );
+}
+
 /**
- * The problems this design was built around, each with a button that runs it. This is the page's
- * main thing: a judge picks the question, and the twin answers it live.
+ * The problems this design was built around, behind one button at the top right so the twin keeps
+ * the full width. A judge picks the question and the twin answers it live; while it runs, the trap,
+ * what we did and the live proof float under the button until hidden (they stay in the list).
  */
-export function ProblemRail() {
+export function ProblemMenu() {
   const active = useApp((st) => st.activeChallenge);
   const setActive = useApp((st) => st.setActiveChallenge);
   const setUI = useApp((st) => st.setUI);
   const setCamera = useApp((st) => st.setCamera);
-  const proof = useProof(active);
+  const [open, setOpen] = useState(false);
+  /** The problem whose floating card was closed; it shows again when another one is picked. */
+  const [hidden, setHidden] = useState<string | null>(null);
+  const close = useCallback(() => setOpen(false), []);
+  const ref = useOutsideClose(open, close);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const panelId = useId();
+
+  useEffect(() => {
+    if (!open) return;
+    // Open with the running problem in view, as the rail showed it.
+    const list = listRef.current;
+    const item = list?.querySelector<HTMLElement>('[aria-current]')?.parentElement;
+    if (list && item && item.offsetTop + item.offsetHeight > list.clientHeight) list.scrollTop = item.offsetTop - 6;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setOpen(false);
+      buttonRef.current?.focus();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
 
   const run = (c: Challenge) => {
     setActive(c.id);
     setUI({ flowView: !!c.engineering, compare: !!c.compare, selection: null, displayed: 'sweepline' });
     setCamera(c.camera);
     void controller.runScenario(c.scenario);
+    setHidden(null);
+    setOpen(false);
+    buttonRef.current?.focus();
   };
 
+  const current = CHALLENGES.find((c) => c.id === active) ?? null;
+  const card = !open && current && current.id !== hidden ? current : null;
+
   return (
-    <div data-hud className="glass pointer-events-auto flex max-h-full w-[346px] flex-col !rounded-2xl">
-      <div className="border-b border-line px-4 py-3">
-        <div className="flex items-center gap-2 text-[14.5px] font-semibold text-white">
-          <ShieldQuestion size={17} className="text-amber" /> Problems we designed for
-        </div>
-        <div className="mt-0.5 text-[12px] leading-snug text-muted">Where other approaches get caught out. Pick one and watch it run.</div>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
-        {CHALLENGES.map((c) => {
-          const on = c.id === active;
-          return (
-            <div key={c.id} className={cn('rounded-xl transition-colors', on ? 'bg-amber/[0.08] shadow-[inset_0_0_0_1px_rgba(245,185,76,0.4)]' : 'hover:bg-white/[0.04]')}>
-              <button type="button" onClick={() => run(c)} className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left">
-                <span className={cn('flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full', on ? 'bg-amber text-[#07141f]' : 'bg-white/[0.07] text-ink-2')}>
-                  <Play size={12} className="ml-[1px]" fill="currentColor" />
-                </span>
-                <span className={cn('text-[13.5px] font-semibold', on ? 'text-white' : 'text-ink')}>{c.problem}</span>
-              </button>
-              {on && (
-                <div className="animate-fade-in px-3 pb-3">
-                  <div className="text-[12.5px] leading-snug text-pretty text-ink-2">
-                    <span className="font-semibold text-red">The trap: </span>
-                    {c.trap}
-                  </div>
-                  <div className="mt-1.5 text-[12.5px] leading-snug text-pretty text-ink">
-                    <span className="font-semibold text-teal">What we did: </span>
-                    {c.answer}
-                  </div>
-                  {proof && <div className="num mt-2 rounded-lg bg-base/60 px-2.5 py-1.5 text-[11.5px] text-cyan">{proof}</div>}
+    <div ref={ref} className="relative flex flex-col items-end gap-2">
+      <button
+        ref={buttonRef}
+        data-hud
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-controls={open ? panelId : undefined}
+        className="glass pointer-events-auto flex h-[38px] shrink-0 items-center gap-2 !rounded-xl px-3 text-[13px] font-semibold whitespace-nowrap text-white transition-colors hover:border-amber/40"
+      >
+        <ShieldQuestion size={15} className="text-amber" /> Problems we designed for
+        <ChevronDown size={14} className={cn('text-muted transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div id={panelId} data-hud className="glass pointer-events-auto absolute top-[46px] right-0 z-50 flex max-h-[calc(100vh-170px)] w-[346px] animate-fade-in flex-col !rounded-2xl shadow-2xl">
+          <div className="border-b border-line px-4 py-2.5 text-[12px] leading-snug text-muted">Where other approaches get caught out. Pick one and watch it run.</div>
+          <div ref={listRef} className="relative min-h-0 flex-1 overflow-y-auto p-1.5">
+            {CHALLENGES.map((c) => {
+              const on = c.id === active;
+              return (
+                <div key={c.id} className={cn('rounded-xl transition-colors', on ? 'bg-amber/[0.08] shadow-[inset_0_0_0_1px_rgba(245,185,76,0.4)]' : 'hover:bg-white/[0.04]')}>
+                  <button type="button" onClick={() => run(c)} aria-current={on ? 'true' : undefined} className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left">
+                    <span className={cn('flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full', on ? 'bg-amber text-[#07141f]' : 'bg-white/[0.07] text-ink-2')}>
+                      <Play size={12} className="ml-[1px]" fill="currentColor" />
+                    </span>
+                    <span className={cn('text-[13.5px] font-semibold', on ? 'text-white' : 'text-ink')}>{c.problem}</span>
+                  </button>
+                  {on && (
+                    <div className="animate-fade-in px-3 pb-3">
+                      <ChallengeDetail c={c} />
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {card && (
+        <div data-hud className="glass pointer-events-auto w-[346px] animate-fade-in !rounded-2xl px-3.5 pt-2.5 pb-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="flex min-w-0 items-center gap-2 text-[13.5px] font-semibold text-white">
+              <span className="h-2 w-2 shrink-0 rounded-full bg-amber shadow-[0_0_8px_rgba(245,185,76,0.8)]" />
+              <span className="truncate">{card.problem}</span>
+            </span>
+            <button type="button" onClick={() => setHidden(card.id)} aria-label="Hide this problem card" title="Hide (it stays in the list)" className="shrink-0 text-muted hover:text-white">
+              <X size={14} />
+            </button>
+          </div>
+          <div className="mt-2">
+            <ChallengeDetail c={card} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

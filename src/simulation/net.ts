@@ -7,7 +7,9 @@ const N = ASSUMPTIONS.net;
 const G = 9.81;
 const RHO = 1025;
 /** Mesh solidity when clean: twine each way across the bar. */
-export const MESH_SOLIDITY = (2 * N.twine) / N.meshBar;
+export function meshSolidity(net: number): number {
+  return (2 * N.twine) / N.mesh[net];
+}
 
 /** Head loss coefficient of a screen with open-area fraction ε. */
 const lossAt = (open: number) => (N.lossK * (1 - open * open)) / (open * open);
@@ -45,8 +47,12 @@ export class NetState {
   /** Seconds since the installation sequence began (Infinity once it is done). */
   private armClock = Infinity;
 
+  /** Solidity of this net's clean mesh. */
+  readonly solidity: number;
+
   constructor(line: NetLine) {
     this.line = line;
+    this.solidity = meshSolidity(line.index);
     this.n = line.panels;
     this.drop = new Float32Array(this.n).fill(1);
     this.foul = new Float32Array(this.n);
@@ -139,7 +145,7 @@ export class NetState {
         K = N.tornK;
       } else {
         const blocked = Math.min(0.97, (this.bioKg[k] * blockPerKg) / area);
-        open = (1 - MESH_SOLIDITY) * (1 - this.foul[k]) * (1 - blocked) * (1 - this.debris);
+        open = (1 - this.solidity) * (1 - this.foul[k]) * (1 - blocked) * (1 - this.debris);
         K = lossAt(open);
       }
       this.open[k] = open;
@@ -170,7 +176,7 @@ export class NetState {
     const Krelief = (2 * G * N.reliefHead) / (v * v);
     const openRelief = Math.sqrt(N.lossK / (N.lossK + Krelief));
     let clean = 0;
-    for (let k = 0; k < this.n; k++) clean += (1 - MESH_SOLIDITY) * (1 - this.foul[k]);
+    for (let k = 0; k < this.n; k++) clean += (1 - this.solidity) * (1 - this.foul[k]);
     clean /= this.n;
     const blockedAtRelief = Math.max(0, 1 - openRelief / clean) * area;
     return Math.max(0, blockedAtRelief / blockPerKg - this.totalKg);

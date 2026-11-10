@@ -1,25 +1,25 @@
 import { ASSUMPTIONS } from '../config/assumptions';
-import { POCKET_RATE } from './lift';
+import { BUCKET_RATE } from './lift';
 import { sizeLine } from './sizing';
 import type { ModuleStatus } from './types';
 
 const T = ASSUMPTIONS.transfer;
 const LIFT = ASSUMPTIONS.lift;
 const SENSOR = ASSUMPTIONS.funnelSensor;
-/** Power one screw draws at full speed (kW). */
-const SCREW_KW = sizeLine().kW;
+/** Power to lift the line's water to the head tank, in the buckets and by the feed pump, at full speed (kW). */
+const LIFT_KW = sizeLine().kW;
 
 /** Biomass the line can carry (t/h): its water flow at the jellyfish fraction it is limited to. */
 export const TRANSFER_TPH = (T.designFlowM3h * T.maxJellyFraction * 1025) / 1000;
 
 export type TransferPath = 'PRIMARY' | 'STANDBY' | 'NONE';
 
-/** One net's screw lift: its funnel sensor, and the duty and standby screws in its hopper. */
+/** The bucket elevator: its funnel sensor, the chain, and what it has used. */
 export class LiftStation {
-  /** Pockets closed off at the bottom so far, per screw (duty, standby): sets where every pocket is. */
-  readonly phase = [0, 0];
-  /** Speed as a share of full, per screw. */
-  readonly speed = [0, 0];
+  /** Buckets that have passed the scoop so far: sets where every bucket is (one per `PITCH` of chain). */
+  phase = 0;
+  /** Chain speed as a share of full. */
+  speed = 0;
   /** What the funnel sensor saw at its last reading (kg), and how long anything seen has waited for a start (s). */
   seenKg = 0;
   waitTime = 0;
@@ -29,35 +29,18 @@ export class LiftStation {
   runTime = 0;
   idleTime = 0;
   private pingTimer = 0;
-  /** Room left in the pockets passing the bottom (agents). */
+  /** Room left in the buckets passing the scoop (agents). */
   credit = 0;
-  /** Pocket now closing at the bottom of each screw, and how many animals are in it. */
-  readonly fillPocket = [-1, -1];
-  readonly fillCount = [0, 0];
-  /** Seconds turning, starts, and energy drawn (kWh), this run. */
+  /** Bucket now passing the scoop, and how many animals are in it. */
+  fillBucket = -1;
+  fillCount = 0;
+  /** Seconds running, starts, and energy drawn (kWh), this run. */
   turningSeconds = 0;
   starts = 0;
   energyKWh = 0;
 
-  reset(): void {
-    this.phase.fill(0);
-    this.speed.fill(0);
-    this.seenKg = 0;
-    this.waitTime = 0;
-    this.on = false;
-    this.runTime = 0;
-    this.idleTime = 0;
-    this.pingTimer = 0;
-    this.credit = 0;
-    this.fillPocket.fill(-1);
-    this.fillCount.fill(0);
-    this.turningSeconds = 0;
-    this.starts = 0;
-    this.energyKWh = 0;
-  }
-
   get turning(): boolean {
-    return this.speed[0] > 0.02 || this.speed[1] > 0.02;
+    return this.speed > 0.02;
   }
 
   /** The funnel sensor sees jellyfish. */
@@ -76,12 +59,11 @@ export class LiftStation {
 }
 
 /**
- * The collector machinery: a screw lift at each net's end, each with a duty and a standby screw, a
- * head tank and the release line. The duty screws share one power feed and the standby screws the
- * other, so "duty stops" stops both duty screws. The early warning arms the lifts; each lift turns
- * only while its funnel sensor sees jellyfish, and stops once the funnel is clear and its pockets
- * have emptied. With no screw able to run, the funnels fill and the bloom backs up along the net,
- * which goes on holding it.
+ * The collector machinery: one bucket elevator at net B's end (both nets' catch ends up in its
+ * funnel), with twin drives on its head shaft, duty and standby; a clean-water feed pump that tops
+ * the head tank up; and the release line. The early warning arms it; it runs only while its funnel
+ * sensor sees jellyfish, and stops once the funnel is clear and its buckets have emptied. With no
+ * drive able to run, the funnel fills and the bloom backs up along net B, which goes on holding it.
  */
 export class TransferState {
   primaryFault = false;
@@ -89,13 +71,13 @@ export class TransferState {
   standbyEnabled = true;
   /** Standby switch-over 0..1 while it is brought in after a duty fault. */
   standbyRamp = 0;
-  /** Armed by the early warning: the lifts start on their own when their sensor sees jellyfish. */
+  /** Armed by the early warning: the elevator starts on its own when the sensor sees jellyfish. */
   armed = false;
   /** Agents/s the line carries at capacity, for the current biomass per agent. */
   designRate = 1;
 
-  readonly stations: [LiftStation, LiftStation] = [new LiftStation(), new LiftStation()];
-  /** FIFO of agent slots waiting in each net's funnel. */
+  readonly lift = new LiftStation();
+  /** FIFO of agent slots waiting in each net's funnel. Only net B has one: net A's end is open. */
   readonly queues: [number[], number[]] = [[], []];
   /** Agents entering the line per second (EMA). */
   processedEMA = 0;
@@ -104,18 +86,18 @@ export class TransferState {
     return this.queues[0].length + this.queues[1].length;
   }
 
-  /** The screw that takes new animals: duty unless it has failed. */
-  get activeScrew(): 0 | 1 {
-    return this.primaryFault ? 1 : 0;
+  get turning(): boolean {
+    return this.lift.turning;
   }
 
-  get turning(): boolean {
-    return this.stations[0].turning || this.stations[1].turning;
+  /** The drive turning the chain now: duty unless it has failed. */
+  get activeDrive(): 0 | 1 {
+    return this.primaryFault ? 1 : 0;
   }
 
   get primaryStatus(): ModuleStatus {
     if (this.primaryFault) return 'FAULT';
-    return this.stations.some((s) => s.speed[0] > 0.02) ? 'ONLINE' : 'STANDBY';
+    return this.lift.turning ? 'ONLINE' : 'STANDBY';
   }
 
   get standbyStatus(): ModuleStatus {
@@ -123,7 +105,7 @@ export class TransferState {
     if (this.standbyFault) return 'FAULT';
     if (this.primaryFault && this.armed) {
       if (this.standbyRamp < 1) return 'ACTIVATING';
-      return this.stations.some((s) => s.speed[1] > 0.02) ? 'ONLINE' : 'STANDBY';
+      return this.lift.turning ? 'ONLINE' : 'STANDBY';
     }
     return 'STANDBY';
   }
@@ -140,7 +122,7 @@ export class TransferState {
     return 'NONE';
   }
 
-  /** Capacity ready to run, as a fraction of design (whether or not a screw is turning now). */
+  /** Capacity ready to run, as a fraction of design (whether or not the chain is moving now). */
   availability(): number {
     if (!this.armed) return 0;
     if (!this.primaryFault) return 1;
@@ -151,11 +133,9 @@ export class TransferState {
     return this.designRate * this.availability();
   }
 
-  /** Line flow now as a share of its design flow: what the turning screws lift, up to what the line takes. */
+  /** Line flow now as a share of its design flow: the feed pump runs with the elevator. */
   lineFlow(): number {
-    let s = 0;
-    for (const st of this.stations) s += st.speed[0] + st.speed[1];
-    return Math.min(1, s);
+    return Math.min(1, this.lift.speed);
   }
 
   /** Water going down the line now (m³/h). */
@@ -163,16 +143,14 @@ export class TransferState {
     return T.designFlowM3h * this.lineFlow();
   }
 
-  /** Power the screws draw now (kW). */
+  /** Power the elevator and feed pump draw now (kW). */
   powerKW(): number {
-    let s = 0;
-    for (const st of this.stations) s += st.speed[0] + st.speed[1];
-    return SCREW_KW * s;
+    return LIFT_KW * this.lift.speed;
   }
 
-  /** Energy the screws have drawn this run (kWh). */
+  /** Energy drawn this run (kWh). */
   energyKWh(): number {
-    return this.stations[0].energyKWh + this.stations[1].energyKWh;
+    return this.lift.energyKWh;
   }
 
   update(dt: number): void {
@@ -182,51 +160,42 @@ export class TransferState {
   }
 
   /**
-   * Start and stop each lift from its funnel sensor, and turn the screws.
-   * `seesKg`: jellyfish in that net's funnel or hopper now (kg). `loaded`: animals still in its hopper or in
-   * the pockets of the screw that is turning, which it must carry up before it may stop.
-   * `lineLoaded`: animals still in the release line. The line moves only while a screw feeds it, so
-   * the last lift to stop runs on until the line is flushed and nothing is left in a still pipe.
+   * Start and stop the elevator from its funnel sensor, and move the chain.
+   * `seesKg`: jellyfish in the funnel or hopper now (kg). `loaded`: animals still in the hopper or in
+   * the buckets, which it must carry up before it may stop. `lineLoaded`: animals still in the
+   * release line, which moves only while the feed pump runs, so it runs on until the line is flushed.
+   * `hold`: an animal that must not be lifted is in the hopper (a turtle): the chain waits.
    */
-  control(dt: number, seesKg: readonly [number, number], loaded: readonly [boolean, boolean], lineLoaded: boolean): void {
+  control(dt: number, seesKg: number, loaded: boolean, lineLoaded: boolean, hold = false): void {
+    const st = this.lift;
     const can = this.armed && this.poweredPathAvailable;
-    const perPocket = this.designRate / POCKET_RATE;
-    const active = this.activeScrew;
-    for (let n = 0; n < 2; n++) {
-      const st = this.stations[n];
-      st.sense(dt, seesKg[n]);
-      if (!st.on) {
-        st.waitTime = st.seen ? st.waitTime + dt : 0;
-        if (can && (st.seenKg >= SENSOR.startKg || (st.seen && st.waitTime >= SENSOR.maxWait))) {
-          st.on = true;
-          st.waitTime = 0;
-          st.runTime = 0;
-          st.idleTime = 0;
-          st.starts++;
-        }
-      } else {
-        st.runTime += dt;
-        st.idleTime = st.seen || loaded[n] ? 0 : st.idleTime + dt;
-        const flushing = lineLoaded && !this.stations[1 - n].on;
-        if (!can || (st.idleTime >= SENSOR.runOn && st.runTime >= SENSOR.minRun && !flushing)) st.on = false;
+    const perBucket = this.designRate / BUCKET_RATE;
+    st.sense(dt, seesKg);
+    if (!st.on) {
+      st.waitTime = st.seen ? st.waitTime + dt : 0;
+      if (can && (st.seenKg >= SENSOR.startKg || (st.seen && st.waitTime >= SENSOR.maxWait))) {
+        st.on = true;
+        st.waitTime = 0;
+        st.runTime = 0;
+        st.idleTime = 0;
+        st.starts++;
       }
-      let turning = false;
-      for (let k = 0; k < 2; k++) {
-        const failed = k === 0 ? this.primaryFault : this.standbyFault || !this.standbyEnabled;
-        const max = k === 0 ? 1 : this.primaryFault ? this.standbyRamp : 0;
-        const target = st.on && !failed ? max : 0;
-        // A failed drive stops the screw in a second or two; otherwise it ramps on its soft starter.
-        const step = failed ? dt / 1.5 : dt / LIFT.rampTime;
-        const v = st.speed[k];
-        st.speed[k] = v < target ? Math.min(target, v + step) : Math.max(target, v - step);
-        const pockets = st.speed[k] * POCKET_RATE * dt;
-        st.phase[k] += pockets;
-        if (k === active) st.credit = Math.min(st.credit + pockets * perPocket, perPocket * 2);
-        st.energyKWh += (SCREW_KW * st.speed[k] * dt) / 3600;
-        if (st.speed[k] > 0.02) turning = true;
-      }
-      if (turning) st.turningSeconds += dt;
-      if (!st.on && !st.turning) st.credit = 0;
+    } else {
+      st.runTime += dt;
+      st.idleTime = st.seen || loaded ? 0 : st.idleTime + dt;
+      if (!can || (st.idleTime >= SENSOR.runOn && st.runTime >= SENSOR.minRun && !lineLoaded)) st.on = false;
     }
+    const failed = !this.poweredPathAvailable;
+    const max = this.primaryFault ? this.standbyRamp : 1;
+    const target = st.on && !failed && !hold ? max : 0;
+    // A failed drive lets the chain stop in a second or two; otherwise it ramps on its soft starter.
+    const step = failed || hold ? dt / 1.5 : dt / LIFT.rampTime;
+    st.speed = st.speed < target ? Math.min(target, st.speed + step) : Math.max(target, st.speed - step);
+    const buckets = st.speed * BUCKET_RATE * dt;
+    st.phase += buckets;
+    st.credit = Math.min(st.credit + buckets * perBucket, perBucket * 2);
+    st.energyKWh += (LIFT_KW * st.speed * dt) / 3600;
+    if (st.turning) st.turningSeconds += dt;
+    if (!st.on && !st.turning) st.credit = 0;
   }
 }

@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { useApp, type UIState, type SelectionKind } from '../app/store';
-import { SITE } from '../config/site';
+import { ASSUMPTIONS } from '../config/assumptions';
+import { basinX, SITE } from '../config/site';
 import { S_APPROACHING, S_TRANSFERRED } from '../simulation/Agent';
 import { NETS, pointOnNet } from '../simulation/geometry';
 import type { SimController, SimSnapshot } from '../simulation/SimController';
@@ -18,6 +19,7 @@ import { UnderwaterFx } from './environment/Underwater';
 import { Water } from './environment/Water';
 import { Annotations } from './systems/Annotations';
 import { CollectorSystem } from './systems/CollectorSystem';
+import { FishSystem } from './systems/FishSystem';
 import { CurrentField } from './systems/CurrentField';
 import { jellyShader, JellyfishSystem } from './systems/JellyfishSystem';
 import { LabelSystem, type LabelViewport } from './systems/LabelSystem';
@@ -52,6 +54,7 @@ export class SceneManager {
   private readonly underwaterFx = new UnderwaterFx();
   private readonly nets = new NetSystem(NETS);
   private readonly collector = new CollectorSystem(NETS);
+  private readonly fish = new FishSystem(ASSUMPTIONS.bycatch.fish, ASSUMPTIONS.bycatch.turtles);
   private readonly release = new ReleaseSystem();
   private readonly sonar = new SonarSystem();
   private readonly annotations = new Annotations();
@@ -107,7 +110,6 @@ export class SceneManager {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.shadowMap.autoUpdate = false;
-    // The screw lifts are drawn in half-section: their flights are clipped on the cut-away side.
     this.renderer.localClippingEnabled = true;
     this.renderer.domElement.className = 'sl-canvas';
     this.container.appendChild(this.renderer.domElement);
@@ -165,7 +167,7 @@ export class SceneManager {
 
     // ------------------------------------------------ SweepLine installation (its world only)
     this.sweepGroup.name = 'sweepline-installation';
-    this.sweepGroup.add(this.nets.group, this.collector.group, this.release.group);
+    this.sweepGroup.add(this.nets.group, this.collector.group, this.release.group, this.fish.group);
     this.scene.add(this.sweepGroup);
     this.scene.add(this.sonar.mesh);
     this.scene.add(this.annotations.group);
@@ -293,8 +295,8 @@ export class SceneManager {
       if (ui.compare) this.rig.goTo('compare', 1.6);
       else if (ui.camera !== 'free') this.rig.goTo(ui.camera as Exclude<CameraPreset, 'free'>, 1.6);
     }
-    // The lift view runs in real time while lift A turns, so the screw can be seen and a jellyfish followed pocket by pocket.
-    if (ui.camera === 'lift' && prev.camera !== 'lift' && this.ctrl.sweepline.transfer?.stations[0].turning && this.ctrl.speed > 1) this.ctrl.setSpeed(1);
+    // The lift view runs in real time while the elevator runs, so a jellyfish can be followed bucket by bucket.
+    if (ui.camera === 'lift' && prev.camera !== 'lift' && this.ctrl.sweepline.transfer?.lift.turning && this.ctrl.speed > 1) this.ctrl.setSpeed(1);
     if ((ui.camera !== prev.camera || ui.cameraNonce !== prev.cameraNonce) && ui.camera !== 'free') {
       if (!(ui.compare && ui.camera === prev.camera)) this.rig.goTo(ui.camera as Exclude<CameraPreset, 'free'>, 1.9);
     }
@@ -319,9 +321,7 @@ export class SceneManager {
     const a = s.nets[0];
     const netBody = a.torn > 0 ? 'Panel out, net B catching' : a.relief > 0 ? 'Relief open' : `${s.sweepline.onNetT[0].toFixed(1)} t on the net · ${(a.head * 1000).toFixed(1)} mm head`;
     this.labels.setContent('net', 'Net A', netBody, a.torn > 0 || a.relief > 0 ? 'red' : a.loadFraction > 0.5 ? 'amber' : 'default');
-    const lifts = s.lift.stations;
-    const turning = lifts.filter((x) => x.speed > 0.02);
-    const collectorBody = s.transfer.path === 'NONE' ? (s.transfer.primary === 'FAULT' ? 'Lifts stopped' : 'Lifts not armed') : turning.length ? `${turning.map((x) => x.name).join(' and ')} turning · ${s.sweepline.collectTph.toFixed(1)} t/h` : 'Lifts idle: funnels clear';
+    const collectorBody = s.transfer.path === 'NONE' ? (s.transfer.primary === 'FAULT' ? 'Elevator stopped' : 'Elevator not armed') : s.lift.speed > 0.02 ? `Elevator running · ${s.sweepline.collectTph.toFixed(1)} t/h` : 'Elevator idle: funnel clear';
     this.labels.setContent('collector', 'Collector', collectorBody, s.transfer.path === 'NONE' ? 'amber' : 'teal');
     this.setLiftLabels(s);
     const body = (m: typeof s.baseline) => `${m.screenTph.toFixed(1)} t/h · ${m.screenStatus === 'CLEAR' ? 'clear' : m.screenBacklogT.toFixed(1) + ' t backlog'}`;
@@ -334,26 +334,25 @@ export class SceneManager {
 
   private liftWasTurning = false;
 
-  /** Section-by-section labels on net A's lift, for the close-up lift view. */
+  /** Section-by-section labels on the elevator, for the close-up lift view. */
   private setLiftLabels(s: SimSnapshot): void {
-    const a = s.lift.stations[0];
-    // Watching an idle lift at speed: drop to real time the moment it starts.
+    const a = s.lift;
+    // Watching an idle elevator at speed: drop to real time the moment it starts.
     const turningNow = a.speed > 0.02;
     if (turningNow && !this.liftWasTurning && this.ui.camera === 'lift' && this.ctrl.speed > 1) this.ctrl.setSpeed(1);
     this.liftWasTurning = turningNow;
     const kg = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1)} t` : `${Math.round(v)} kg`);
-    const on = a.speed > 0.02;
-    const stranded = a.strandedKg > 0 ? ` · ${kg(a.strandedKg)} held in the stopped duty screw` : '';
-    this.labels.setContent('lift-funnel', '1 · Funnel', `${kg(a.funnelKg)} here · sensor ${a.seen ? 'sees jellyfish' : 'sees none'}`, a.seen ? 'teal' : 'default');
-    this.labels.setContent('lift-hopper', '2 · Hopper', on || a.hopperKg > 0 ? `${kg(a.hopperKg)} drawn to the bottom pocket` : 'Waiting: lift idle', on ? 'teal' : 'default');
+    const on = turningNow;
+    this.labels.setContent('lift-funnel', '1 · Funnel', `${kg(a.funnelKg)} here, from both nets · sensor ${a.seen ? 'sees jellyfish' : 'sees none'}`, a.seen ? 'teal' : 'default');
+    this.labels.setContent('lift-hopper', '2 · Hopper', a.hold ? 'Turtle in the hopper: elevator waits' : on || a.hopperKg > 0 ? `${kg(a.hopperKg)} drawn to the scoop` : 'Waiting: elevator idle', a.hold ? 'amber' : on ? 'teal' : 'default');
     this.labels.setContent(
       'lift-screw',
-      `3 · Screw (${a.screw})`,
-      on ? `${a.rpm.toFixed(0)} rpm · ${kg(a.pocketsKg)} riding up in pockets of water, up to ${Math.round(s.lift.pocketKg)} kg a pocket${stranded}` : a.on ? `Starting${stranded}` : `Stopped: nothing to lift${stranded}`,
-      on ? 'teal' : a.strandedKg > 0 ? 'amber' : 'default',
+      `3 · Buckets (${a.drive} drive)`,
+      on ? `${a.chainMs.toFixed(1)} m/s · ${kg(a.bucketsKg)} riding up in water, up to ${Math.round(a.bucketKg)} kg a bucket` : a.on ? 'Starting' : 'Stopped: nothing to lift',
+      on ? 'teal' : 'default',
     );
-    this.labels.setContent('lift-launder', '4 · Spout and launder', `${kg(a.launderKg)} spilling to the head tank`, a.launderKg > 0 ? 'teal' : 'default');
-    this.labels.setContent('lift-line', '5 · Head tank and line', `${kg(s.lift.inLineKg)} in the 2.2 km line · ${Math.round(s.lift.powerKW)} kW now`, s.lift.inLineKg > 0 ? 'teal' : 'default');
+    this.labels.setContent('lift-launder', '4 · Head and chute', `${kg(a.chuteKg)} tipping into the chute`, a.chuteKg > 0 ? 'teal' : 'default');
+    this.labels.setContent('lift-line', '5 · Head tank and line', `${kg(a.inLineKg)} in the 2.2 km line · ${Math.round(a.powerKW)} kW now`, a.inLineKg > 0 ? 'teal' : 'default');
   }
 
   private setupLabels(): void {
@@ -385,13 +384,13 @@ export class SceneManager {
     for (const [id, title, anchor] of [
       ['lift-funnel', '1 · Funnel', K.funnel],
       ['lift-hopper', '2 · Hopper', K.hopper],
-      ['lift-screw', '3 · Screw', K.screw],
-      ['lift-launder', '4 · Spout and launder', K.launder],
+      ['lift-screw', '3 · Buckets', K.screw],
+      ['lift-launder', '4 · Head and chute', K.launder],
       ['lift-line', '5 · Head tank and line', K.tank],
     ] as const) {
       this.labels.add({ id, title, anchor: () => anchor, viewports: ['single'], view: above, maxDistance: 70, pick: 'collector' });
     }
-    const intakeAnchor = new THREE.Vector3(SITE.basin.units[1], SITE.intake.deckY + 16, SITE.basin.wallZ);
+    const intakeAnchor = new THREE.Vector3(basinX(SITE.basin.units[1]), SITE.intake.deckY + 16, SITE.basin.wallZ);
     for (const [id, vp] of [
       ['intake', ['single']],
       ['intake-base', ['base']],
@@ -526,9 +525,10 @@ export class SceneManager {
     if (sw.markerSeq < this.lastMarkerSeq) this.annotations.reset();
     this.lastMarkerSeq = sw.markerSeq;
 
-    this.nets.update(sw.nets, this.realTime, hs, this.ui.flowView, this.camera);
+    this.nets.update(sw.nets, this.realTime, hs, this.ui.flowView, this.camera, sw.jets.firing);
     const flowFraction = Math.min(1, tr.lineFlow() * (0.35 + (tr.processedEMA / Math.max(tr.capacityRate(), 1e-3)) * 4));
     this.collector.update(tr, flowFraction, this.realTime);
+    this.fish.update(sw.bycatch, ctrl.alpha, this.realTime);
     this.release.update(sw.releaseEMA, tr.armed, this.realTime, this.realTime, hs);
     this.sonar.update((this.ui.flowView || params.night) && !ctrl.failures.sonarLoss, dt);
 

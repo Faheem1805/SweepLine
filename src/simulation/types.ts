@@ -48,7 +48,7 @@ export const DEFAULT_PARAMS: SimParams = {
   bloomMeanDepth: 2.4,
   bloomDepthSD: 1.4,
   currentSpeed: 0.2,
-  currentBearing: 242,
+  currentBearing: 62,
   waveHeight: 0.6,
   unitsRunning: 4,
   foulingWeeks: 2,

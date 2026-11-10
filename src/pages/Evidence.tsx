@@ -42,7 +42,7 @@ const STATUS = [
 /** What failed along the way and what it changed. Each of these is a real entry from the build. */
 const LOG: Array<[string, string]> = [
   ['A floating pop-up curtain leaked under its skirt, needed a second line for the tide, and was far too small for a plant’s flow', 'Dropped it. Fixed full-depth nets in the one-way intake channel'],
-  ['A sealed pump could cut the animals', 'Screw lift with no impeller, with survival still to be measured'],
+  ['A sealed pump could cut the animals', 'Bucket elevator: lifted in water, no pump or impeller, survival still to be measured'],
   ['At 2 million m³/h a 9 m channel broke the fish-screen limit at 20°', 'Reference channel taken to 12 m, and a rule for sizing the net in any channel'],
   ['Our 67 kW left out the lift over the breakwater', 'Corrected to about 130 kW'],
   ['We claimed a bloom would trigger the float-line relief. The model says it never does', 'Stopped claiming it, and added a debris test that does trigger it'],

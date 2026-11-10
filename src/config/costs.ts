@@ -31,17 +31,17 @@ export const CAPEX: CostItem[] = [
     sources: [],
   },
   {
-    item: 'Screw lifts, a duty and a standby at each net',
+    item: 'Bucket elevator with twin drives, and a clean-water feed pump',
     low: 0.3,
     high: 1.2,
-    basis: 'Encased screw fish pump at about 1 m³/s: US$77–307k each (2024–26). Four of them.',
+    basis: 'One 21 m inclined pivoted-bucket elevator in stainless steel with two drives, and a 0.65 m³/s feed pump. Our estimate, priced against encased fish pumps of the same duty (US$77–307k at 1 m³/s, 2024–26); a vendor quote is needed.',
     sources: ['https://app.govly.com/public/opportunities/16596124', 'https://subsite2.waikatoregion.govt.nz/assets/WRC/PS23-18.pdf'],
   },
   {
-    item: 'Deck, hoppers, launders, head tank',
+    item: 'Sheet-pile cell, hopper, crest platform, head tank',
     low: 0.5,
     high: 1.5,
-    basis: 'Piled steel deck about 500 m² and civil works.',
+    basis: 'About 35 m of sheet piling round the funnel and hopper, a concrete hopper, and a 120 m² platform on the breakwater crest. Smaller than the piled deck two lifts needed; same range kept until priced.',
     estimate: true,
     sources: [],
   },
@@ -79,7 +79,7 @@ export const RUNNING: RunningItem[] = [
   { item: 'Washing and repairing panels ashore', low: 40, high: 90, basis: 'Yard, jet wash and net repair' },
   { item: 'Replacing worn panels', low: 150, high: 600, basis: 'A fifth of the mesh a year' },
   { item: 'Divers and inspection', low: 50, high: 120, basis: 'Monthly in season, piles and ground line' },
-  { item: 'Electricity', low: 5, high: 15, basis: 'The lifts run only while a bloom is being collected' },
+  { item: 'Electricity', low: 5, high: 15, basis: 'The elevator and feed pump run only while a bloom is being collected' },
 ];
 
 /** For scale: boats and crews at a European plant, about €0.53M a year (US$ million). */

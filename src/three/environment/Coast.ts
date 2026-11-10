@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { CREST, SITE, eastCrestLine, seabedDepth } from '../../config/site';
+import { basinX, CREST, SITE, eastCrestLine, seabedDepth, westCrestLine } from '../../config/site';
 import { SeededRandom } from '../../simulation/seededRandom';
 import { makeRockGeometry } from '../assets/procedural/rocks';
 import { applyMedium, mediumMaterial } from './shaderChunks';
@@ -63,9 +63,9 @@ export function buildCoast(): CoastParts {
 
   // ------------------------------------------------------------ land + crown wall
   const B = SITE.basin;
-  // Land closes up to the crest lines at both ends of the plant wall.
-  const shoreEast = B.endX + 12;
-  const shoreWest = -CREST.centre;
+  // Land closes up to the crest lines at both ends of the plant wall (the basin lies toward BASIN_SIDE).
+  const shoreEast = Math.max(basinX(B.endX + 12), basinX(-CREST.centre));
+  const shoreWest = Math.min(basinX(B.endX + 12), basinX(-CREST.centre));
   (mats.land.map as THREE.Texture).repeat.set(1 / 90, 1 / 90);
   const land = new MergeBuilder();
   const landY = SITE.shore.landY;
@@ -165,7 +165,7 @@ export function buildCoast(): CoastParts {
   const one = buildIntake(mats);
   B.units.forEach((x, i) => {
     const unit = i === 0 ? one : one.clone();
-    unit.position.set(x, 0, B.wallZ - SITE.intake.mouthZ);
+    unit.position.set(basinX(x), 0, B.wallZ - SITE.intake.mouthZ);
     intake.add(unit);
   });
   group.add(intake);
@@ -201,11 +201,11 @@ function toLine(pts: Array<[number, number]>): LinePoint[] {
 }
 
 /**
- * Where the east breakwater has a vertical sheet-pile face instead of a rock slope (z range, m): the
- * collector at the end of net A, whose funnel and pocket need a wall to stand against. The model's
+ * Where the west breakwater has a vertical sheet-pile face instead of a rock slope (z range, m): a
+ * short cell at net B's end, whose funnel and hopper need a wall to stand against. The model's
  * channel walls are vertical; the drawn rock slope elsewhere is display only.
  */
-const COLLECTOR_CELL: readonly [number, number] = [84, 116];
+const COLLECTOR_CELL: readonly [number, number] = [18, 56];
 
 /** Split a line into the run inside a z range and the runs outside it, each sharing its boundary point. */
 function splitByZ(line: LinePoint[], z0: number, z1: number): { inside: LinePoint[]; outside: LinePoint[][] } {
@@ -272,11 +272,10 @@ function buildBreakwaters(mats: Record<string, THREE.Material>, rockMat: THREE.M
   const innerStone = half + crestY * W.slope * 1.5;
   const outerStone = half + ((crestY + 3) / (crestY - bottom)) * (outerToe - half);
   const headBase = 24;
-  const west: Array<[number, number]> = [];
-  for (let z = z1; z > SITE.basin.wallZ - 8; z -= 6) west.push([-hx, z]);
+  // The east breakwater bends round the basin (toward −x); the west one, where the collector stands, runs straight to the shore.
   const lines = [
-    { line: toLine(west), basinSide: 1 },
-    { line: toLine(eastCrestLine()), basinSide: -1 },
+    { line: toLine(eastCrestLine()), basinSide: 1 },
+    { line: toLine(westCrestLine()), basinSide: -1 },
   ];
   const mb = new MergeBuilder();
   for (const { line, basinSide } of lines) {
@@ -376,7 +375,7 @@ function buildBreakwaters(mats: Record<string, THREE.Material>, rockMat: THREE.M
         z = a0.z + (a1.z - a0.z) * f + (a0.rz + (a1.rz - a0.rz) * f) * o;
         // Keep the slope clear under the collector platform, and off the sheet-pile face.
         if (!pickWest && inner && z >= COLLECTOR_CELL[0] - 4 && z <= COLLECTOR_CELL[1] + 4 && x < hx) y = -80;
-        else if (!pickWest && inner && z > 44 && z < 96 && x < hx + 4) y -= 9;
+        else if (!pickWest && z > 22 && z < 41 && x > hx - 6 && x < hx + 8) y -= 9;
       }
       const sc = rng.range(1.1, 2.3) * (vi === 2 ? 0.85 : 1);
       p.set(x, y + sc * 0.3, z);
@@ -512,7 +511,8 @@ function buildPlantBackdrop(mats: Record<string, THREE.Material>): THREE.Group {
     mb.box(mat, x0, x1, y0, y0 + h, z0, z1);
     mb.box('steel', x0 + 2, x1 - 2, y0 + h, y0 + h + 0.8, z0 + 2, z1 - 2);
   };
-  for (const x of SITE.basin.units) {
+  for (const d of SITE.basin.units) {
+    const x = basinX(d);
     box(x - 62, x + 62, wall - 190, wall - 112, 24, 'cladding');
     box(x - 62, x + 62, wall - 216, wall - 190, 14, 'claddingBlue');
     mb.add('cladding', new THREE.CylinderGeometry(33, 33, 34, 48).translate(x, y0 + 17, wall - 262));

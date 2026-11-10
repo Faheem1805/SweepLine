@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import type { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { SITE, seabedDepth } from '../../config/site';
+import { basinX, SITE, seabedDepth } from '../../config/site';
 import { NETS, pointOnNet } from '../../simulation/geometry';
-import { STATIONS } from '../../simulation/lift';
+import { ELEVATOR_Z, TAIL } from '../../simulation/lift';
 
 export type CameraPreset = 'aerial' | 'top' | 'mouth' | 'net' | 'underwater' | 'collector' | 'lift' | 'intake' | 'release' | 'compare' | 'free';
 
@@ -13,7 +13,7 @@ export const CAMERA_PRESETS: Array<{ key: Exclude<CameraPreset, 'free' | 'compar
   { key: 'net', label: 'Along the net' },
   { key: 'underwater', label: 'Underwater' },
   { key: 'collector', label: 'Collector' },
-  { key: 'lift', label: 'Screw lift' },
+  { key: 'lift', label: 'Bucket elevator' },
   { key: 'intake', label: 'Intake' },
   { key: 'release', label: 'Release' },
 ];
@@ -23,17 +23,17 @@ export interface CameraPose {
   target: THREE.Vector3;
 }
 
-/** Camera presets on the reference site. The overview stands offshore to the west, looking along the channel to the plant. */
+/** Camera presets on the reference site. The overview stands offshore, east of the mouth, looking along the channel to the plant, with the bloom coming in from the west. */
 export function presetPose(key: Exclude<CameraPreset, 'free'>): CameraPose {
   const L = NETS[0];
   const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
   switch (key) {
     case 'top':
-      return { pos: v(330, 1420, 250.01), target: v(330, 0, 250) };
+      return { pos: v(basinX(330), 1420, 250.01), target: v(basinX(330), 0, 250) };
     case 'compare':
       return { pos: v(-260, 700, 860), target: v(220, 0, 200) };
     case 'mouth':
-      return { pos: v(-250, 86, 760), target: v(20, 0, 500) };
+      return { pos: v(260, 86, 760), target: v(-20, 0, 500) };
     case 'net': {
       const p = pointOnNet(L, L.length * 0.42);
       return { pos: v(p.x - L.tx * 70 + L.nx * 28, 15, p.z - L.tz * 70 + L.nz * 28), target: v(p.x + L.tx * 70, 0, p.z + L.tz * 70) };
@@ -46,21 +46,19 @@ export function presetPose(key: Exclude<CameraPreset, 'free'>): CameraPose {
       };
     }
     case 'collector':
-      return { pos: v(26, 19, 44), target: v(70, 2.5, 76) };
-    case 'lift': {
-      // Net A's lift from above the channel, looking into the cut-away screws: hopper on the right, the deck on the left.
-      const s = STATIONS[0].screws[0].inlet;
-      return { pos: v(s.x - 17.2, s.y + 19.1, s.z + 1.5), target: v(s.x + 1.3, s.y + 5.4, s.z - 8) };
-    }
+      return { pos: v(TAIL.x - 30, 26, ELEVATOR_Z + 52), target: v(TAIL.x + 6, 1.5, ELEVATOR_Z + 6) };
+    case 'lift':
+      // The elevator side-on from downstream, so no net is in the way: hopper on the right with the funnel behind it, buckets climbing left over the crest.
+      return { pos: v(TAIL.x + 6.5, 10.5, ELEVATOR_Z - 25), target: v(TAIL.x + 8.5, 2.8, ELEVATOR_Z) };
     case 'intake':
-      return { pos: v(210, 36, -12), target: v(330, 2, -120) };
+      return { pos: v(basinX(210), 36, -12), target: v(basinX(330), 2, -120) };
     case 'release': {
       const r = SITE.release;
       return { pos: v(r.x - 46, 22, r.z + 44), target: v(r.x + 8, 0, r.z + 4) };
     }
     case 'aerial':
     default:
-      return { pos: v(-420, 260, 800), target: v(190, 0, 170) };
+      return { pos: v(-290, 360, 950), target: v(10, 0, 80) };
   }
 }
 

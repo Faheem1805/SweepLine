@@ -16,7 +16,7 @@ export const S_TRANSFERRED = 5;
 export const S_RELEASED = 6;
 export const S_INTAKE_CONTACT = 7;
 export const S_FREE_DRIFT = 8;
-/** In the screw lift: drawn across the hopper, riding up in a pocket, or in the launder to the head tank. */
+/** In the bucket elevator: drawn across the hopper, riding a bucket, or down the chute to the head tank. */
 export const S_LIFT = 9;
 
 export const STATE_NAMES = [

@@ -131,7 +131,7 @@ const r = run(
   seed,
   (t, s, b) => {
     c.hook?.(t, s, b);
-    if (reliefAt === null && s.nets[0].reliefFraction > 0) reliefAt = t;
+    if (reliefAt === null && (s.nets[0].reliefFraction > 0 || s.nets[1].reliefFraction > 0)) reliefAt = t;
     peakOnNet = Math.max(peakOnNet, (s.onNet[0] + s.onNet[1]) * s.kgPerAgent);
   },
   c.hours ?? 3,

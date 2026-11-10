@@ -11,7 +11,7 @@ function sweepLine(): Record<ComparisonRow['key'], string> {
   const b = STUDY.blooms;
   return {
     tide: `Nothing happens. Inside the channel the plant sets the flow, so ${STUDY.cases.tide.with < 0.05 ? 'under 0.1 t' : `${STUDY.cases.tide.with.toFixed(1)} t`} reached the screens through a recorded turn`,
-    depth: `Float line to seabed, ${ASSUMPTIONS.net.meshBar * 1000} mm mesh, on a weighted ground line. Under 0.1 t reached the screens from a deep-living species`,
+    depth: `Float line to seabed, ${ASSUMPTIONS.net.mesh[0] * 1000} and ${ASSUMPTIONS.net.mesh[1] * 1000} mm mesh, on a weighted ground line. Under 0.1 t reached the screens from a deep-living species`,
     waves: 'Inside the breakwaters: a fifth of the wave height reaches the net. Same result in the biggest waves on record',
     crew: 'Nobody during a bloom. A small crew swaps panels on a four-week cycle, between blooms',
     animals: `Swept along the net and lifted without an impeller, then ${ASSUMPTIONS.release.design.along / 1000} km down the coast with no air. Survival still to be measured`,

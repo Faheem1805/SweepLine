@@ -103,13 +103,22 @@ export const ASSUMPTIONS = {
     patchWander: 40,
     /** Temporal patchiness of the arrival rate (± fraction). */
     rateVariation: 0.3,
+    /** Share of the bloom (by mass) in small young bells, and their size range (m): what the finer second net is for. */
+    juvenileShare: 0.1,
+    juvenileBell: [0.06, 0.14] as const,
   },
 
   /** Guide nets. All of it to be measured: flume for guidance, a 4–6 week panel test at the site for fouling. */
   net: {
-    /** Bar mesh and twine (m). 50 mm bar stops every target bell and passes small debris. Solidity ≈ 2 × twine / bar. */
-    meshBar: 0.05,
+    /**
+     * Bar mesh of net A and net B, and twine (m). Solidity ≈ 2 × twine / bar. Net A is coarse: it
+     * stops the adult bells, carries less load and fouls more slowly. Net B is fine: it stops the
+     * young bells that work through A, so A does not have to.
+     */
+    mesh: [0.08, 0.03] as const,
     twine: 0.004,
+    /** A bell narrower than this many bars works through the mesh (soft bodies squeeze). To be set in the flume. */
+    passFactor: 1.6,
     /** Distance from the net at which an agent is on it, and its closest approach (m). */
     guideDistance: 1.4,
     standoff: 0.35,
@@ -157,38 +166,71 @@ export const ASSUMPTIONS = {
   },
 
   /**
-   * The screw lift at each net's end, a duty and a standby screw side by side in one hopper. An
-   * enclosed screw: the flights are welded inside a tube that turns on rollers, so there is no gap
-   * between flight and casing for a bell to be caught in. Each part-turn closes off a pocket of water
-   * at the bottom and carries it up the incline; an animal rides up in its pocket, in water all the
-   * way, and spills with it into a launder to the head tank. At full speed one screw lifts the
-   * line's design flow. Figures are a design basis for a pilot, not a vendor quote.
+   * The bucket elevator at net B's end, the one lift for both nets: an inclined chain of pivoted
+   * buckets, like an escalator. Each bucket dips through the hopper, scoops up water with the
+   * jellyfish in it, hangs level all the way up, and is tipped by a cam at the head into a chute to
+   * the head tank. Nothing passes through a pump, and the animals are in water the whole way. Twin
+   * drives on the head shaft, duty and standby. A clean-water feed pump tops the head tank up to
+   * the line's design flow, so the buckets only have to carry the animals and the water around them.
+   * Figures are a design basis for a pilot, not a vendor quote.
    */
   lift: {
-    /** Tube bore (m), number of flight starts, flight pitch (m) and incline (degrees). */
-    diameter: 2.0,
-    starts: 3,
-    pitch: 2.0,
-    incline: 30,
-    /** Full speed (rpm): the usual 50 / D^⅔ for a screw of this bore. */
-    rpm: 31.5,
-    /** Axis height (m above still water) at the bottom pocket and at the discharge. */
-    inletY: -3.6,
-    dischargeY: 8.0,
+    /** Incline (degrees), sprocket centre distance (m), sprocket radius (m), nominal bucket spacing along the chain (m). */
+    incline: 40,
+    length: 21,
+    sprocketRadius: 0.6,
+    pitch: 0.8,
+    /** Bucket across the chain, along it, and its depth (m). */
+    bucket: { width: 1.4, length: 0.75, depth: 0.6 },
+    /** Water a bucket brings up (m³), and the most jellyfish it may carry (kg, about 11 % by volume, set by bell-damage tests). */
+    bucketWater: 0.35,
+    bucketKg: 40,
+    /** Chain speed at full speed (m/s): 1.5 buckets a second, so about the line's 217 t/h. */
+    chainSpeed: 1.2,
     /** Soft start and stop: time from rest to full speed (s). */
     rampTime: 8,
-    /** Speed at which an animal is drawn across the hopper to the bottom pocket, and carried along the launder to the head tank (m/s). */
+    /** Speed at which an animal is drawn across the hopper to the scoop, and slides down the chute to the head tank (m/s). */
     hopperSpeed: 0.7,
-    launderSpeed: 1.2,
+    chuteSpeed: 1.5,
   },
 
   /**
-   * Funnel sensor at each collector: an imaging sonar looking down the funnel and into the hopper
+   * Fish and sea turtles in the channel (src/simulation/bycatch.ts). Illustrative behaviour, not
+   * calibrated: how many are drawn, cruise speeds (m/s), how far ahead they sense a net (m), the share
+   * of fish small enough to slip through net A's coarse mesh, the chance per second a fish right at the
+   * scoop is lifted with the water, and how long until another comes in after one leaves (s).
+   */
+  bycatch: {
+    fish: 60,
+    turtles: 2,
+    fishSpeed: 0.5,
+    turtleSpeed: 0.4,
+    senseRange: 6,
+    smallShare: 0.4,
+    scoopPerSecond: 0.05,
+    returnTime: 600,
+  },
+
+  /**
+   * Jet purge: a manifold along each panel's frame on the downstream side, with nozzles aimed back
+   * through the mesh. When a panel's load cell and camera see animals held against it for
+   * `holdTime` s, it fires a `burst` of jets that push them off the mesh and back into the sweep.
+   * The pump draws `kW` while firing.
+   */
+  jets: {
+    holdTime: 90,
+    burst: 12,
+    cooldown: 60,
+    kW: 15,
+  },
+
+  /**
+   * Funnel sensor at the collector: an imaging sonar looking down the funnel and into the hopper
    * (it needs no light), with a camera at the hopper mouth to check it by day. It reads every
-   * `period` s. A lift starts when its sensor sees about a pocket's worth (`startKg`), or anything
-   * at all that has waited `maxWait` s; it stops once the sensor has seen nothing for `runOn` s and
-   * the last pocket has reached the top, after at least `minRun` s. That keeps a lift that only sees
-   * the odd stray to a few starts an hour. To be set on the pilot.
+   * `period` s. The elevator starts when the sensor sees about a bucket's worth (`startKg`), or
+   * anything at all that has waited `maxWait` s; it stops once the sensor has seen nothing for
+   * `runOn` s and the last bucket has tipped, after at least `minRun` s, so the motors are not
+   * started too often. To be set on the pilot.
    */
   funnelSensor: {
     period: 2,

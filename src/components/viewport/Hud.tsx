@@ -271,7 +271,7 @@ export function FlowLegend() {
   const items: Array<[string, string]> = [
     ['#bfdbfe', 'Drifting in'],
     ['#26d9f2', 'On the net'],
-    ['#ffb84a', 'In the pocket'],
+    ['#ffb84a', 'In the funnel or elevator'],
     ['#4df29a', 'Released'],
     ['#ff5c4d', 'Past a net, or at the screens'],
   ];

@@ -1,5 +1,5 @@
 import { ASSUMPTIONS } from '../config/assumptions';
-import { SITE, bearingToWorld } from '../config/site';
+import { BASIN_SIDE, SITE, bearingToWorld } from '../config/site';
 import { DEFAULT_PARAMS } from './types';
 
 /**
@@ -55,23 +55,27 @@ export class FlowField {
   sampleDrawn(x: number, z: number, depth: number, out: Vec2Out): void {
     const B = SITE.basin;
     const hw = SITE.channel.halfWidth;
-    if (z >= B.northZ || x <= -hw || x >= B.endX) {
+    const s = BASIN_SIDE;
+    const bx = s * x;
+    if (z >= B.northZ || bx <= -hw || bx >= B.endX) {
       this.sample(x, z, depth, out);
       return;
     }
+    // Worked in basin coordinates (the basin toward +bx), then turned back to x.
+    x = bx;
     const U = this.channelSpeed;
     if (x < hw) {
       // Round the inside of the bend.
       const dx = x - hw;
       const dz = z - B.northZ;
       const r = Math.max(Math.hypot(dx, dz), 1);
-      out.x = (-dz / r) * U;
+      out.x = s * (-dz / r) * U;
       out.z = (dx / r) * U;
       return;
     }
     const last = B.units[B.units.length - 1];
     const left = 1 - smoothstep(B.units[0] - 60, last + 40, x);
-    out.x = U * left;
+    out.x = s * U * left;
     out.z = -0.12 * smoothstep(B.units[0] - 90, B.units[0], x) * (1 - 0.6 * left);
   }
 

@@ -7,7 +7,7 @@
  */
 import { getScene } from '../../app/runtime';
 import { useApp } from '../../app/store';
-import { SITE } from '../../config/site';
+import { basinX, SITE } from '../../config/site';
 import { controller } from '../../simulation/SimController';
 import { orbitPose, type CameraPose } from '../../three/cameras/CameraRig';
 import { approachingBloom } from '../../utils/format';
@@ -506,7 +506,7 @@ export class IntroPlayer {
     o('intake-label', st.intakeLabel);
     if (st.intakeLabel > 0) {
       // Beside the intake's seaward corner (upstream side, where the bloom arrives).
-      const [ix, iy] = apply(this.mSite, SITE.basin.units[0] - 68, SITE.basin.wallZ + 3);
+      const [ix, iy] = apply(this.mSite, basinX(SITE.basin.units[0] - 68), SITE.basin.wallZ + 3);
       const il = this.els['intake-label'] as HTMLElement;
       il.style.transform = `translate3d(${ix.toFixed(1)}px, ${iy.toFixed(1)}px, 0)`;
       il.style.color = mixRgb(AMBER, TEAL, st.intakeSafe);

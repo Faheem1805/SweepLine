@@ -87,10 +87,10 @@ const net = sizeNet(DESIGN_FLOW, SITE.channel.halfWidth * 2, SITE.channel.depth,
 const liftKW = Math.round(LINE.kW / 10) * 10;
 
 const STEPS = [
-  { title: 'Warning', value: '30 min', text: 'Offshore detection gives hours. In the model, sonar at the mouth sees a bloom at least 30 minutes before it reaches the net, day or night, and arms the lifts.' },
-  { title: 'Net', value: `${net.through.toFixed(2)} m/s`, text: `Water passes through ${ASSUMPTIONS.net.meshBar * 1000} mm mesh. Jellyfish are held back, and the flow sweeps them along the face.` },
-  { title: 'Pocket', value: `${Math.round(net.rideMin)} min ride`, text: 'They arrive at a funnel where each net meets the wall. A second net 60 m behind takes what gets past.' },
-  { title: 'Screw lift', value: `≈ ${liftKW} kW`, text: `At each net's end an inclined screw lifts them ${LINE.lift.toFixed(1)} m in pockets of water to a head tank. It turns only while a sensor sees jellyfish in its funnel. Duty and standby.` },
+  { title: 'Warning', value: '30 min', text: 'Offshore detection gives hours. In the model, sonar at the mouth sees a bloom at least 30 minutes before it reaches the net, day or night, and arms the elevator.' },
+  { title: 'Net', value: `${net.through.toFixed(2)} m/s`, text: `Water passes through ${ASSUMPTIONS.net.mesh[0] * 1000} mm mesh, then ${ASSUMPTIONS.net.mesh[1] * 1000} mm. Jellyfish are held back, and the flow sweeps them along the face.` },
+  { title: 'Funnel', value: `${Math.round(net.rideMin)} min ride`, text: 'Net A is coarse and its last panel is open, so what it guides goes on down the wall to net B. Net B is fine and catches the small ones too. Both end up in one funnel at net B’s end.' },
+  { title: 'Bucket elevator', value: `≈ ${liftKW} kW`, text: `One elevator, like an escalator of buckets. Each bucket scoops water with the jellyfish in it and lifts them ${LINE.lift.toFixed(1)} m to a head tank. It runs only while a sensor sees jellyfish in the funnel. Twin drives, duty and standby.` },
   { title: 'Release', value: `${LINE.transitMin.toFixed(0)} min`, text: `A ${ASSUMPTIONS.transfer.pipeBore} m line over the breakwater and ${ASSUMPTIONS.transfer.length / 1000} km along the bed, with no air, to the sea down-drift.` },
 ];
 
@@ -105,15 +105,19 @@ const QUESTIONS: Array<{ q: string; a: string }> = [
   },
   {
     q: 'What does it do to the animals?',
-    a: 'The screw has no impeller and no gap: its flights are welded inside a tube that turns. Each animal rides up in a pocket of water, spills into a launder, and the line runs full with no air. Screws like this pass live fish. Survival of jellyfish is not yet measured, which is why it is an early test.',
+    a: 'Nothing passes through a pump. Each bucket scoops the animals up with the water around them and hangs level to the top, where it tips into a chute to the head tank; a feed pump adds clean water for the line, which runs full with no air. Dam fish lifts carry live fish the same way, in water. Survival of jellyfish is not yet measured, which is why it is an early test.',
   },
   {
     q: 'What about fish and turtles?',
-    a: 'The mesh runs at fish-screen speed, so a swimming animal can turn away, and taut mesh is not a gill net. A camera at each hopper mouth lets the operator stop a lift if a turtle comes into the funnel, which is open water it can swim back out of. That is a design argument, not a test: bycatch is watched in the panel test at sea.',
+    a: 'The mesh runs at fish-screen speed, so a fish that meets it can turn and swim back out of the channel against a current it easily beats; taut mesh is not a gill net, and small fish slip through net A’s coarse mesh. A fish that does end up in the hopper rides up in a bucket of water and goes out to sea alive with the bloom, not onto the plant’s screens. Turtles follow jellyfish into the funnel: the hopper camera sees one and the elevator waits until it swims back out. The twin shows all three. That is a design argument, not a test: bycatch is watched in the panel test at sea.',
+  },
+  {
+    q: 'What if jellyfish get stuck on the net?',
+    a: `The face is smooth: the piles stand behind the mesh, so there is no bump to catch on. A bell can still be held against the mesh. Each panel has a jet manifold on its downstream side: when its load cell and camera see animals held for ${ASSUMPTIONS.jets.holdTime} s, it fires a ${ASSUMPTIONS.jets.burst} s burst back through the mesh that pushes them off into the sweep. The twin counts the bursts and the bells freed.`,
   },
   {
     q: 'Haven’t nets failed at other plants?',
-    a: 'Yes. A net set square to the flow takes the whole load and can tear. Ours stands at 20°, so the flow carries the bloom off it, and with the lifts down and three times the bloom the head stays near 16 mm. A second net stands behind it, and the float line dips before the load gets high.',
+    a: 'Yes. A net set square to the flow takes the whole load and can tear. Ours stands at 20°, so the flow carries the bloom off it, and with the elevator down and three times the bloom the head stays near 9 mm. A second net stands behind it, and the float line dips before the load gets high.',
   },
   {
     q: 'Won’t the piles grow more jellyfish?',
@@ -129,7 +133,7 @@ const QUESTIONS: Array<{ q: string; a: string }> = [
   },
   {
     q: 'What does it run on?',
-    a: `The nets need no power. The lifts draw about ${liftKW} kW while collecting, from a shore feed on the plant’s non-safety supply. If that is lost, the net goes on holding the bloom.`,
+    a: `The nets need no power. The elevator and the feed pump draw about ${liftKW} kW while collecting, the jets ${ASSUMPTIONS.jets.kW} kW while one fires, from a shore feed on the plant’s non-safety supply. If that is lost, the net goes on holding the bloom.`,
   },
   {
     q: 'Is it permanent?',

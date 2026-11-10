@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { SITE, seabedDepth } from '../../config/site';
+import { BASIN_SIDE, basinX, SITE, seabedDepth } from '../../config/site';
 import { SeededRandom, valueNoise } from '../../simulation/seededRandom';
 import { applyMedium, SHARED } from './shaderChunks';
 import { makeSandTextures } from './textures';
@@ -81,7 +81,7 @@ export class Seabed {
       let x = rng.range(-1100, 1100);
       const z = cluster ? SITE.shore.toeZ + rng.range(0, 30) : rng.range(-30, 1000);
       // The shore clusters belong to the natural shore, not the dredged basin.
-      if (cluster && x > -140 && x < SITE.basin.endX + 40) x = -140 - rng.range(0, 900);
+      if (cluster && BASIN_SIDE * x > -140 && BASIN_SIDE * x < SITE.basin.endX + 40) x = basinX(-140 - rng.range(0, 900));
       const sc = cluster ? rng.range(0.7, 2.2) : rng.range(0.5, 1.8);
       p.set(x, -seabedDepth(x, z) + sc * 0.25, z);
       e.set(rng.next() * 3, rng.next() * 3, rng.next() * 3);

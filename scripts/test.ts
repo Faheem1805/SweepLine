@@ -10,7 +10,7 @@ import { capexAllIn, runningTotal } from '../src/config/costs';
 import { SITE, seabedDepth, seabedDepthFast } from '../src/config/site';
 import { S_LIFT, S_TRANSFERRED } from '../src/simulation/Agent';
 import { NETS } from '../src/simulation/geometry';
-import { POCKET_KG, POCKET_SPACING } from '../src/simulation/lift';
+import { PITCH } from '../src/simulation/lift';
 import { SCENARIOS } from '../src/simulation/scenarios';
 import { sizeLine, sizeNet } from '../src/simulation/sizing';
 import { TRANSFER_TPH } from '../src/simulation/transfer';
@@ -72,16 +72,16 @@ const two = tear(true);
 const one = tear(false);
 check('a second net catches a torn panel', two < 0.5 && one > two * 10, `${two.toFixed(2)} t vs ${one.toFixed(1)} t`);
 
-// The screw lifts: idle until a funnel sensor sees jellyfish, every collected animal rides up in a
-// pocket that is never over its limit, and a lift stops once there is nothing left to carry.
+// One bucket elevator for both nets: idle until its funnel sensor sees jellyfish, every collected
+// animal rides up in a bucket that is never over its limit, it stops once there is nothing left to
+// carry, small bells that work through net A are caught by net B, and stuck bells get freed.
 {
-  const tally = { turnedBeforeSeen: false, seenAt: -1, turnedAt: -1, worstPocket: 0, liftedIds: new Set<number>(), idleKWh: 0 };
+  const tally = { turnedBeforeSeen: false, seenAt: -1, turnedAt: -1, worstBucket: 0, liftedIds: new Set<number>(), idleKWh: 0 };
   const lr = run({}, 1000, (t, s) => {
     const tr = s.transfer!;
-    tr.stations.forEach((st) => {
-      if (st.seen && tally.seenAt < 0) tally.seenAt = t;
-      if (st.turning && tally.turnedAt < 0) tally.turnedAt = t;
-    });
+    const st = tr.lift;
+    if (st.seen && tally.seenAt < 0) tally.seenAt = t;
+    if (st.turning && tally.turnedAt < 0) tally.turnedAt = t;
     if (tally.seenAt < 0 && tr.turning) tally.turnedBeforeSeen = true;
     if (tally.turnedAt < 0) tally.idleKWh = tr.energyKWh();
     const p = s.pool;
@@ -90,32 +90,33 @@ check('a second net catches a torn panel', two < 0.5 && one > two * 10, `${two.t
       if (p.state[i] !== S_LIFT) continue;
       tally.liftedIds.add(p.id[i]);
       if (p.queueIndex[i] !== 1) continue;
-      const st = tr.stations[p.lane[i] & 1];
-      const k = p.lane[i] >> 1;
-      const key = (p.lane[i] << 20) + Math.floor(p.timer[i] / POCKET_SPACING - st.phase[k]);
+      const key = Math.round(p.timer[i] / PITCH - st.phase);
       per.set(key, (per.get(key) ?? 0) + 1);
     }
-    for (const n of per.values()) tally.worstPocket = Math.max(tally.worstPocket, n * s.kgPerAgent);
+    for (const n of per.values()) tally.worstBucket = Math.max(tally.worstBucket, n * s.kgPerAgent);
   }, 1.5);
   const s = lr.sEng;
-  check('a lift stays still until its funnel sensor sees jellyfish', !tally.turnedBeforeSeen && tally.seenAt > 0 && tally.turnedAt >= tally.seenAt && tally.idleKWh === 0, `seen at ${(tally.seenAt / 60).toFixed(0)} min, turning at ${(tally.turnedAt / 60).toFixed(0)} min`);
-  check('no pocket carries more than its limit', tally.worstPocket <= POCKET_KG + s.kgPerAgent, `${tally.worstPocket.toFixed(0)} kg against ${POCKET_KG.toFixed(0)} kg`);
-  check('everything in the line came up a screw', s.counters.transferred > 0 && s.counters.transferred <= tally.liftedIds.size, `${s.counters.transferred} transferred, ${tally.liftedIds.size} lifted`);
-  check('the lifts change nothing at the screens', lr.s.screensT < 0.1 && lr.s.balance.closes, `${lr.s.screensT.toFixed(3)} t`);
+  check('the elevator stays still until its funnel sensor sees jellyfish', !tally.turnedBeforeSeen && tally.seenAt > 0 && tally.turnedAt >= tally.seenAt && tally.idleKWh === 0, `seen at ${(tally.seenAt / 60).toFixed(0)} min, running at ${(tally.turnedAt / 60).toFixed(0)} min`);
+  check('no bucket carries more than its limit', tally.worstBucket <= ASSUMPTIONS.lift.bucketKg + s.kgPerAgent, `${tally.worstBucket.toFixed(0)} kg against ${ASSUMPTIONS.lift.bucketKg} kg`);
+  check('everything in the line came up the elevator', s.counters.transferred > 0 && s.counters.transferred <= tally.liftedIds.size, `${s.counters.transferred} transferred, ${tally.liftedIds.size} lifted`);
+  check('net A has no funnel: its catch goes on to net B', s.transfer!.queues[0].length === 0 && s.counters.diverted > 0);
+  check('small bells work through net A and net B catches them', s.sieved[0] > 0 && s.sieved[1] === 0 && lr.s.screensT < 0.1, `${s.sieved[0]} through A, ${s.sieved[1]} through B`);
+  check('the jets free stuck bells', s.jets.bursts > 0 && s.jets.freed > 0, `${s.jets.bursts} bursts, ${s.jets.freed} freed`);
+  check('fish turn back at the nets', (s.bycatch?.turnedBack ?? 0) > 0, `${s.bycatch?.turnedBack} fish`);
+  check('the elevator changes nothing at the screens', lr.s.screensT < 0.1 && lr.s.balance.closes, `${lr.s.screensT.toFixed(3)} t`);
 
-  // The bloom ends: once the funnels are clear and the line has flushed, both lifts stop.
+  // The bloom ends: once the funnel is clear and the line has flushed, the elevator stops.
   const end = run({}, 1000, (t, e) => {
     if (t >= 0.9 * 3600) e.bloomActive = false;
   }, 3.8);
   const tr = end.sEng.transfer!;
   const inLine = end.sEng.countState(S_TRANSFERRED) + end.sEng.countState(S_LIFT);
-  check('the lifts stop when there is nothing left to carry', !tr.turning && !tr.stations[0].on && !tr.stations[1].on && inLine === 0 && end.sEng.counters.released === end.sEng.counters.transferred, `${end.sEng.counters.released} released of ${end.sEng.counters.transferred}`);
-  check('they turned only part of the run', tr.stations[0].turningSeconds < 3.8 * 3600 * 0.8, `lift A ${(tr.stations[0].turningSeconds / 60).toFixed(0)} min of ${(3.8 * 60).toFixed(0)}`);
-  check('lift B, seeing only strays, is not started too often', tr.stations[1].starts <= 3.8 * 8, `${tr.stations[1].starts} starts`);
+  check('the elevator stops when there is nothing left to carry', !tr.turning && !tr.lift.on && inLine === 0 && end.sEng.counters.released === end.sEng.counters.transferred, `${end.sEng.counters.released} released of ${end.sEng.counters.transferred}`);
+  check('it ran only part of the run', tr.lift.turningSeconds < 3.8 * 3600 * 0.8, `${(tr.lift.turningSeconds / 60).toFixed(0)} min of ${(3.8 * 60).toFixed(0)}, ${tr.lift.starts} starts`);
 
   // Same seed, same run.
   const again = run({}, 1000, undefined, 1.5).sEng;
-  check('a lift run is reproducible', again.counters.transferred === s.counters.transferred && again.counters.released === s.counters.released && again.transfer!.stations[0].phase[0] === s.transfer!.stations[0].phase[0]);
+  check('a run is reproducible', again.counters.transferred === s.counters.transferred && again.counters.released === s.counters.released && again.transfer!.lift.phase === s.transfer!.lift.phase && again.bycatch!.turnedBack === s.bycatch!.turnedBack);
 }
 
 // The agent model reads the seabed from a lookup table: it must match the exact formula wherever an

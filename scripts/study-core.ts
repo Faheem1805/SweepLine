@@ -23,7 +23,7 @@ export function run(over: Partial<SimParams>, seed: number, hook?: (t: number, s
     b.step(h);
     s.step(h);
     t += h;
-    maxHead = Math.max(maxHead, s.nets[0].head);
+    maxHead = Math.max(maxHead, s.nets[0].head, s.nets[1].head);
     if (t >= nextSample) {
       nextSample += 300;
       series.push({ t, b: b.screens.totalT, s: s.screens.totalT, head: s.nets[0].head, on: (s.onNet[0] + s.onNet[1]) * s.kgPerAgent / 1000, col: s.counters.diverted * s.kgPerAgent / 1000 });

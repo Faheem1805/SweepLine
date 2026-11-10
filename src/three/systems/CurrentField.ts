@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { SITE, isWater } from '../../config/site';
+import { basinX, SITE, isWater } from '../../config/site';
 import type { SimulationEngine } from '../../simulation/SimulationEngine';
 
 /** Particle region: the channel and the water it draws from. */
-const REGION = { x0: -640, x1: 960, z0: SITE.basin.wallZ, z1: 980 };
+const REGION = { x0: Math.min(basinX(-640), basinX(960)), x1: Math.max(basinX(-640), basinX(960)), z0: SITE.basin.wallZ, z1: 980 };
 const MAX = 6400;
 
 /**
@@ -95,7 +95,7 @@ export class CurrentField {
         x = (Math.random() - 0.5) * 2 * (SITE.channel.halfWidth - 2);
         z = r.z0 + Math.random() * (SITE.channel.mouthZ + 40 - r.z0);
       } else if (k < 0.5) {
-        x = SITE.channel.halfWidth + Math.random() * (SITE.basin.endX - SITE.channel.halfWidth);
+        x = basinX(SITE.channel.halfWidth + Math.random() * (SITE.basin.endX - SITE.channel.halfWidth));
         z = SITE.basin.wallZ + Math.random() * (SITE.basin.northZ - SITE.basin.wallZ);
       } else {
         x = r.x0 + Math.random() * (r.x1 - r.x0);

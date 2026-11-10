@@ -6,12 +6,13 @@
  *   - +x runs along-shore (bearing 242°, WSW, as placed on the real coast by the map intro)
  *   - +z runs offshore (bearing 332°, NNW); the coastline lies toward −z
  *
- * The site is a dredged intake channel between two rock breakwaters that bends into a side basin
- * along the plant wall, where each unit has its own intake. Everything the plant pumps
- * comes through it, so inside the channel the water always runs one way, toward the screens,
- * whatever the tide outside is doing. SweepLine uses that flow: two full-depth nets stand across
- * the channel at a shallow angle, the water passes through them and the jellyfish are swept along
- * their faces to a collector at the east wall.
+ * The site is a dredged intake channel between two rock breakwaters, laid out like the reference
+ * plant's satellite image: a long straight breakwater on the west side (+x), and an east breakwater
+ * (−x) that bends round a side basin along the plant wall, where each unit has its own intake.
+ * Everything the plant pumps comes through the channel, so inside it the water always runs one way,
+ * toward the screens, whatever the tide outside is doing. SweepLine uses that flow: two full-depth
+ * nets stand across the channel at a shallow angle, the water passes through them and the jellyfish
+ * are swept along their faces to the collector at net B's end, against the west breakwater.
  *
  * Everything the agent model treats as physical structure is defined here, so a replaced GLB model
  * never changes simulation behaviour.
@@ -67,21 +68,23 @@ export const SITE = {
   },
 
   /**
-   * The side basin. Past the nets the channel bends along the plant wall, and the east breakwater
-   * curves round the basin and ties back to the shore at its far end. The simulation counts an
-   * animal as at the screens when it reaches `intake.mouthZ`, the point where the channel opens into
-   * this basin and nothing further can stop it; it then rides on to its unit's intake.
+   * The side basin. Past the nets the channel bends along the plant wall toward the east (−x, see
+   * `BASIN_SIDE`), and the east breakwater curves round the basin and ties back to the shore at its
+   * far end. The simulation counts an animal as at the screens when it reaches `intake.mouthZ`, the
+   * point where the channel opens into this basin and nothing further can stop it; it then rides on
+   * to its unit's intake. Along-shore figures here are distances from the channel centreline into the
+   * basin; multiply by `BASIN_SIDE` for x.
    */
   basin: {
     /** Plant wall, and the still-water line along the seaward side (z). */
     wallZ: -120,
     northZ: 30,
-    /** Still-water line at the far end (x). */
+    /** Still-water line at the far end (distance into the basin, m). */
     endX: 900,
     /** Radii of the bend at the channel and of the tie-in to the shore, on the crest line (m). */
     bendRadius: 42,
     tieRadius: 90,
-    /** Intake centres along the plant wall, one per unit (x). */
+    /** Intake centres along the plant wall, one per unit (distance into the basin, m). */
     units: [220, 390, 560, 730],
   },
 
@@ -95,12 +98,16 @@ export const SITE = {
     upstreamZ: 480,
     lineSpacing: 60,
     panelLength: 20,
-    /** Height of the float line above still water, and the tubular pile diameter (m). */
+    /**
+     * Height of the float line above still water, and the tubular pile diameter (m). The piles stand
+     * just behind the mesh, on its downstream side, and the panels run in slim guides on their
+     * upstream face: the face the bloom slides along is smooth, with nothing to catch on.
+     */
     freeboard: 0.6,
-    pileDiameter: 1.1,
+    pileDiameter: 0.8,
   },
 
-  /** Collection pocket at the downstream end of each net, against the east wall. */
+  /** Collection funnel at net B's end, against the west breakwater (net A's end is open and feeds it). */
   collector: {
     /** Length of the funnel ahead of the suction, along the net (m). */
     pocketLength: 16,
@@ -112,11 +119,11 @@ export const SITE = {
     deckY: 4.6,
   },
 
-  /** Release line: over the east breakwater, then along the seabed to the outlet. */
+  /** Release line: from the head tank on the west breakwater's crest, down its seaward side, then along the seabed to the outlet. */
   pipeRoute: [
-    [80, 89],
-    [100, 89],
-    [132, 94],
+    [88, 31.4],
+    [104, 33],
+    [132, 42],
     [620, 150],
     [2040, 300],
   ] as ReadonlyArray<readonly [number, number]>,
@@ -148,6 +155,17 @@ export const SITE = {
   },
 } as const;
 
+/**
+ * Side of the channel the basin opens to: −1 toward −x, the east (ENE), as on the satellite image.
+ * Basin distances in `SITE.basin` times this give x.
+ */
+export const BASIN_SIDE = -1;
+
+/** x of a point `d` metres into the basin side. */
+export function basinX(d: number): number {
+  return BASIN_SIDE * d;
+}
+
 /** Inner half-width of the mound's footprint at height of the seabed: the region an agent cannot enter. */
 const BW = SITE.breakwater;
 
@@ -169,6 +187,7 @@ function naturalDepth(x: number, z: number): number {
 function basinWeight(x: number, z: number): number {
   const B = SITE.basin;
   const hw = SITE.channel.halfWidth;
+  x *= BASIN_SIDE;
   return smoothstep(-hw - 8, -hw + 4, x) * (1 - smoothstep(B.endX - 10, B.endX + 20, x)) * smoothstep(B.wallZ - 6, B.wallZ + 4, z) * (1 - smoothstep(B.northZ - 2, B.northZ + 22, z));
 }
 
@@ -244,8 +263,9 @@ float seabedDepth(vec2 p) {
       * (1.0 - smoothstep(${(SITE.channel.mouthZ + 20).toFixed(1)}, ${(SITE.channel.mouthZ + 130).toFixed(1)}, p.y));
     d = mix(d, max(d, ${SITE.channel.depth.toFixed(1)}), w);
   }
-  float b = smoothstep(${(-SITE.channel.halfWidth - 8).toFixed(1)}, ${(-SITE.channel.halfWidth + 4).toFixed(1)}, p.x)
-    * (1.0 - smoothstep(${(SITE.basin.endX - 10).toFixed(1)}, ${(SITE.basin.endX + 20).toFixed(1)}, p.x))
+  float bx = ${BASIN_SIDE.toFixed(1)} * p.x;
+  float b = smoothstep(${(-SITE.channel.halfWidth - 8).toFixed(1)}, ${(-SITE.channel.halfWidth + 4).toFixed(1)}, bx)
+    * (1.0 - smoothstep(${(SITE.basin.endX - 10).toFixed(1)}, ${(SITE.basin.endX + 20).toFixed(1)}, bx))
     * smoothstep(${(SITE.basin.wallZ - 6).toFixed(1)}, ${(SITE.basin.wallZ + 4).toFixed(1)}, p.y)
     * (1.0 - smoothstep(${(SITE.basin.northZ - 2).toFixed(1)}, ${(SITE.basin.northZ + 22).toFixed(1)}, p.y));
   return mix(d, max(d, ${SITE.channel.depth.toFixed(1)}), b);
@@ -261,7 +281,8 @@ export function waveExposure(x: number, z: number): number {
   const B = SITE.basin;
   const inside = (1 - smoothstep(C.halfWidth - 6, C.halfWidth + 40, Math.abs(x))) * (1 - smoothstep(C.mouthZ - 180, C.mouthZ + 30, z));
   // The side basin, behind the curved breakwater.
-  const basin = smoothstep(C.halfWidth, C.halfWidth + 40, x) * (1 - smoothstep(B.endX - 20, B.endX + 60, x)) * (1 - smoothstep(B.northZ + 40, B.northZ + 75, z));
+  const bx = BASIN_SIDE * x;
+  const basin = smoothstep(C.halfWidth, C.halfWidth + 40, bx) * (1 - smoothstep(B.endX - 20, B.endX + 60, bx)) * (1 - smoothstep(B.northZ + 40, B.northZ + 75, z));
   return 1 - Math.max(inside, basin) * (1 - WAVE_SHELTER);
 }
 
@@ -273,8 +294,9 @@ export const WAVE_EXPOSURE_GLSL = /* glsl */ `
 float waveExposure(vec2 p) {
   float inside = (1.0 - smoothstep(${(SITE.channel.halfWidth - 6).toFixed(1)}, ${(SITE.channel.halfWidth + 40).toFixed(1)}, abs(p.x)))
     * (1.0 - smoothstep(${(SITE.channel.mouthZ - 180).toFixed(1)}, ${(SITE.channel.mouthZ + 30).toFixed(1)}, p.y));
-  float basin = smoothstep(${SITE.channel.halfWidth.toFixed(1)}, ${(SITE.channel.halfWidth + 40).toFixed(1)}, p.x)
-    * (1.0 - smoothstep(${(SITE.basin.endX - 20).toFixed(1)}, ${(SITE.basin.endX + 60).toFixed(1)}, p.x))
+  float bx = ${BASIN_SIDE.toFixed(1)} * p.x;
+  float basin = smoothstep(${SITE.channel.halfWidth.toFixed(1)}, ${(SITE.channel.halfWidth + 40).toFixed(1)}, bx)
+    * (1.0 - smoothstep(${(SITE.basin.endX - 20).toFixed(1)}, ${(SITE.basin.endX + 60).toFixed(1)}, bx))
     * (1.0 - smoothstep(${(SITE.basin.northZ + 40).toFixed(1)}, ${(SITE.basin.northZ + 75).toFixed(1)}, p.y));
   return 1.0 - max(inside, basin) * ${(1 - WAVE_SHELTER).toFixed(3)};
 }
@@ -305,7 +327,7 @@ export const CREST = {
   },
 };
 
-/** Crest line of the east breakwater, head to shore: down the channel, round the bend, along the basin, into the shore. */
+/** Crest line of the east breakwater (the basin side), head to shore: down the channel, round the bend, along the basin, into the shore. */
 export function eastCrestLine(step = 6): Array<[number, number]> {
   const B = SITE.basin;
   const hx = CREST.centre;
@@ -320,6 +342,14 @@ export function eastCrestLine(step = 6): Array<[number, number]> {
   for (let x = hx + R + step; x < ex; x += step) pts.push([x, zb]);
   for (let a = 90; a >= 0; a -= 6) pts.push([ex + R2 * Math.cos((a * Math.PI) / 180), zb - R2 + R2 * Math.sin((a * Math.PI) / 180)]);
   for (let z = zb - R2 - step; z > SITE.shore.crestZ - 20; z -= step) pts.push([ex + R2, z]);
+  for (const p of pts) p[0] *= BASIN_SIDE;
+  return pts;
+}
+
+/** Crest line of the west breakwater, head to shore: straight down the channel's west side. */
+export function westCrestLine(step = 6): Array<[number, number]> {
+  const pts: Array<[number, number]> = [];
+  for (let z = SITE.channel.mouthZ; z > SITE.basin.wallZ - 8; z -= step) pts.push([-BASIN_SIDE * CREST.centre, z]);
   return pts;
 }
 
@@ -328,6 +358,7 @@ export function isWater(x: number, z: number): boolean {
   const C = SITE.channel;
   const B = SITE.basin;
   if (inMound(x, z)) return false;
+  x *= BASIN_SIDE;
   if (z < SITE.shore.toeZ) return x > -C.halfWidth && x < B.endX && z > B.wallZ;
   if (x > C.halfWidth && x < B.endX + 60 && z > B.northZ && z < B.northZ + 72) return false;
   if (x > B.endX && x < B.endX + 60 && z < B.northZ) return false;

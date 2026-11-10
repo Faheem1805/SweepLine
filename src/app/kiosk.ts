@@ -46,7 +46,7 @@ async function reference(): Promise<boolean> {
   caption(1, 'A bloom reaches the channel', 'The plant draws its water through one channel. Two nets stand across it. The water passes through and the jellyfish cannot.');
   if (!(await until(() => controller.sweepline.counters.diverted > 40, 60_000))) return false;
   setCamera('collector');
-  caption(1, 'Swept to the collector', 'The plant’s own flow carries them along the net to a pocket at the wall. A screw lift sends them over the breakwater and 2 km down the coast.');
+  caption(1, 'Swept to the collector', 'The plant’s own flow carries them along the nets to one funnel at the wall. A bucket elevator lifts them in water over the breakwater, and a line takes them 2 km down the coast.');
   await wait(16_000);
   return running;
 }

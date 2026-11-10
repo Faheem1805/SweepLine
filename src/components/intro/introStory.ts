@@ -6,7 +6,7 @@
  * schematic revetment, and the intake, guide curtain, transfer route, current
  * and bloom are the same geometry and agents the Three.js scene renders.
  */
-import { SITE } from '../../config/site';
+import { basinX, SITE } from '../../config/site';
 import { MAP_INTRO_DATA } from '../../data/mapIntro.generated';
 import { S_INACTIVE, S_TRANSFERRED } from '../../simulation/Agent';
 import { collectorPoint, NETS } from '../../simulation/geometry';
@@ -92,12 +92,12 @@ export interface Schematic {
 export function buildSchematic(): Schematic {
   const I = SITE.intake;
   const B = SITE.basin;
-  const U = B.units;
+  const U = B.units.map(basinX);
   const L = NETS[0];
-  const end = collectorPoint(L);
+  const end = collectorPoint(NETS[1]);
   return {
     intake: U.map((x) => `M${x + I.x0} ${B.wallZ - 54}H${x + I.x1}V${B.wallZ}H${x + I.x0}Z`).join(''),
-    intakeFace: `M${U[0] + I.x0} ${B.wallZ}H${U[U.length - 1] + I.x1}`,
+    intakeFace: `M${Math.min(...U) + I.x0} ${B.wallZ}H${Math.max(...U) + I.x1}`,
     curtain: polyline([
       [L.ax, L.az],
       [L.bx, L.bz],

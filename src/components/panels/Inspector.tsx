@@ -29,7 +29,7 @@ export function Inspector() {
     title = 'Guide nets';
     rows = [
       { k: 'Length, each', v: `${a.length.toFixed(0)} m, ${a.panels} panels` },
-      { k: 'Mesh', v: `${ASSUMPTIONS.net.meshBar * 1000} mm bar` },
+      { k: 'Mesh, A / B', v: `${ASSUMPTIONS.net.mesh[0] * 1000} / ${ASSUMPTIONS.net.mesh[1] * 1000} mm bar` },
       { k: 'Through the mesh', v: `${a.through.toFixed(3)} m/s` },
       { k: 'Along the face', v: `${a.sweep.toFixed(2)} m/s` },
       { k: 'Head, net A', v: `${(a.head * 1000).toFixed(1)} mm` },
@@ -37,26 +37,24 @@ export function Inspector() {
       { k: 'Marine growth', v: `${a.foulPct.toFixed(0)} % added solidity` },
       { k: 'On net A / net B', v: `${a.onNetT.toFixed(1)} / ${b.onNetT.toFixed(1)} t` },
       { k: 'Margin to relief', v: `${a.marginT.toFixed(0)} t` },
+      { k: 'Small bells through A, caught by B', v: `${(snap.lift.sievedKg / 1000).toFixed(1)} t` },
+      { k: 'Jet bursts, bells freed', v: `${snap.lift.jets.bursts}, ${snap.lift.jets.freed}` },
     ];
-    note = 'Water passes through the mesh. Animals cannot, so the flow sweeps them along the face.';
+    note = 'Water passes through the mesh. Animals cannot, so the flow sweeps them along the face. Net A is coarse and its last panel is open: what it guides goes on down the wall to net B, which is fine-meshed and ends at the one elevator. Jets along each panel push off any bell held against the mesh.';
   } else if (sel.kind === 'collector') {
     const t = snap.transfer;
-    const lift = (i: number) => {
-      const x = snap.lift.stations[i];
-      return x.speed > 0.02 ? `Turning, ${x.rpm.toFixed(0)} rpm` : x.on ? 'Starting' : x.seen ? 'Sensor sees jellyfish' : 'Idle, funnel clear';
-    };
+    const x = snap.lift;
     title = 'Collector';
     rows = [
-      { k: 'Lift A', v: lift(0), tone: snap.lift.stations[0].speed > 0.02 ? 'text-teal' : undefined },
-      { k: 'Lift B', v: lift(1), tone: snap.lift.stations[1].speed > 0.02 ? 'text-teal' : undefined },
-      { k: 'Duty screws', v: t.primary, tone: t.primary === 'FAULT' ? 'text-red' : 'text-teal' },
-      { k: 'Standby screws', v: t.standby, tone: t.standby === 'FAULT' ? 'text-red' : undefined },
+      { k: 'Bucket elevator', v: x.hold ? 'Waiting: turtle in the hopper' : x.speed > 0.02 ? `Running, ${x.chainMs.toFixed(1)} m/s` : x.on ? 'Starting' : x.seen ? 'Sensor sees jellyfish' : 'Idle, funnel clear', tone: x.speed > 0.02 ? 'text-teal' : undefined },
+      { k: 'Duty drive', v: t.primary, tone: t.primary === 'FAULT' ? 'text-red' : 'text-teal' },
+      { k: 'Standby drive', v: t.standby, tone: t.standby === 'FAULT' ? 'text-red' : undefined },
       { k: 'Power now', v: `${Math.round(snap.lift.powerKW)} kW` },
       { k: 'Capacity now', v: `${t.capacityTph.toFixed(0)} t/h` },
       { k: 'Collecting', v: `${w.collectTph.toFixed(1)} t/h` },
-      { k: 'Funnels full', v: `${Math.round(t.pocketFill * 100)} %` },
+      { k: 'Funnel full', v: `${Math.round(t.pocketFill * 100)} %` },
     ];
-    note = 'Enclosed screws: no impeller, no gap. Each lift turns only while its funnel sensor sees jellyfish, and runs on until its pockets and the line are clear. Capacity is the line’s water flow at 5 % jellyfish by volume.';
+    note = 'One bucket elevator serves both nets. Each bucket scoops water with the jellyfish in it and hangs level to the top: no pump, no impeller, in water all the way. It runs only while its funnel sensor sees jellyfish, and runs on until its buckets and the line are clear. A feed pump adds clean water for the line. Capacity is the line’s water flow at 5 % jellyfish by volume.';
   } else if (sel.kind === 'intake') {
     title = 'Plant screens';
     rows = [

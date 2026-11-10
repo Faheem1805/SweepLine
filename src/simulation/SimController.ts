@@ -4,8 +4,6 @@ import { computeEngineMetrics, type EngineMetrics } from './metrics';
 import { getScenario, type Scenario, type ScenarioStep } from './scenarios';
 import { SimulationEngine, type AgentInfo } from './SimulationEngine';
 import { hoursToNextTurn, tideCurrent, tideCurrentVector, tideDate } from './tide';
-import { S_TRANSFERRED } from './Agent';
-import { POCKET_KG } from './lift';
 import { TRANSFER_TPH } from './transfer';
 import {
   DEFAULT_PARAMS,
@@ -96,29 +94,33 @@ export interface SimSnapshot {
     capacityTph: number;
     pocketFill: number;
   };
-  /** The screw lifts, net A's and net B's: what each funnel sensor sees and what is in each section (kg). */
+  /** The bucket elevator at net B's end, the one lift for both nets, and what feeds it (kg unless stated). */
   lift: {
-    stations: Array<{
-      name: string;
-      on: boolean;
-      seen: boolean;
-      /** Speed of the screw taking animals, as a share of full, and its rpm. */
-      speed: number;
-      rpm: number;
-      screw: 'duty' | 'standby';
-      funnelKg: number;
-      hopperKg: number;
-      pocketsKg: number;
-      launderKg: number;
-      /** Animals left in the screw that stopped (kg), after a fault. */
-      strandedKg: number;
-      turningMin: number;
-      starts: number;
-    }>;
+    on: boolean;
+    seen: boolean;
+    /** Chain speed as a share of full, and in m/s; which drive is turning it. */
+    speed: number;
+    chainMs: number;
+    drive: 'duty' | 'standby';
+    funnelKg: number;
+    hopperKg: number;
+    bucketsKg: number;
+    chuteKg: number;
     inLineKg: number;
+    /** Limit per bucket. */
+    bucketKg: number;
+    turningMin: number;
+    starts: number;
     powerKW: number;
     energyKWh: number;
-    pocketKg: number;
+    /** Held while a turtle is in the hopper. */
+    hold: boolean;
+    /** Small bells that worked through net A's coarser mesh and were caught by net B. */
+    sievedKg: number;
+    /** Jet purge: panels firing now, bursts and animals freed this run, the last burst. */
+    jets: { firing: number; bursts: number; freed: number; energyKWh: number; last: string | null };
+    /** Fish and turtles (illustrative): turned back at a net, swum out of the mouth, lifted and sent to sea alive; elevator pauses for a turtle. */
+    bycatch: { turnedBack: number; swamOut: number; lifted: number; turtlePauses: number };
   };
   channel: { flow: number; speed: number; waveAtNet: number; captureBand: number };
   sonar: { on: boolean; inRangeT: number; arrivalTph: number };
@@ -157,8 +159,8 @@ const STAGES: Array<{ key: StageKey; label: string }> = [
 ];
 
 export const FAILURE_LABELS: Record<FailureKey, string> = {
-  pumpPrimary: 'Duty screws stop',
-  pumpStandby: 'Standby screws stop',
+  pumpPrimary: 'Elevator duty drive stops',
+  pumpStandby: 'Elevator standby drive stops',
   panelTear: 'Panel tears out',
   debris: 'Debris mat blinds net A',
   unitTrip: 'One unit offline',
@@ -234,6 +236,8 @@ export class SimController {
   private prevRelief = [false, false];
   private prevPocketFull = false;
   private prevLiftOn = [false, false];
+  private prevBursts = 0;
+  private prevHold = false;
   private prevBaseStatus = 'CLEAR';
   private prevSweepStatus = 'CLEAR';
   private prevPrimary: ModuleStatus = 'STANDBY';
@@ -281,6 +285,8 @@ export class SimController {
     this.prevRelief = [false, false];
     this.prevPocketFull = false;
     this.prevLiftOn = [false, false];
+    this.prevBursts = 0;
+    this.prevHold = false;
     this.prevBaseStatus = 'CLEAR';
     this.prevSweepStatus = 'CLEAR';
     this.prevPrimary = 'STANDBY';
@@ -390,7 +396,7 @@ export class SimController {
     if (tr.armed) return;
     tr.armed = true;
     this.stage('warning');
-    this.log('warn', 'Early warning received: screw lifts armed, to start when a funnel sensor sees jellyfish');
+    this.log('warn', 'Early warning received: bucket elevator armed, to start when its funnel sensor sees jellyfish');
   }
 
   // ------------------------------------------------------------------ failure injection
@@ -586,21 +592,27 @@ export class SimController {
         this.log(on ? 'alarm' : 'ok', on ? `${net.line.name} head at the relief limit — float line dipping, water spilling over` : `${net.line.name} relief closed`);
       }
     });
-    tr.stations.forEach((st, i) => {
-      if (st.on !== this.prevLiftOn[i]) {
-        this.prevLiftOn[i] = st.on;
-        const name = i === 0 ? 'Lift A' : 'Lift B';
-        if (st.on) this.log('info', `Funnel sensor sees jellyfish at net ${i === 0 ? 'A' : 'B'}: ${name} starting`);
-        else this.log('info', `${name} stopped: funnel clear and its pockets empty`);
-      }
-    });
-    const pFull = tr.queues[0].length >= s.holdCapacity;
+    if (s.liftHold !== this.prevHold) {
+      this.prevHold = s.liftHold;
+      this.log(s.liftHold ? 'warn' : 'ok', s.liftHold ? 'Hopper camera: a turtle in the hopper, elevator waiting' : 'Turtle swam back out of the funnel: elevator running');
+    }
+    if (tr.lift.on !== this.prevLiftOn[0]) {
+      this.prevLiftOn[0] = tr.lift.on;
+      if (tr.lift.on) this.log('info', 'Funnel sensor sees jellyfish: bucket elevator starting');
+      else this.log('info', 'Bucket elevator stopped: funnel clear, buckets empty, line flushed');
+    }
+    const J = s.jets;
+    if (J.bursts !== this.prevBursts) {
+      this.prevBursts = J.bursts;
+      if (J.lastNet >= 0) this.log('info', `Jets fired on net ${J.lastNet === 0 ? 'A' : 'B'} panel ${J.lastPanel + 1}: snagged bells pushed back into the sweep`);
+    }
+    const pFull = tr.queues[1].length >= s.holdCapacity;
     if (pFull !== this.prevPocketFull) {
       this.prevPocketFull = pFull;
       this.log(pFull ? 'warn' : 'ok', pFull ? 'Funnel full — the bloom is stacking up along the net' : 'Funnel clearing');
     }
     if (tr.primaryStatus !== this.prevPrimary || tr.standbyStatus !== this.prevStandby) {
-      if (this.prevStandby !== 'ONLINE' && tr.standbyStatus === 'ONLINE') this.log('ok', 'Standby screws carrying the load');
+      if (this.prevStandby !== 'ONLINE' && tr.standbyStatus === 'ONLINE') this.log('ok', 'Standby drive carrying the load');
       this.prevPrimary = tr.primaryStatus;
       this.prevStandby = tr.standbyStatus;
     }
@@ -678,7 +690,7 @@ export class SimController {
     const through = this.meanThrough(0);
     const sweep = U * Math.cos((20 * Math.PI) / 180) * ASSUMPTIONS.net.slide;
     const band = (v: number, near: number, max: number): Constraint['status'] => (v > max ? 'out' : v > near ? 'near' : 'ok');
-    const fill = (tr.queues[0].length + tr.queues[1].length) / (2 * s.holdCapacity);
+    const fill = tr.queueLength / s.holdCapacity;
     return [
       { key: 'approach', label: E.approach.label, value: `${through.toFixed(2)} m/s`, limit: `≤ ${E.approach.max} m/s`, status: band(through, E.approach.near, E.approach.max) },
       { key: 'sweep', label: E.sweep.label, value: `${(sweep / Math.max(through, 0.01)).toFixed(1)}×`, limit: '> 1×', status: sweep < through ? 'out' : sweep < through * E.sweep.near ? 'near' : 'ok' },
@@ -695,7 +707,7 @@ export class SimController {
     if (s.nets.some((n) => n.reliefFraction > 0)) return { code: 'RELIEF', label: 'Relief open', detail: 'Float line dipped: cooling flow first', tone: 'alarm' };
     if (tr.armed && !tr.poweredPathAvailable) return { code: 'OVERLOAD', label: 'Net holding', detail: 'Lifts stopped: bloom stacking on the net', tone: 'alarm' };
     if (s.nets[0].tornCount > 0) return { code: 'ELEVATED', label: 'Panel out', detail: 'Net B catching what comes through', tone: 'warn' };
-    if (tr.primaryFault) return { code: 'ELEVATED', label: 'On standby', detail: tr.standbyStatus === 'ONLINE' ? 'Standby screws carrying the load' : tr.standbyStatus === 'ACTIVATING' ? 'Standby screws starting' : 'Standby screws ready', tone: 'warn' };
+    if (tr.primaryFault) return { code: 'ELEVATED', label: 'On standby', detail: tr.standbyStatus === 'ONLINE' ? 'Standby drive carrying the load' : tr.standbyStatus === 'ACTIVATING' ? 'Standby drive starting' : 'Standby drive ready', tone: 'warn' };
     const near = this.constraints.find((c) => c.status !== 'ok');
     if (near) return { code: 'ELEVATED', label: 'Watch', detail: `${near.label} ${near.value}`, tone: 'warn' };
     if (s.counters.encountered > 0) return { code: 'NOMINAL', label: 'Sweeping', detail: 'Bloom moving along the net', tone: 'ok' };
@@ -759,7 +771,7 @@ export class SimController {
         availability: tr.availability(),
         flowM3h: tr.flowM3h(),
         capacityTph: TRANSFER_TPH * tr.availability(),
-        pocketFill: (tr.queues[0].length + tr.queues[1].length) / (2 * s.holdCapacity),
+        pocketFill: tr.queueLength / s.holdCapacity,
       },
       lift: this.liftSnapshot(),
       channel: { flow: Q, speed: s.flow.channelSpeed, waveAtNet: s.channelWave, captureBand: s.flow.captureBand() },
@@ -780,27 +792,30 @@ export class SimController {
     const tr = s.transfer!;
     const kg = s.kgPerAgent;
     const c = s.lift;
-    const k = tr.activeScrew;
+    const st = tr.lift;
+    const J = s.jets;
+    let firing = 0;
+    for (const f of J.firing) for (let k = 0; k < f.length; k++) if (f[k] > 0) firing++;
     return {
-      stations: tr.stations.map((st, i) => ({
-        name: i === 0 ? 'Lift A' : 'Lift B',
-        on: st.on,
-        seen: st.seen,
-        speed: st.speed[k],
-        rpm: st.speed[k] * ASSUMPTIONS.lift.rpm,
-        screw: k === 0 ? 'duty' : 'standby',
-        funnelKg: tr.queues[i].length * kg,
-        hopperKg: c.hopper[i] * kg,
-        pocketsKg: c.screw[i][k] * kg,
-        launderKg: c.launder[i] * kg,
-        strandedKg: c.screw[i][1 - k] * kg,
-        turningMin: st.turningSeconds / 60,
-        starts: st.starts,
-      })),
-      inLineKg: s.countState(S_TRANSFERRED) * kg,
+      on: st.on,
+      seen: st.seen,
+      speed: st.speed,
+      chainMs: st.speed * ASSUMPTIONS.lift.chainSpeed,
+      drive: tr.activeDrive === 0 ? 'duty' : 'standby',
+      funnelKg: tr.queueLength * kg,
+      hopperKg: c.hopper * kg,
+      bucketsKg: c.bucket * kg,
+      chuteKg: c.chute * kg,
+      inLineKg: c.line * kg,
+      bucketKg: ASSUMPTIONS.lift.bucketKg,
+      turningMin: st.turningSeconds / 60,
+      starts: st.starts,
       powerKW: tr.powerKW(),
       energyKWh: tr.energyKWh(),
-      pocketKg: POCKET_KG,
+      hold: s.liftHold,
+      sievedKg: s.sieved[0] * kg,
+      jets: { firing, bursts: J.bursts, freed: J.freed, energyKWh: J.energyKWh, last: J.lastNet >= 0 ? `Net ${J.lastNet === 0 ? 'A' : 'B'}, panel ${J.lastPanel + 1}` : null },
+      bycatch: { turnedBack: s.bycatch?.turnedBack ?? 0, swamOut: s.bycatch?.swamOut ?? 0, lifted: s.bycatch?.lifted ?? 0, turtlePauses: s.bycatch?.turtlePauses ?? 0 },
     };
   }
 

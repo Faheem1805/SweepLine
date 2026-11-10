@@ -5,8 +5,8 @@
  * test is listed with them.
  *
  * Transfer design that follows from the evidence (US NMFS fish-bypass criteria, 2011): lift the
- * animals once, with an Archimedes screw into a head tank, then let them run down a smooth line
- * (bends of at least 5 bores, never below atmospheric pressure, no air).
+ * animals once, in water, with a bucket elevator into a head tank, then let them run down a smooth
+ * line (bends of at least 5 bores, never below atmospheric pressure, no air).
  */
 export interface SurvivalStage {
   stage: string;
@@ -25,11 +25,11 @@ export const SURVIVAL: SurvivalStage[] = [
     source: 'EPRI 2010, report 1021372',
   },
   {
-    stage: 'Screw lift into the head tank',
-    low: 0.94,
+    stage: 'Bucket elevator into the head tank',
+    low: 0.9,
     high: 1,
-    basis: 'Archimedes screw lift: juvenile Chinook salmon 94–99.5 %; rainbow trout 98.3–100 % at 96 h.',
-    source: 'McNabb et al. 2003, TAFS 132:326; Borthwick & Liston 2003, USBR',
+    basis: 'No published figure for jellyfish in a bucket elevator. Closest analogue: dam fish lifts, which carry live fish over the dam in a water-filled hopper, with no pump. Set low until the survival test.',
+    source: 'Analogue only: fish lifts in USFWS Fish Passage Engineering Design Criteria',
   },
   {
     stage: 'Line, 2.2 km',
@@ -52,6 +52,6 @@ export const AIR_EVIDENCE = 'Air trapped in a medusa causes embolism or floats i
 
 /** The test that settles the biggest unknown. */
 export const DECISIVE_TEST =
-  'Live 30–45 cm Blue Blubber through the chosen screw lift and a recirculating pipe loop at 1.5 m/s for 25 min, no air, against paired controls handled the same way; score deaths, bell tears and pulse rate over 96 h.';
+  'Live 30–45 cm Blue Blubber through a test bucket elevator and a recirculating pipe loop at 1.5 m/s for 25 min, no air, against paired controls handled the same way; score deaths, bell tears and pulse rate over 96 h.';
 
 export const survivalRange = () => ({ low: SURVIVAL.reduce((p, s) => p * s.low, 1), high: SURVIVAL.reduce((p, s) => p * s.high, 1) });
