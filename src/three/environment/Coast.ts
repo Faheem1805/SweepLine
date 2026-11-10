@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { basinX, CREST, SITE, eastCrestLine, seabedDepth, westCrestLine } from '../../config/site';
+import { SHEET_PILE_Z } from '../../simulation/lift';
 import { SeededRandom } from '../../simulation/seededRandom';
 import { makeRockGeometry } from '../assets/procedural/rocks';
 import { applyMedium, mediumMaterial } from './shaderChunks';
@@ -205,7 +206,7 @@ function toLine(pts: Array<[number, number]>): LinePoint[] {
  * short cell at net B's end, whose funnel and hopper need a wall to stand against. The model's
  * channel walls are vertical; the drawn rock slope elsewhere is display only.
  */
-const COLLECTOR_CELL: readonly [number, number] = [18, 56];
+const COLLECTOR_CELL = SHEET_PILE_Z;
 
 /** Split a line into the run inside a z range and the runs outside it, each sharing its boundary point. */
 function splitByZ(line: LinePoint[], z0: number, z1: number): { inside: LinePoint[]; outside: LinePoint[][] } {
@@ -294,8 +295,11 @@ function buildBreakwaters(mats: Record<string, THREE.Material>, rockMat: THREE.M
         const { inside, outside } = splitByZ(line, COLLECTOR_CELL[0], COLLECTOR_CELL[1]);
         for (const run of outside) mb.add('rockCore', ribbon(run, profile[0][0], profile[0][1], profile[1][0], profile[1][1]));
         const w0 = half + crestY * W.slope;
+        // Vertical face to just above the water, a narrow cap, then the same rock slope as the rest of the breakwater.
+        const wTop = half + (crestY - 0.6) * W.slope;
         mb.add('concrete', ribbon(inside, -w0, bottom, -w0, 0.6));
-        mb.add('rockCore', ribbon(inside, -w0, 0.6, -half, crestY));
+        mb.add('concrete', ribbon(inside, -w0, 0.6, -wTop, 0.6));
+        mb.add('rockCore', ribbon(inside, -wTop, 0.6, -half, crestY));
         for (const q of [inside[0], inside[inside.length - 1]]) {
           const at = (o: number, y: number) => [q.x + q.rx * o, y, q.z + q.rz * o];
           const tri = [...at(-innerToe, bottom), ...at(-w0, bottom), ...at(-w0, 0.6)];
@@ -373,8 +377,10 @@ function buildBreakwaters(mats: Record<string, THREE.Material>, rockMat: THREE.M
         const o = sign * (half + t * ((inner ? innerStone : outerStone) - half));
         x = a0.x + (a1.x - a0.x) * f + (a0.rx + (a1.rx - a0.rx) * f) * o;
         z = a0.z + (a1.z - a0.z) * f + (a0.rz + (a1.rz - a0.rz) * f) * o;
-        // Keep the slope clear under the collector platform, and off the sheet-pile face.
-        if (!pickWest && inner && z >= COLLECTOR_CELL[0] - 4 && z <= COLLECTOR_CELL[1] + 4 && x < hx) y = -80;
+        // Off the sheet-pile face and its cap; armour stone carries on up the slope above it.
+        if (!pickWest && inner && z >= COLLECTOR_CELL[0] - 4 && z <= COLLECTOR_CELL[1] + 4 && x < hx) {
+          if (y < 1.1 || x < hx - (half + (crestY - 0.6) * W.slope) + 0.7) y = -80;
+        }
         else if (!pickWest && z > 22 && z < 41 && x > hx - 6 && x < hx + 8) y -= 9;
       }
       const sc = rng.range(1.1, 2.3) * (vi === 2 ? 0.85 : 1);

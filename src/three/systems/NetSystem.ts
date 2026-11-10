@@ -49,6 +49,12 @@ const _p = new THREE.Vector3();
 const _s = new THREE.Vector3();
 const _a = new THREE.Vector3(1, 0, 0);
 const _b = new THREE.Vector3();
+const _jq = new THREE.Quaternion();
+const _jn = new THREE.Vector3();
+const _down = new THREE.Vector3(0, -1, 0);
+/** Jet nozzles: heights of the two rows (m) and nozzles per row on each panel. */
+const JET_ROWS = [-SITE.channel.depth + 1.2, -SITE.channel.depth * 0.45];
+const JET_COLS = 6;
 
 /** Colour for a load 0..1 (engineering view): teal, through amber, to red. */
 function loadColor(load: number, out: THREE.Color): THREE.Color {
@@ -59,6 +65,8 @@ function loadColor(load: number, out: THREE.Color): THREE.Color {
 
 interface NetParts {
   jets: THREE.InstancedMesh;
+  /** Whether each panel's jets are drawn now. */
+  jetOn: boolean[];
   geometry: THREE.BufferGeometry;
   panels: THREE.Mesh;
   floats: THREE.InstancedMesh;
@@ -78,6 +86,8 @@ export class NetSystem {
   private readonly nets: readonly NetLine[];
   private readonly panelMat: THREE.Material;
   private readonly jetMat: THREE.ShaderMaterial;
+  /** A spray cone with its tip at the nozzle, opening along −y (turned to face upstream). */
+  private readonly jetGeo = new THREE.ConeGeometry(0.45, 1.3, 16, 1, true).translate(0, -0.65, 0);
 
   constructor(nets: readonly NetLine[]) {
     this.group.name = 'nets';
@@ -101,17 +111,26 @@ export class NetSystem {
       uniforms: { uTime: { value: 0 } },
       vertexShader: /* glsl */ `
         varying vec2 vUv;
-        void main() { vUv = uv; gl_Position = projectionMatrix * viewMatrix * modelMatrix * instanceMatrix * vec4(position, 1.0); }
+        varying float vFacing;
+        void main() {
+          vUv = uv;
+          vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0);
+          vec3 n = normalize(mat3(modelMatrix * instanceMatrix) * normal);
+          vFacing = abs(dot(n, normalize(cameraPosition - w.xyz)));
+          gl_Position = projectionMatrix * viewMatrix * w;
+        }
       `,
       fragmentShader: /* glsl */ `
         uniform float uTime;
         varying vec2 vUv;
+        varying float vFacing;
         void main() {
-          // Streaks of water jetting out through the mesh, along the panel.
-          float streak = smoothstep(0.55, 1.0, sin(vUv.x * 90.0 + sin(vUv.y * 7.0) * 2.0) * 0.5 + 0.5);
-          float pulse = 0.6 + 0.4 * sin(uTime * 9.0 - vUv.y * 14.0);
-          float a = streak * pulse * smoothstep(0.0, 0.15, vUv.y) * smoothstep(1.0, 0.85, vUv.y);
-          gl_FragColor = vec4(vec3(0.75, 0.95, 1.0) * a * 0.55, 1.0);
+          // A faint shimmer of moving water: strongest at the nozzle (v = 1), gone a metre out, soft at
+          // its edges (where the cone is seen side-on), with streaks running outward.
+          float v = vUv.y;
+          float streak = 0.6 + 0.4 * sin(vUv.x * 31.4 + uTime * 2.0) * sin(v * 14.0 + uTime * 20.0);
+          float a = pow(v, 1.6) * pow(vFacing, 1.2) * streak;
+          gl_FragColor = vec4(vec3(0.7, 0.9, 1.0) * a * 0.34, 1.0);
         }
       `,
       transparent: true,
@@ -249,25 +268,25 @@ export class NetSystem {
       glow.renderOrder = 23;
       this.group.add(glow);
 
-      // Jet purge: a manifold along the foot of each panel on the downstream side, and the jets it fires
-      // back through the mesh (drawn only while a panel is firing).
+      // Jet purge: a manifold along the foot of each panel on the downstream side, with nozzles in two
+      // rows aimed back through the mesh. Their spray is drawn only while that panel fires.
       const manifold = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.14, 0.14, 1, 8).rotateZ(Math.PI / 2), manifoldMat, L.panels);
-      const jetGeo = new THREE.PlaneGeometry(1, 1);
-      const jets = new THREE.InstancedMesh(jetGeo, this.jetMat, L.panels);
+      const jets = new THREE.InstancedMesh(this.jetGeo, this.jetMat, L.panels * JET_ROWS.length * JET_COLS);
       for (let k = 0; k < L.panels; k++) {
         const s = (k + 0.5) * L.panelLength;
         _b.set(L.tx, 0, L.tz);
         _q.setFromUnitVectors(_a, _b);
         _m.compose(_p.set(L.ax + L.tx * s - L.nx * 0.45, -DEPTH + 0.6, L.az + L.tz * s - L.nz * 0.45), _q, _s.set(L.panelLength * 0.92, 1, 1));
         manifold.setMatrixAt(k, _m);
-        jets.setMatrixAt(k, _m.makeScale(0, 0, 0));
       }
+      _m.makeScale(0, 0, 0);
+      for (let i = 0; i < jets.count; i++) jets.setMatrixAt(i, _m);
       manifold.userData.pick = 'net';
       jets.frustumCulled = false;
       jets.renderOrder = 22;
       this.group.add(manifold, jets);
 
-      this.parts.push({ jets, geometry, panels, floats, lamps, glow, glowMat });
+      this.parts.push({ jets, jetOn: new Array<boolean>(L.panels).fill(false), geometry, panels, floats, lamps, glow, glowMat });
     }
   }
 
@@ -330,13 +349,23 @@ export class NetSystem {
         _q.setFromUnitVectors(_a, _b);
         _m.compose(_p, _q, _s.set(open ? 0 : L.panelLength, open ? 0 : 1, open ? 0 : 1));
         P.floats.setMatrixAt(k, _m);
-        // Jets firing on this panel: a sheet of spray out through the mesh, along the face.
+        // Jets firing on this panel: a short cone of spray from each nozzle, out through the mesh.
         const f = firing?.[ni]?.[k] ?? 0;
-        if (f > 0 && !open) {
-          _p.set(x + L.nx * 0.7, -DEPTH / 2 + TOP / 2 - 0.3, z + L.nz * 0.7);
-          _m.compose(_p, _q, _s.set(L.panelLength * 0.92, DEPTH - 0.8, 1));
-        } else _m.makeScale(0, 0, 0);
-        P.jets.setMatrixAt(k, _m);
+        const on = f > 0 && !open;
+        if (on !== P.jetOn[k]) {
+          P.jetOn[k] = on;
+          _jq.setFromUnitVectors(_down, _jn.set(L.nx, 0, L.nz));
+          let i = k * JET_ROWS.length * JET_COLS;
+          for (const y of JET_ROWS) {
+            for (let c = 0; c < JET_COLS; c++) {
+              const sj = (k + (c + 0.5) / JET_COLS) * L.panelLength;
+              if (on) _m.compose(_p.set(L.ax + L.tx * sj - L.nx * 0.35, y, L.az + L.tz * sj - L.nz * 0.35), _jq, _s.set(1, 1, 1));
+              else _m.makeScale(0, 0, 0);
+              P.jets.setMatrixAt(i++, _m);
+            }
+          }
+          P.jets.instanceMatrix.needsUpdate = true;
+        }
 
         // Lamp and glow colour, by this panel's state.
         const panelLoad = torn ? 1 : Math.max(net.relief[k], load, onPanel * 0.7);
@@ -347,7 +376,6 @@ export class NetSystem {
       P.geometry.attributes.color.needsUpdate = true;
       P.geometry.computeVertexNormals();
       P.floats.instanceMatrix.needsUpdate = true;
-      P.jets.instanceMatrix.needsUpdate = true;
       if (P.lamps.instanceColor) P.lamps.instanceColor.needsUpdate = true;
 
       const gc = P.glow.geometry.attributes.color.array as Float32Array;

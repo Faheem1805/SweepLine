@@ -51,6 +51,8 @@ export const BUCKET_FILL = K.bucketWater / (K.bucket.width * K.bucket.length);
 /** Hopper in plan (m), its floor, and its mouth: the funnel's end, at net B's end against the wall. */
 export const HOPPER = { x0: TAIL.x - 2.3, x1: hw - 0.2, z0: L.bz - 8.2, z1: L.bz + 0.2, floor: -7 };
 export const MOUTH = { x: L.bx - 1.4, z: L.bz + 0.6 };
+/** Short sheet-pile cell in the west breakwater round the hopper and the funnel (z range, m). */
+export const SHEET_PILE_Z: readonly [number, number] = [HOPPER.z0 - 9, L.bz + SITE.collector.pocketLength * Math.abs(L.tz) + 5.5];
 /** Head tank on the breakwater crest, past the head. */
 export const HEAD_TANK = { x: HEAD.x + 3.6, z: ELEVATOR_Z, r: 1.9 };
 /** Platform on the crest that carries the head, the tank, the drives and the feed pump. */

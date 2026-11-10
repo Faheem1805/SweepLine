@@ -18,6 +18,7 @@ import {
   NORMAL,
   PITCH,
   pivotAt,
+  SHEET_PILE_Z,
   TAIL,
   TIP_AT,
   tipAt,
@@ -216,8 +217,7 @@ export class CollectorSystem {
     const zc = ELEVATOR_Z;
 
     // Sheet-pile face along the west breakwater, from below the hopper to the funnel's mouth: the funnel's outer side.
-    const fz1 = L.bz + SITE.collector.pocketLength * Math.abs(L.tz) + 3;
-    g.add(block(concrete, hw, hw + 0.6, -SITE.channel.depth - 1.5, wallTop + 0.4, H.z0 - 3, fz1));
+    g.add(block(concrete, hw, hw + 0.6, -SITE.channel.depth - 1.5, wallTop - 0.2, SHEET_PILE_Z[0], SHEET_PILE_Z[1]));
     // Hopper: an open box against the wall, its mouth toward the funnel.
     const t = 0.35;
     g.add(block(concrete, H.x0, H.x1, H.floor - 0.4, H.floor, H.z0, H.z1));
@@ -230,17 +230,14 @@ export class CollectorSystem {
     // Funnel sensor: an imaging sonar on a post at the funnel's mouth, looking down the funnel into the hopper.
     const s0 = pointOnNet(L, L.length - SITE.collector.pocketLength + 1);
     const head = new THREE.Vector3(hw - 0.8, -2.2, s0.z);
-    const aim = new THREE.Vector3(MOUTH.x - 0.6, -4.2, MOUTH.z);
     g.add(block(steel, hw - 1.0, hw - 0.6, -2, 1.8, s0.z - 0.2, s0.z + 0.2));
     g.add(box(yellow, 0.7, 0.55, 0.7, head.x, head.y, head.z));
     g.add(box(yellow, 0.5, 0.4, 0.4, head.x, 2.0, head.z));
-    const beamLen = head.distanceTo(aim);
-    this.beam = new THREE.MeshBasicMaterial({ color: 0x2dd4bf, transparent: true, opacity: 0.05, depthWrite: false, side: THREE.DoubleSide });
-    const cone = new THREE.Mesh(new THREE.ConeGeometry(Math.tan(0.13) * beamLen, beamLen, 24, 1, true), this.beam);
-    cone.position.copy(head).lerp(aim, 0.5);
-    cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), this.v.copy(head).sub(aim).normalize());
-    cone.renderOrder = 8;
-    g.add(cone);
+    this.beam = new THREE.MeshBasicMaterial({ color: 0x2dd4bf, toneMapped: false });
+    // Status light on the sensor's junction box: green while it sees jellyfish.
+    const light = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), this.beam);
+    light.position.set(head.x, 2.35, head.z);
+    g.add(light);
 
     // ---------------------------------------------------------- the elevator
     const r = K.sprocketRadius;
@@ -450,7 +447,6 @@ export class CollectorSystem {
       l.color.setHex(STATUS[status[i]]);
       if (status[i] === 'FAULT' && Math.sin(time * 6) < 0) l.color.setHex(0x3a1414);
     });
-    this.beam.color.setHex(st.seen ? 0x4ade80 : 0x2dd4bf);
-    this.beam.opacity = st.seen ? 0.11 + 0.04 * Math.sin(time * 5) : 0.05;
+    this.beam.color.setHex(st.seen ? (Math.sin(time * 5) > 0 ? 0x4ade80 : 0x22c55e) : 0x7992a0);
   }
 }
