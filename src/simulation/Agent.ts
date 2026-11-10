@@ -16,6 +16,8 @@ export const S_TRANSFERRED = 5;
 export const S_RELEASED = 6;
 export const S_INTAKE_CONTACT = 7;
 export const S_FREE_DRIFT = 8;
+/** In the screw lift: drawn across the hopper, riding up in a pocket, or in the launder to the head tank. */
+export const S_LIFT = 9;
 
 export const STATE_NAMES = [
   'INACTIVE',
@@ -27,6 +29,7 @@ export const STATE_NAMES = [
   'RELEASED',
   'INTAKE_CONTACT',
   'FREE_DRIFT',
+  'LIFT',
 ] as const;
 
 export type AgentStateName = (typeof STATE_NAMES)[number];

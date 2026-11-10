@@ -13,7 +13,7 @@ export function run(over: Partial<SimParams>, seed: number, hook?: (t: number, s
   const s = new SimulationEngine('sweepline', p);
   b.reset(p, 'approach');
   s.reset(p, 'approach');
-  s.transfer!.running = true;
+  s.transfer!.armed = true;
   const series: Array<{ t: number; b: number; s: number; head: number; on: number; col: number }> = [];
   let t = 0;
   let nextSample = 0;

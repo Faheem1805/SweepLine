@@ -2,6 +2,7 @@ import { useApp } from '../app/store';
 import { Inspector } from '../components/panels/Inspector';
 import { EventLogMenu, LiveHeadline, MarginsCard, PipelineStrip, ProblemRail, WhatIfMenu } from '../components/panels/LivePanels';
 import { CompareOverlay, FlowLegend, TideCard, UnderwaterHud, ViewportToolbar } from '../components/viewport/Hud';
+import { LiftCard } from '../components/viewport/LiftCard';
 import { ViewportSlot } from '../components/viewport/ViewportSlot';
 
 /**
@@ -19,6 +20,7 @@ export function LiveSimulation() {
             <LiveHeadline />
             <MarginsCard />
             <TideCard />
+            <LiftCard />
             <FlowLegend />
           </div>
           <div className="absolute top-4 right-[372px]">

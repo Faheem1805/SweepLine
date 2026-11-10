@@ -31,14 +31,14 @@ export const CAPEX: CostItem[] = [
     sources: [],
   },
   {
-    item: 'Screw lifts, duty and standby',
+    item: 'Screw lifts, a duty and a standby at each net',
     low: 0.3,
     high: 1.2,
-    basis: 'Encased screw fish pump at 1 m³/s: US$77–307k (2024–26). Twice that for two, and again for size.',
+    basis: 'Encased screw fish pump at about 1 m³/s: US$77–307k each (2024–26). Four of them.',
     sources: ['https://app.govly.com/public/opportunities/16596124', 'https://subsite2.waikatoregion.govt.nz/assets/WRC/PS23-18.pdf'],
   },
   {
-    item: 'Platform, wet well, head tank',
+    item: 'Deck, hoppers, launders, head tank',
     low: 0.5,
     high: 1.5,
     basis: 'Piled steel deck about 500 m² and civil works.',

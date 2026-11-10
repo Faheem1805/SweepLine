@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { S_FREE_DRIFT, S_INACTIVE, S_INTAKE_CONTACT, S_TRANSFERRED, S_PAST_NET } from '../../simulation/Agent';
+import { S_FREE_DRIFT, S_INACTIVE, S_INTAKE_CONTACT, S_LIFT, S_TRANSFERRED, S_PAST_NET } from '../../simulation/Agent';
 import type { SimulationEngine } from '../../simulation/SimulationEngine';
 import { CAUSTIC_GLSL, MEDIUM_GLSL, SHARED } from '../environment/shaderChunks';
 
@@ -104,6 +104,7 @@ export function jellyShader(map: THREE.Texture | null): THREE.ShaderMaterial {
         if (s < 4.5) return vec3(1.0, 0.72, 0.25);       // transfer queue
         if (s < 6.5) return vec3(0.3, 0.95, 0.6);        // released
         if (s < 7.5) return vec3(1.0, 0.25, 0.25);       // intake contact
+        if (s > 8.5) return vec3(1.0, 0.72, 0.25);       // in a lift
         return vec3(0.6, 0.7, 0.85);                     // free drift
       }
       void main() {
@@ -179,6 +180,12 @@ export function jellyShader(map: THREE.Texture | null): THREE.ShaderMaterial {
         vec3 glow = vPart < 0.6 ? mix(bellC, vec3(0.75, 0.86, 1.0), 0.25) : armC;
         col += far * (vPart < 0.6 ? 0.46 : 0.24) * (0.55 + 0.45 * rim) * glow;
         alpha = mix(alpha, min(1.0, alpha * 1.5 + 0.2), far);
+        // In a lift the animal is seen through the cut-away tube and the water in its pocket: a firmer,
+        // self-lit body so it reads against the flights.
+        if (abs(state - 9.0) < 0.5) {
+          col = col * 0.7 + (vPart < 0.6 ? 0.5 : 0.3) * (0.6 + 0.4 * rim) * mix(glow, vec3(1.0, 0.86, 0.62), 0.35);
+          alpha = max(alpha, vPart < 0.6 ? 0.78 : 0.6);
+        }
         gl_FragColor = vec4(col, alpha * vData.z);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
@@ -288,6 +295,9 @@ export class JellyfishSystem {
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
       let boost = 1;
       if (dist > LEGIBILITY.start) boost = Math.min(LEGIBILITY.max, 1 + (dist - LEGIBILITY.start) * LEGIBILITY.perMetre);
+      // In a lift they ride in a pocket of water inside the screw: kept near true size, and never pushed below the sea surface.
+      const inLift = st === S_LIFT;
+      if (inLift) boost = Math.min(boost, 1.5);
       const s = size[i] * boost;
       const selected = id[i] === this.selectedId;
       if (!selected) {
@@ -305,7 +315,7 @@ export class JellyfishSystem {
       }
       // Enlarged bells are flattened a little and kept below the surface, so they never sit on top of the water.
       const flat = boost > 1 ? 1 - 0.22 * Math.min(1, (boost - 1) / 6) : 1;
-      const yv = boost > 1 ? Math.min(y, -BELL_TOP * s * flat - 0.35) : y;
+      const yv = boost > 1 && !inLift ? Math.min(y, -BELL_TOP * s * flat - 0.35) : y;
       // Bell axis tilts gently into the direction of travel.
       const hvx = vx[i];
       const hvz = vz[i];

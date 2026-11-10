@@ -107,6 +107,8 @@ export class SceneManager {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.shadowMap.autoUpdate = false;
+    // The screw lifts are drawn in half-section: their flights are clipped on the cut-away side.
+    this.renderer.localClippingEnabled = true;
     this.renderer.domElement.className = 'sl-canvas';
     this.container.appendChild(this.renderer.domElement);
     this.container.appendChild(this.labels.layer);
@@ -291,6 +293,8 @@ export class SceneManager {
       if (ui.compare) this.rig.goTo('compare', 1.6);
       else if (ui.camera !== 'free') this.rig.goTo(ui.camera as Exclude<CameraPreset, 'free'>, 1.6);
     }
+    // The lift view runs in real time while lift A turns, so the screw can be seen and a jellyfish followed pocket by pocket.
+    if (ui.camera === 'lift' && prev.camera !== 'lift' && this.ctrl.sweepline.transfer?.stations[0].turning && this.ctrl.speed > 1) this.ctrl.setSpeed(1);
     if ((ui.camera !== prev.camera || ui.cameraNonce !== prev.cameraNonce) && ui.camera !== 'free') {
       if (!(ui.compare && ui.camera === prev.camera)) this.rig.goTo(ui.camera as Exclude<CameraPreset, 'free'>, 1.9);
     }
@@ -315,13 +319,41 @@ export class SceneManager {
     const a = s.nets[0];
     const netBody = a.torn > 0 ? 'Panel out, net B catching' : a.relief > 0 ? 'Relief open' : `${s.sweepline.onNetT[0].toFixed(1)} t on the net · ${(a.head * 1000).toFixed(1)} mm head`;
     this.labels.setContent('net', 'Net A', netBody, a.torn > 0 || a.relief > 0 ? 'red' : a.loadFraction > 0.5 ? 'amber' : 'default');
-    this.labels.setContent('collector', 'Collector', s.transfer.path === 'NONE' ? 'Lifts stopped' : `${s.sweepline.collectTph.toFixed(1)} t/h`, s.transfer.path === 'NONE' ? 'amber' : 'teal');
+    const lifts = s.lift.stations;
+    const turning = lifts.filter((x) => x.speed > 0.02);
+    const collectorBody = s.transfer.path === 'NONE' ? (s.transfer.primary === 'FAULT' ? 'Lifts stopped' : 'Lifts not armed') : turning.length ? `${turning.map((x) => x.name).join(' and ')} turning · ${s.sweepline.collectTph.toFixed(1)} t/h` : 'Lifts idle: funnels clear';
+    this.labels.setContent('collector', 'Collector', collectorBody, s.transfer.path === 'NONE' ? 'amber' : 'teal');
+    this.setLiftLabels(s);
     const body = (m: typeof s.baseline) => `${m.screenTph.toFixed(1)} t/h · ${m.screenStatus === 'CLEAR' ? 'clear' : m.screenBacklogT.toFixed(1) + ' t backlog'}`;
     const tone = (m: typeof s.baseline) => (m.screenStatus === 'CLEAR' ? 'teal' : m.screenStatus === 'LOADED' ? 'amber' : 'red');
     this.labels.setContent('intake', 'Plant screens', body(s.sweepline), tone(s.sweepline));
     this.labels.setContent('intake-base', 'Plant screens', body(s.baseline), tone(s.baseline));
     this.labels.setContent('intake-left', 'Plant screens', body(s.baseline), tone(s.baseline));
     this.labels.setContent('intake-right', 'Plant screens', body(s.sweepline), tone(s.sweepline));
+  }
+
+  private liftWasTurning = false;
+
+  /** Section-by-section labels on net A's lift, for the close-up lift view. */
+  private setLiftLabels(s: SimSnapshot): void {
+    const a = s.lift.stations[0];
+    // Watching an idle lift at speed: drop to real time the moment it starts.
+    const turningNow = a.speed > 0.02;
+    if (turningNow && !this.liftWasTurning && this.ui.camera === 'lift' && this.ctrl.speed > 1) this.ctrl.setSpeed(1);
+    this.liftWasTurning = turningNow;
+    const kg = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1)} t` : `${Math.round(v)} kg`);
+    const on = a.speed > 0.02;
+    const stranded = a.strandedKg > 0 ? ` · ${kg(a.strandedKg)} held in the stopped duty screw` : '';
+    this.labels.setContent('lift-funnel', '1 · Funnel', `${kg(a.funnelKg)} here · sensor ${a.seen ? 'sees jellyfish' : 'sees none'}`, a.seen ? 'teal' : 'default');
+    this.labels.setContent('lift-hopper', '2 · Hopper', on || a.hopperKg > 0 ? `${kg(a.hopperKg)} drawn to the bottom pocket` : 'Waiting: lift idle', on ? 'teal' : 'default');
+    this.labels.setContent(
+      'lift-screw',
+      `3 · Screw (${a.screw})`,
+      on ? `${a.rpm.toFixed(0)} rpm · ${kg(a.pocketsKg)} riding up in pockets of water, up to ${Math.round(s.lift.pocketKg)} kg a pocket${stranded}` : a.on ? `Starting${stranded}` : `Stopped: nothing to lift${stranded}`,
+      on ? 'teal' : a.strandedKg > 0 ? 'amber' : 'default',
+    );
+    this.labels.setContent('lift-launder', '4 · Spout and launder', `${kg(a.launderKg)} spilling to the head tank`, a.launderKg > 0 ? 'teal' : 'default');
+    this.labels.setContent('lift-line', '5 · Head tank and line', `${kg(s.lift.inLineKg)} in the 2.2 km line · ${Math.round(s.lift.powerKW)} kW now`, s.lift.inLineKg > 0 ? 'teal' : 'default');
   }
 
   private setupLabels(): void {
@@ -346,8 +378,19 @@ export class SceneManager {
       anchor: () => this.collector.anchor,
       viewports: ['single'],
       view: above,
+      minDistance: 70,
       pick: 'collector',
     });
+    const K = this.collector.sections;
+    for (const [id, title, anchor] of [
+      ['lift-funnel', '1 · Funnel', K.funnel],
+      ['lift-hopper', '2 · Hopper', K.hopper],
+      ['lift-screw', '3 · Screw', K.screw],
+      ['lift-launder', '4 · Spout and launder', K.launder],
+      ['lift-line', '5 · Head tank and line', K.tank],
+    ] as const) {
+      this.labels.add({ id, title, anchor: () => anchor, viewports: ['single'], view: above, maxDistance: 70, pick: 'collector' });
+    }
     const intakeAnchor = new THREE.Vector3(SITE.basin.units[1], SITE.intake.deckY + 16, SITE.basin.wallZ);
     for (const [id, vp] of [
       ['intake', ['single']],
@@ -484,9 +527,9 @@ export class SceneManager {
     this.lastMarkerSeq = sw.markerSeq;
 
     this.nets.update(sw.nets, this.realTime, hs, this.ui.flowView, this.camera);
-    const flowFraction = Math.min(1, tr.availability() * (0.35 + tr.processedEMA / Math.max(tr.capacityRate(), 1e-3) * 4));
-    this.collector.update(tr.primaryStatus, tr.standbyStatus, flowFraction, this.realTime);
-    this.release.update(sw.releaseEMA, tr.running, this.realTime, this.realTime, hs);
+    const flowFraction = Math.min(1, tr.lineFlow() * (0.35 + (tr.processedEMA / Math.max(tr.capacityRate(), 1e-3)) * 4));
+    this.collector.update(tr, flowFraction, this.realTime);
+    this.release.update(sw.releaseEMA, tr.armed, this.realTime, this.realTime, hs);
     this.sonar.update((this.ui.flowView || params.night) && !ctrl.failures.sonarLoss, dt);
 
     const worlds: EngineKind[] = this.ui.compare ? ['baseline', 'sweepline'] : [this.ui.displayed];

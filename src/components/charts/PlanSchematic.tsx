@@ -1,4 +1,5 @@
 import { ASSUMPTIONS } from '../../config/assumptions';
+import { HEAD_TANK } from '../../simulation/lift';
 import { SITE, CREST, eastCrestLine } from '../../config/site';
 import { NETS } from '../../simulation/geometry';
 
@@ -32,7 +33,7 @@ export function PlanSchematic() {
   const B = SITE.breakwater;
   const I = SITE.intake;
   const landY = py(SITE.shore.crestZ);
-  const pipe = [[76, 88], ...SITE.pipeRoute] as ReadonlyArray<readonly [number, number]>;
+  const pipe = [[HEAD_TANK.x, HEAD_TANK.z], [81, 78], ...SITE.pipeRoute] as ReadonlyArray<readonly [number, number]>;
   const B2 = SITE.basin;
   const west = `${px(-CREST.centre)},${py(C.mouthZ)} ${px(-CREST.centre)},${py(B2.wallZ)}`;
   const east = eastCrestLine(30)

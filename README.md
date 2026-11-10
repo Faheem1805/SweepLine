@@ -10,6 +10,16 @@ Everything a plant pumps comes down one channel, so inside it the water always r
 Warning → Net → Pocket → Screw lift → Release
 ```
 
+## The screw lift
+
+Each net ends in a funnel against the east wall, and the funnel ends in a hopper. Two inclined screws stand in each hopper, a duty and a standby, and rise along the wall to a deck between the nets. They are enclosed screws: the flights are welded inside a 2 m tube that turns, so there is no gap for a bell to be caught in. Every part-turn closes off a pocket of water at the bottom and carries it up the 30° incline; a jellyfish rides up in its pocket, in water all the way, spills into a launder and runs to the head tank, and the line takes it 2.2 km to the release. A pocket holds about 0.75 m³ of water and at most 38 kg of jellyfish (5 % by volume), so at 31.5 rpm one screw lifts the line's design flow.
+
+A lift turns only while it has work. An imaging sonar looks down each funnel into the hopper. A lift starts when its sensor sees about a pocket's worth, or anything at all that has waited 10 minutes, and stops once the funnel is clear and its last pocket has reached the top. The line only moves while a screw feeds it, so the last lift to stop runs on until the line is flushed and no animal is left in a still pipe. In the reference run lift A sits idle, drawing nothing, until the bloom reaches its funnel; lift B, which sees only strays past net A, starts a few times an hour. The duty screws share one power feed and the standby screws the other: if the duty feed trips, the animals already in the duty screws stay there in their pockets of water until it is back.
+
+The **Lift** camera shows net A's lift cut away, with each section labelled and a card with what is in each one. **Follow one jellyfish** rides along with one animal from the hopper to the head tank. The view drops to real time while lift A turns.
+
+There is no bar rack: a 20 cm rack would stop the 30–45 cm bells it is there to pass. A camera at each hopper mouth lets the operator stop a lift for a turtle.
+
 ## What is real here
 
 | Built | Simulated | Missing |

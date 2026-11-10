@@ -12,7 +12,7 @@ export const OPERATING_ENVELOPE = {
   /** Head across a net: the float line dips at `relief`. Assumption, to be set with the plant. */
   head: { label: 'Head across net', unit: 'm', near: ASSUMPTIONS.net.reliefHead * 0.6, relief: ASSUMPTIONS.net.reliefHead, design: ASSUMPTIONS.net.designHead },
   /** Share of the pockets' holding capacity in use. */
-  pocket: { label: 'Collector pockets', unit: '%', near: 60, max: 100 },
+  pocket: { label: 'Collector funnels', unit: '%', near: 60, max: 100 },
   /** Wave height at the net line, after the breakwaters. */
   wave: { label: 'Waves at the net', unit: 'm', near: 0.5, max: 0.8 },
 } as const;

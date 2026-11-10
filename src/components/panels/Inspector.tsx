@@ -41,15 +41,22 @@ export function Inspector() {
     note = 'Water passes through the mesh. Animals cannot, so the flow sweeps them along the face.';
   } else if (sel.kind === 'collector') {
     const t = snap.transfer;
+    const lift = (i: number) => {
+      const x = snap.lift.stations[i];
+      return x.speed > 0.02 ? `Turning, ${x.rpm.toFixed(0)} rpm` : x.on ? 'Starting' : x.seen ? 'Sensor sees jellyfish' : 'Idle, funnel clear';
+    };
     title = 'Collector';
     rows = [
-      { k: 'Duty screw', v: t.primary, tone: t.primary === 'FAULT' ? 'text-red' : 'text-teal' },
-      { k: 'Standby screw', v: t.standby, tone: t.standby === 'FAULT' ? 'text-red' : undefined },
+      { k: 'Lift A', v: lift(0), tone: snap.lift.stations[0].speed > 0.02 ? 'text-teal' : undefined },
+      { k: 'Lift B', v: lift(1), tone: snap.lift.stations[1].speed > 0.02 ? 'text-teal' : undefined },
+      { k: 'Duty screws', v: t.primary, tone: t.primary === 'FAULT' ? 'text-red' : 'text-teal' },
+      { k: 'Standby screws', v: t.standby, tone: t.standby === 'FAULT' ? 'text-red' : undefined },
+      { k: 'Power now', v: `${Math.round(snap.lift.powerKW)} kW` },
       { k: 'Capacity now', v: `${t.capacityTph.toFixed(0)} t/h` },
       { k: 'Collecting', v: `${w.collectTph.toFixed(1)} t/h` },
-      { k: 'Pockets', v: `${Math.round(t.pocketFill * 100)} %` },
+      { k: 'Funnels full', v: `${Math.round(t.pocketFill * 100)} %` },
     ];
-    note = 'Screw lifts have no impeller to cut the animals. Capacity is the line’s water flow at 5 % jellyfish by volume.';
+    note = 'Enclosed screws: no impeller, no gap. Each lift turns only while its funnel sensor sees jellyfish, and runs on until its pockets and the line are clear. Capacity is the line’s water flow at 5 % jellyfish by volume.';
   } else if (sel.kind === 'intake') {
     title = 'Plant screens';
     rows = [

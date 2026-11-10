@@ -15,7 +15,7 @@ for (const seed of [1000, 8919, 16838, 24757, 32676]) {
   const p = { ...DEFAULT_PARAMS, seed };
   const s = new SimulationEngine('sweepline', p);
   s.reset(p, 'approach');
-  s.transfer!.running = true;
+  s.transfer!.armed = true;
   let t = 0;
   let sonar = -1;
   while (t < 5000 && s.counters.encountered === 0) {

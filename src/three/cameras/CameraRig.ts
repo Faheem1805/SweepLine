@@ -2,8 +2,9 @@ import * as THREE from 'three';
 import type { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { SITE, seabedDepth } from '../../config/site';
 import { NETS, pointOnNet } from '../../simulation/geometry';
+import { STATIONS } from '../../simulation/lift';
 
-export type CameraPreset = 'aerial' | 'top' | 'mouth' | 'net' | 'underwater' | 'collector' | 'intake' | 'release' | 'compare' | 'free';
+export type CameraPreset = 'aerial' | 'top' | 'mouth' | 'net' | 'underwater' | 'collector' | 'lift' | 'intake' | 'release' | 'compare' | 'free';
 
 export const CAMERA_PRESETS: Array<{ key: Exclude<CameraPreset, 'free' | 'compare'>; label: string }> = [
   { key: 'aerial', label: 'Overview' },
@@ -12,6 +13,7 @@ export const CAMERA_PRESETS: Array<{ key: Exclude<CameraPreset, 'free' | 'compar
   { key: 'net', label: 'Along the net' },
   { key: 'underwater', label: 'Underwater' },
   { key: 'collector', label: 'Collector' },
+  { key: 'lift', label: 'Screw lift' },
   { key: 'intake', label: 'Intake' },
   { key: 'release', label: 'Release' },
 ];
@@ -45,6 +47,11 @@ export function presetPose(key: Exclude<CameraPreset, 'free'>): CameraPose {
     }
     case 'collector':
       return { pos: v(26, 19, 44), target: v(70, 2.5, 76) };
+    case 'lift': {
+      // Net A's lift from above the channel, looking into the cut-away screws: hopper on the right, the deck on the left.
+      const s = STATIONS[0].screws[0].inlet;
+      return { pos: v(s.x - 17.2, s.y + 19.1, s.z + 1.5), target: v(s.x + 1.3, s.y + 5.4, s.z - 8) };
+    }
     case 'intake':
       return { pos: v(210, 36, -12), target: v(330, 2, -120) };
     case 'release': {

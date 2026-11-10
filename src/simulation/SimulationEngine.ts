@@ -16,6 +16,7 @@ import {
   S_GUIDED,
   S_INACTIVE,
   S_INTAKE_CONTACT,
+  S_LIFT,
   S_PAST_NET,
   S_RELEASED,
   S_TRANSFERRED,
@@ -23,6 +24,7 @@ import {
 } from './Agent';
 import { FlowField } from './flowField';
 import { collectorPoint, NETS, pointOnNet, type NetLine } from './geometry';
+import { AXIAL_SPEED, axisPoint, launderPoint, POCKET_DROP, POCKET_KG, POCKET_SPACING, SCREW_LENGTH, STATIONS, type Vec3 } from './lift';
 import { NetState } from './net';
 import { ScreenState } from './screens';
 import { fbm1, hash01, SeededRandom, valueNoise } from './seededRandom';
@@ -129,6 +131,8 @@ export class SimulationEngine {
   readonly onNet = [0, 0];
   /** Pocket capacity (agents). */
   holdCapacity = 100;
+  /** Animals one pocket of a screw lift may carry (agents), at the line's limit by volume. */
+  pocketCap = 5;
   /** Releases per second (EMA). */
   releaseEMA = 0;
   /** Agents arriving at a pocket per second (EMA). */
@@ -137,6 +141,17 @@ export class SimulationEngine {
   enterEMA = 0;
   /** Biomass inside the sonar's range, heading in (kg). */
   sonarKg = 0;
+  /** Agents in each lift now, by section: drawn across the hopper, riding up a screw (duty, standby), in the launder. */
+  readonly lift = {
+    hopper: [0, 0],
+    screw: [
+      [0, 0],
+      [0, 0],
+    ],
+    launder: [0, 0],
+    /** In the release line. */
+    line: 0,
+  };
 
   readonly markers: Marker[] = [];
   markerSeq = 0;
@@ -147,6 +162,8 @@ export class SimulationEngine {
   private collectsThisStep = 0;
   private entersThisStep = 0;
   private readonly tmp = { x: 0, z: 0 };
+  private readonly tmp3: Vec3 = { x: 0, y: 0, z: 0 };
+  private transfersThisStep = 0;
   private readonly tally: [Float32Array, Float32Array] = [new Float32Array(NETS[0].panels), new Float32Array(NETS[1].panels)];
   /** Agents stopped behind a full pocket on each net. */
   private readonly backed = [0, 0];
@@ -182,6 +199,8 @@ export class SimulationEngine {
     this.collectEMA = 0;
     this.enterEMA = 0;
     this.sonarKg = 0;
+    this.clearLiftCounts();
+    this.transfersThisStep = 0;
     this.markers.length = 0;
     this.markerSeq = 0;
     this.screens.reset();
@@ -204,6 +223,7 @@ export class SimulationEngine {
     this.flow.plantFlow = ASSUMPTIONS.plant.unitFlowM3s * params.unitsRunning;
     this.kgPerAgent = (ASSUMPTIONS.agent.kgPerAgent * ASSUMPTIONS.agent.referenceBudget) / params.agentBudget;
     this.holdCapacity = Math.max(8, Math.round(ASSUMPTIONS.collector.holdKg / this.kgPerAgent));
+    this.pocketCap = Math.max(1, Math.ceil(POCKET_KG / this.kgPerAgent));
     for (const net of this.nets) net.setFouling(params.foulingWeeks);
     if (this.nets.length === 2) this.nets[1].active = params.secondNet;
     if (this.transfer) {
@@ -348,7 +368,18 @@ export class SimulationEngine {
     const Q = this.flow.plantFlow;
     const block = this.blockPerKg;
     for (const net of this.nets) net.update(dt, Q, block);
-    if (this.transfer) this.transfer.update(dt);
+    if (this.transfer) {
+      const tr = this.transfer;
+      const lc = this.lift;
+      const k = tr.activeScrew;
+      tr.update(dt);
+      tr.control(
+        dt,
+        [(tr.queues[0].length + lc.hopper[0]) * this.kgPerAgent, (tr.queues[1].length + lc.hopper[1]) * this.kgPerAgent],
+        [lc.hopper[0] + lc.screw[0][k] > 0, lc.hopper[1] + lc.screw[1][k] > 0],
+        lc.line > 0,
+      );
+    }
     this.flow.releaseJet = Math.min(1, this.releaseEMA * 8);
 
     if (this.bloomActive) {
@@ -407,6 +438,8 @@ export class SimulationEngine {
     this.onNet[1] = 0;
     this.backedNext[0] = 0;
     this.backedNext[1] = 0;
+    this.clearLiftCounts();
+    const lineFlow = transfer ? transfer.lineFlow() : 1;
 
     for (let i = 0; i < pool.capacity; i++) {
       const st = state[i];
@@ -414,8 +447,10 @@ export class SimulationEngine {
       if (fade[i] < 1) fade[i] = Math.min(1, fade[i] + dt * 0.25);
 
       if (st === S_TRANSFERRED) {
-        timer[i] -= dt;
+        // Carried down the line at the speed of the water the screws are feeding it.
+        timer[i] -= dt * lineFlow;
         if (timer[i] <= 0) this.releaseAgent(i);
+        else this.lift.line++;
         continue;
       }
       if (st === S_INTAKE_CONTACT) {
@@ -427,6 +462,10 @@ export class SimulationEngine {
       stateTime[i] += dt;
       if (st === S_TRANSFER_QUEUE) {
         this.queueDynamics(i, dt, relax, NETS[lane[i] as NetIndex]);
+        continue;
+      }
+      if (st === S_LIFT) {
+        this.liftDynamics(i, dt);
         continue;
       }
 
@@ -728,30 +767,137 @@ export class SimulationEngine {
     p.py[i] += p.vy[i] * dt;
   }
 
+  private clearLiftCounts(): void {
+    const c = this.lift;
+    c.hopper[0] = c.hopper[1] = 0;
+    c.launder[0] = c.launder[1] = 0;
+    c.screw[0][0] = c.screw[0][1] = c.screw[1][0] = c.screw[1][1] = 0;
+    c.line = 0;
+  }
+
+  /** Each lift takes animals from the head of its funnel into the hopper, as fast as its pockets have room. */
   private processTransfer(dt: number): void {
     const tr = this.transfer!;
     const p = this.pool;
-    const rate = tr.capacityRate();
-    tr.tokens = Math.min(tr.tokens + rate * dt, 4);
-    let processed = 0;
     for (const ni of [0, 1] as const) {
       const queue = tr.queues[ni];
-      if (queue.length === 0) continue;
+      const st = tr.stations[ni];
+      if (queue.length === 0 || st.credit < 1) continue;
       const end = collectorPoint(NETS[ni]);
       let n = 0;
-      while (tr.tokens >= 1 && queue.length > 0) {
+      while (st.credit >= 1 && queue.length > 0) {
         const i = queue[0];
         if (Math.hypot(p.px[i] - end.x, p.pz[i] - end.z) > 9) break;
         queue.shift();
-        tr.tokens -= 1;
+        st.credit -= 1;
         n++;
-        this.transferAgent(i);
+        p.state[i] = S_LIFT;
+        p.stateTime[i] = 0;
+        p.queueIndex[i] = 0;
+        p.timer[i] = 0;
+        p.lane[i] = ni;
+        this.lift.hopper[ni]++;
       }
       if (n > 0) for (let j = 0; j < queue.length; j++) p.queueIndex[queue[j]] = j;
-      processed += n;
     }
-    if (tr.queueLength === 0 && tr.tokens > 1) tr.tokens = 1;
-    tr.processedEMA += (processed / dt - tr.processedEMA) * (1 - Math.exp(-dt / 45));
+    tr.processedEMA += (this.transfersThisStep / dt - tr.processedEMA) * (1 - Math.exp(-dt / 45));
+    this.transfersThisStep = 0;
+  }
+
+  /**
+   * An animal in a lift. `queueIndex` holds the section: 0 drawn across the hopper to the bottom
+   * pocket, 1 riding up in a pocket (`timer` = distance up the axis, m), 2 in the launder (`timer` =
+   * distance along it, m). `lane` holds the net, plus 2 on the standby screw.
+   */
+  private liftDynamics(i: number, dt: number): void {
+    const p = this.pool;
+    const tr = this.transfer!;
+    const ni = p.lane[i] & 1;
+    const station = STATIONS[ni];
+    const aid = p.id[i];
+    const out = this.tmp3;
+    const section = p.queueIndex[i];
+    if (section === 0) {
+      // Drawn across the hopper to the bottom of the screw that is taking animals.
+      const k = tr.activeScrew;
+      const sc = station.screws[k];
+      const st = tr.stations[ni];
+      const lat = (hash01(aid, 41) - 0.5) * 0.9;
+      axisPoint(sc, -0.3, out);
+      const tx = out.x + sc.down.x * POCKET_DROP + lat;
+      const ty = out.y + sc.down.y * POCKET_DROP;
+      const tz = out.z + sc.down.z * POCKET_DROP;
+      const dx = tx - p.px[i];
+      const dy = ty - p.py[i];
+      const dz = tz - p.pz[i];
+      const d = Math.hypot(dx, dy, dz);
+      const pocket = Math.floor(st.phase[k]);
+      if (pocket !== st.fillPocket[k]) {
+        st.fillPocket[k] = pocket;
+        st.fillCount[k] = 0;
+      }
+      if (d < 0.4 && st.speed[k] > 0.02 && st.fillCount[k] < this.pocketCap) {
+        // Into the pocket now closing at the bottom; a full one leaves it for the next.
+        st.fillCount[k]++;
+        const f = st.phase[k] - pocket;
+        p.timer[i] = (f - 1 + 0.25 + 0.5 * hash01(aid, 43)) * POCKET_SPACING;
+        p.queueIndex[i] = 1;
+        p.lane[i] = ni + 2 * k;
+        this.lift.screw[ni][k]++;
+        this.placeInPocket(i);
+        return;
+      }
+      const m = d > 1e-6 ? Math.min(ASSUMPTIONS.lift.hopperSpeed * dt, d) / d : 0;
+      p.vx[i] = (dx * m) / dt;
+      p.vy[i] = 0;
+      p.vz[i] = (dz * m) / dt;
+      p.px[i] += dx * m;
+      p.py[i] += dy * m;
+      p.pz[i] += dz * m;
+      this.lift.hopper[ni]++;
+      return;
+    }
+    const k = p.lane[i] >> 1;
+    const sc = station.screws[k];
+    if (section === 1) {
+      // Riding up in its pocket: the pocket moves with the flights, so at the screw's speed.
+      p.timer[i] += AXIAL_SPEED * tr.stations[ni].speed[k] * dt;
+      if (p.timer[i] < SCREW_LENGTH) {
+        this.lift.screw[ni][k]++;
+        this.placeInPocket(i);
+        return;
+      }
+      // Spilled from the top pocket into the launder.
+      p.queueIndex[i] = 2;
+      p.timer[i] = 0;
+    }
+    p.timer[i] += ASSUMPTIONS.lift.launderSpeed * dt;
+    if (p.timer[i] >= sc.launderLength) {
+      this.transferAgent(i);
+      this.transfersThisStep++;
+      return;
+    }
+    launderPoint(sc, p.timer[i], out);
+    // A little to one side of the launder's centre line.
+    const lat = (hash01(aid, 47) - 0.5) * 0.4;
+    const alongX = Math.abs(out.z - sc.launder[0].z) < 0.01;
+    p.px[i] = out.x + (alongX ? 0 : lat);
+    p.pz[i] = out.z + (alongX ? lat : 0);
+    p.py[i] = out.y - 0.22;
+    p.vx[i] = p.vy[i] = p.vz[i] = 0;
+    this.lift.launder[ni]++;
+  }
+
+  /** Where an animal riding a screw is: on the floor of its pocket, a little to one side. */
+  private placeInPocket(i: number): void {
+    const p = this.pool;
+    const sc = STATIONS[p.lane[i] & 1].screws[p.lane[i] >> 1];
+    const out = axisPoint(sc, p.timer[i], this.tmp3);
+    const lat = (hash01(p.id[i], 45) - 0.5) * 0.9;
+    p.px[i] = out.x + sc.down.x * POCKET_DROP + sc.across.x * lat;
+    p.py[i] = out.y + sc.down.y * POCKET_DROP;
+    p.pz[i] = out.z + sc.down.z * POCKET_DROP;
+    p.vx[i] = p.vy[i] = p.vz[i] = 0;
   }
 
   private transferAgent(i: number): void {

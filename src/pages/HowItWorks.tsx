@@ -87,10 +87,10 @@ const net = sizeNet(DESIGN_FLOW, SITE.channel.halfWidth * 2, SITE.channel.depth,
 const liftKW = Math.round(LINE.kW / 10) * 10;
 
 const STEPS = [
-  { title: 'Warning', value: '30 min', text: 'Offshore detection gives hours. In the model, sonar at the mouth sees a bloom at least 30 minutes before it reaches the net, day or night, and starts the lift.' },
+  { title: 'Warning', value: '30 min', text: 'Offshore detection gives hours. In the model, sonar at the mouth sees a bloom at least 30 minutes before it reaches the net, day or night, and arms the lifts.' },
   { title: 'Net', value: `${net.through.toFixed(2)} m/s`, text: `Water passes through ${ASSUMPTIONS.net.meshBar * 1000} mm mesh. Jellyfish are held back, and the flow sweeps them along the face.` },
   { title: 'Pocket', value: `${Math.round(net.rideMin)} min ride`, text: 'They arrive at a funnel where each net meets the wall. A second net 60 m behind takes what gets past.' },
-  { title: 'Screw lift', value: `≈ ${liftKW} kW`, text: `A slow screw, no impeller, lifts them ${LINE.lift.toFixed(1)} m into a head tank. Duty and standby.` },
+  { title: 'Screw lift', value: `≈ ${liftKW} kW`, text: `At each net's end an inclined screw lifts them ${LINE.lift.toFixed(1)} m in pockets of water to a head tank. It turns only while a sensor sees jellyfish in its funnel. Duty and standby.` },
   { title: 'Release', value: `${LINE.transitMin.toFixed(0)} min`, text: `A ${ASSUMPTIONS.transfer.pipeBore} m line over the breakwater and ${ASSUMPTIONS.transfer.length / 1000} km along the bed, with no air, to the sea down-drift.` },
 ];
 
@@ -105,11 +105,11 @@ const QUESTIONS: Array<{ q: string; a: string }> = [
   },
   {
     q: 'What does it do to the animals?',
-    a: 'A screw lift has no impeller to chop them, and the line runs full with no air. Screws are proven on live fish. Survival of jellyfish is not yet measured, which is why it is an early test.',
+    a: 'The screw has no impeller and no gap: its flights are welded inside a tube that turns. Each animal rides up in a pocket of water, spills into a launder, and the line runs full with no air. Screws like this pass live fish. Survival of jellyfish is not yet measured, which is why it is an early test.',
   },
   {
     q: 'What about fish and turtles?',
-    a: 'The mesh runs at fish-screen speed, so a swimming animal can turn away, and taut mesh is not a gill net. A 20 cm bar rack keeps turtles and large debris out of the lifts. That is a design argument, not a test: bycatch is watched in the panel test at sea.',
+    a: 'The mesh runs at fish-screen speed, so a swimming animal can turn away, and taut mesh is not a gill net. A camera at each hopper mouth lets the operator stop a lift if a turtle comes into the funnel, which is open water it can swim back out of. That is a design argument, not a test: bycatch is watched in the panel test at sea.',
   },
   {
     q: 'Haven’t nets failed at other plants?',

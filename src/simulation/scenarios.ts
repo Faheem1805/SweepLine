@@ -42,7 +42,7 @@ export const SCENARIOS: Scenario[] = [
     name: 'Heavy bloom',
     tagline: 'Top of the documented range, 25 t/h',
     question: 'What does a normal response look like?',
-    description: 'Blue Blubber at the top of the documented intake range. The panels go in, the warning starts the lifts, and the plant’s own flow sweeps the bloom along the net to the collector.',
+    description: 'Blue Blubber at the top of the documented intake range. The panels go in, the warning arms the lifts, which start when their funnel sensors see jellyfish, and the plant’s own flow sweeps the bloom along the net to the collector.',
     params: {},
     start: 'sequence',
     tone: 'nominal',
@@ -114,9 +114,9 @@ export const SCENARIOS: Scenario[] = [
   {
     id: 'pump',
     name: 'Screw lifts stop',
-    tagline: 'Duty lift, then standby',
+    tagline: 'Duty screws, then standby',
     question: 'What happens when a part fails?',
-    description: 'The duty lift stops and the standby takes over. Then the standby fails too. The pockets fill and the bloom stacks up along the net, which is passive and goes on holding it, buying time for repair.',
+    description: 'The duty screws stop and the standby screws take over. Then the standby fails too. The funnels fill and the bloom stacks up along the net, which is passive and goes on holding it, buying time for repair.',
     params: {},
     start: 'steady',
     script: [

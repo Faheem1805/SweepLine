@@ -156,6 +156,48 @@ export const ASSUMPTIONS = {
     funnelSpeed: 0.28,
   },
 
+  /**
+   * The screw lift at each net's end, a duty and a standby screw side by side in one hopper. An
+   * enclosed screw: the flights are welded inside a tube that turns on rollers, so there is no gap
+   * between flight and casing for a bell to be caught in. Each part-turn closes off a pocket of water
+   * at the bottom and carries it up the incline; an animal rides up in its pocket, in water all the
+   * way, and spills with it into a launder to the head tank. At full speed one screw lifts the
+   * line's design flow. Figures are a design basis for a pilot, not a vendor quote.
+   */
+  lift: {
+    /** Tube bore (m), number of flight starts, flight pitch (m) and incline (degrees). */
+    diameter: 2.0,
+    starts: 3,
+    pitch: 2.0,
+    incline: 30,
+    /** Full speed (rpm): the usual 50 / D^⅔ for a screw of this bore. */
+    rpm: 31.5,
+    /** Axis height (m above still water) at the bottom pocket and at the discharge. */
+    inletY: -3.6,
+    dischargeY: 8.0,
+    /** Soft start and stop: time from rest to full speed (s). */
+    rampTime: 8,
+    /** Speed at which an animal is drawn across the hopper to the bottom pocket, and carried along the launder to the head tank (m/s). */
+    hopperSpeed: 0.7,
+    launderSpeed: 1.2,
+  },
+
+  /**
+   * Funnel sensor at each collector: an imaging sonar looking down the funnel and into the hopper
+   * (it needs no light), with a camera at the hopper mouth to check it by day. It reads every
+   * `period` s. A lift starts when its sensor sees about a pocket's worth (`startKg`), or anything
+   * at all that has waited `maxWait` s; it stops once the sensor has seen nothing for `runOn` s and
+   * the last pocket has reached the top, after at least `minRun` s. That keeps a lift that only sees
+   * the odd stray to a few starts an hour. To be set on the pilot.
+   */
+  funnelSensor: {
+    period: 2,
+    startKg: 40,
+    maxWait: 600,
+    runOn: 30,
+    minRun: 60,
+  },
+
   transfer: {
     /** Bore of the transfer line (m): at least twice the largest bell. */
     pipeBore: 1.0,
@@ -168,7 +210,7 @@ export const ASSUMPTIONS = {
     /** Screw lift wire-to-water efficiency and the line's minor-loss coefficient. */
     pumpEfficiency: 0.7,
     minorLossK: 5,
-    /** Water levels (m above still water): wet well when drawn down, and the head tank. The tank must stand above the pipe's crest over the breakwater so the line never runs below atmospheric. */
+    /** Water levels (m above still water): the hopper when drawn down, and the head tank. The tank must stand above the pipe's crest over the breakwater so the line never runs below atmospheric. */
     wetWellLevel: -1,
     headTankLevel: 6.5,
     /** Time for the standby pump to reach full capacity after a fault (s). */

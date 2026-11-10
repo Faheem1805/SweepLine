@@ -27,7 +27,7 @@ export const FAILURE_MODES: readonly FailureMode[] = [
   { key: 'tide', failure: 'The tide turns mid-bloom', response: 'Nothing happens: the plant sets the flow in the channel', run: 'tide' },
   { key: 'moon', failure: 'Soft moon jellyfish instead', response: 'More leak past net A. Net B catches them', run: 'moon' },
   { key: 'deep', failure: 'A deep-living species', response: 'The nets run to the seabed', run: 'deep' },
-  { key: 'duty', failure: 'The duty lift stops', response: 'The standby takes over in 12 seconds' },
+  { key: 'duty', failure: 'The duty screws stop', response: 'The standby screws take over in 12 seconds; animals already in a duty screw wait there in their pockets of water' },
   { key: 'power', failure: 'Site power is lost', response: 'The nets need none. They hold the bloom until the lifts are back' },
   { key: 'sonar', failure: 'Sonar is lost', response: 'Warning only. The net works without it' },
 ];

@@ -112,6 +112,7 @@ const MAIN_PRESETS: Array<{ key: CameraPreset; label: string }> = [
   { key: 'net', label: 'Net' },
   { key: 'underwater', label: 'Underwater' },
   { key: 'collector', label: 'Collector' },
+  { key: 'lift', label: 'Lift' },
 ];
 
 const MORE_PRESETS = CAMERA_PRESETS.filter((p) => !MAIN_PRESETS.some((m) => m.key === p.key));

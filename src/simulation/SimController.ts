@@ -4,6 +4,8 @@ import { computeEngineMetrics, type EngineMetrics } from './metrics';
 import { getScenario, type Scenario, type ScenarioStep } from './scenarios';
 import { SimulationEngine, type AgentInfo } from './SimulationEngine';
 import { hoursToNextTurn, tideCurrent, tideCurrentVector, tideDate } from './tide';
+import { S_TRANSFERRED } from './Agent';
+import { POCKET_KG } from './lift';
 import { TRANSFER_TPH } from './transfer';
 import {
   DEFAULT_PARAMS,
@@ -94,6 +96,30 @@ export interface SimSnapshot {
     capacityTph: number;
     pocketFill: number;
   };
+  /** The screw lifts, net A's and net B's: what each funnel sensor sees and what is in each section (kg). */
+  lift: {
+    stations: Array<{
+      name: string;
+      on: boolean;
+      seen: boolean;
+      /** Speed of the screw taking animals, as a share of full, and its rpm. */
+      speed: number;
+      rpm: number;
+      screw: 'duty' | 'standby';
+      funnelKg: number;
+      hopperKg: number;
+      pocketsKg: number;
+      launderKg: number;
+      /** Animals left in the screw that stopped (kg), after a fault. */
+      strandedKg: number;
+      turningMin: number;
+      starts: number;
+    }>;
+    inLineKg: number;
+    powerKW: number;
+    energyKWh: number;
+    pocketKg: number;
+  };
   channel: { flow: number; speed: number; waveAtNet: number; captureBand: number };
   sonar: { on: boolean; inRangeT: number; arrivalTph: number };
   constraints: Constraint[];
@@ -131,8 +157,8 @@ const STAGES: Array<{ key: StageKey; label: string }> = [
 ];
 
 export const FAILURE_LABELS: Record<FailureKey, string> = {
-  pumpPrimary: 'Duty lift stops',
-  pumpStandby: 'Standby lift stops',
+  pumpPrimary: 'Duty screws stop',
+  pumpStandby: 'Standby screws stop',
   panelTear: 'Panel tears out',
   debris: 'Debris mat blinds net A',
   unitTrip: 'One unit offline',
@@ -207,6 +233,7 @@ export class SimController {
   private opening = false;
   private prevRelief = [false, false];
   private prevPocketFull = false;
+  private prevLiftOn = [false, false];
   private prevBaseStatus = 'CLEAR';
   private prevSweepStatus = 'CLEAR';
   private prevPrimary: ModuleStatus = 'STANDBY';
@@ -253,6 +280,7 @@ export class SimController {
     this.selection = null;
     this.prevRelief = [false, false];
     this.prevPocketFull = false;
+    this.prevLiftOn = [false, false];
     this.prevBaseStatus = 'CLEAR';
     this.prevSweepStatus = 'CLEAR';
     this.prevPrimary = 'STANDBY';
@@ -359,10 +387,10 @@ export class SimController {
 
   private startPumps(): void {
     const tr = this.sweepline.transfer!;
-    if (tr.running) return;
-    tr.running = true;
+    if (tr.armed) return;
+    tr.armed = true;
     this.stage('warning');
-    this.log('warn', 'Early warning received: screw lifts started');
+    this.log('warn', 'Early warning received: screw lifts armed, to start when a funnel sensor sees jellyfish');
   }
 
   // ------------------------------------------------------------------ failure injection
@@ -558,13 +586,21 @@ export class SimController {
         this.log(on ? 'alarm' : 'ok', on ? `${net.line.name} head at the relief limit — float line dipping, water spilling over` : `${net.line.name} relief closed`);
       }
     });
+    tr.stations.forEach((st, i) => {
+      if (st.on !== this.prevLiftOn[i]) {
+        this.prevLiftOn[i] = st.on;
+        const name = i === 0 ? 'Lift A' : 'Lift B';
+        if (st.on) this.log('info', `Funnel sensor sees jellyfish at net ${i === 0 ? 'A' : 'B'}: ${name} starting`);
+        else this.log('info', `${name} stopped: funnel clear and its pockets empty`);
+      }
+    });
     const pFull = tr.queues[0].length >= s.holdCapacity;
     if (pFull !== this.prevPocketFull) {
       this.prevPocketFull = pFull;
-      this.log(pFull ? 'warn' : 'ok', pFull ? 'Pocket full — the bloom is stacking up along the net' : 'Pocket clearing');
+      this.log(pFull ? 'warn' : 'ok', pFull ? 'Funnel full — the bloom is stacking up along the net' : 'Funnel clearing');
     }
     if (tr.primaryStatus !== this.prevPrimary || tr.standbyStatus !== this.prevStandby) {
-      if (this.prevStandby !== 'ONLINE' && tr.standbyStatus === 'ONLINE') this.log('ok', 'Standby lift carrying the load');
+      if (this.prevStandby !== 'ONLINE' && tr.standbyStatus === 'ONLINE') this.log('ok', 'Standby screws carrying the load');
       this.prevPrimary = tr.primaryStatus;
       this.prevStandby = tr.standbyStatus;
     }
@@ -657,13 +693,13 @@ export class SimController {
     const tr = s.transfer!;
     if (s.nets.some((n) => n.arming)) return { code: 'ARMING', label: 'Panels going in', detail: `${Math.round(s.nets[0].inPlace * 100)} % in place`, tone: 'info' };
     if (s.nets.some((n) => n.reliefFraction > 0)) return { code: 'RELIEF', label: 'Relief open', detail: 'Float line dipped: cooling flow first', tone: 'alarm' };
-    if (tr.running && !tr.poweredPathAvailable) return { code: 'OVERLOAD', label: 'Net holding', detail: 'Lifts stopped: bloom stacking on the net', tone: 'alarm' };
+    if (tr.armed && !tr.poweredPathAvailable) return { code: 'OVERLOAD', label: 'Net holding', detail: 'Lifts stopped: bloom stacking on the net', tone: 'alarm' };
     if (s.nets[0].tornCount > 0) return { code: 'ELEVATED', label: 'Panel out', detail: 'Net B catching what comes through', tone: 'warn' };
-    if (tr.primaryFault) return { code: 'ELEVATED', label: 'On standby', detail: tr.standbyStatus === 'ONLINE' ? 'Standby lift carrying the load' : 'Standby lift starting', tone: 'warn' };
+    if (tr.primaryFault) return { code: 'ELEVATED', label: 'On standby', detail: tr.standbyStatus === 'ONLINE' ? 'Standby screws carrying the load' : tr.standbyStatus === 'ACTIVATING' ? 'Standby screws starting' : 'Standby screws ready', tone: 'warn' };
     const near = this.constraints.find((c) => c.status !== 'ok');
     if (near) return { code: 'ELEVATED', label: 'Watch', detail: `${near.label} ${near.value}`, tone: 'warn' };
     if (s.counters.encountered > 0) return { code: 'NOMINAL', label: 'Sweeping', detail: 'Bloom moving along the net', tone: 'ok' };
-    if (tr.running) return { code: 'WARNING', label: 'Warning received', detail: 'Lifts running, bloom on its way', tone: 'warn' };
+    if (tr.armed) return { code: 'WARNING', label: 'Warning received', detail: 'Lifts armed, bloom on its way', tone: 'warn' };
     return { code: 'READY', label: 'Ready', detail: 'Nets in place, awaiting warning', tone: 'ok' };
   }
 
@@ -725,6 +761,7 @@ export class SimController {
         capacityTph: TRANSFER_TPH * tr.availability(),
         pocketFill: (tr.queues[0].length + tr.queues[1].length) / (2 * s.holdCapacity),
       },
+      lift: this.liftSnapshot(),
       channel: { flow: Q, speed: s.flow.channelSpeed, waveAtNet: s.channelWave, captureBand: s.flow.captureBand() },
       sonar: { on: !this.failures.sonarLoss, inRangeT: this.failures.sonarLoss ? 0 : s.sonarKg / 1000, arrivalTph: (s.enterEMA * kg * 3600) / 1000 },
       constraints: this.constraints,
@@ -735,6 +772,35 @@ export class SimController {
       bloom: { active: s.bloomActive, rate: this.params.bloomRate * s.surge, species: sp.name },
       selectedAgent,
       tide: this.tideSnapshot(),
+    };
+  }
+
+  private liftSnapshot(): SimSnapshot['lift'] {
+    const s = this.sweepline;
+    const tr = s.transfer!;
+    const kg = s.kgPerAgent;
+    const c = s.lift;
+    const k = tr.activeScrew;
+    return {
+      stations: tr.stations.map((st, i) => ({
+        name: i === 0 ? 'Lift A' : 'Lift B',
+        on: st.on,
+        seen: st.seen,
+        speed: st.speed[k],
+        rpm: st.speed[k] * ASSUMPTIONS.lift.rpm,
+        screw: k === 0 ? 'duty' : 'standby',
+        funnelKg: tr.queues[i].length * kg,
+        hopperKg: c.hopper[i] * kg,
+        pocketsKg: c.screw[i][k] * kg,
+        launderKg: c.launder[i] * kg,
+        strandedKg: c.screw[i][1 - k] * kg,
+        turningMin: st.turningSeconds / 60,
+        starts: st.starts,
+      })),
+      inLineKg: s.countState(S_TRANSFERRED) * kg,
+      powerKW: tr.powerKW(),
+      energyKWh: tr.energyKWh(),
+      pocketKg: POCKET_KG,
     };
   }
 
