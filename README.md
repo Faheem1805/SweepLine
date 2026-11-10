@@ -74,32 +74,13 @@ Sized on fish-screen practice (NMFS): at most 0.12 m/s through the screen, and s
 
 `src/simulation/sizing.ts` holds these sums on their own so anyone can check them. Every assumption is in `src/config/assumptions.ts`, with its source or the test that settles it.
 
-## The funnel and the experimental sweep assist
-
-Each net ends in a funnel in the wedge between the net and the east wall: a mouth from the net to the wall 16 m from the net's end, a perforated wing narrowing to a 1.6 m throat 7 m from the end, and a solid pocket ending at the wet-well entry where the screw lift draws. `FUNNELS` in `src/simulation/geometry.ts` is the one set of numbers the engine moves animals through and the 3D scene draws.
-
-- An animal counts as **collected** only when it passes the throat into the pocket. Between the mouth and the throat it is **in the funnel**, and not counted yet. **In the line** means in transfer, and **released** means out at the outlet.
-- The pocket holds 0.9 t and the funnel 2.9 t. A full pocket closes the throat. A full funnel closes the mouth, so the bloom stacks up along the net.
-- The lift takes an animal only once it reaches the wet-well entry.
-- The 20 cm bar rack across the mouth is smaller than a 30–45 cm Blue Blubber bell, so as drawn it would stop them. The model lets every animal through the rack. Rack size and turtle bycatch are not validated.
-- The model treats the channel walls as vertical. The collector at net A's end is drawn with a vertical sheet-pile face, because a rock slope would cut into the funnel.
-
-**Sweep assist (experimental, off by default).** A small variable-speed seawater pump feeds a spray bar on the bloom face just ahead of each mouth. It adds up to 0.1 m/s along the mesh, falling off away from the net and past the last outlet. It is sized at 216 m³/h at 5 m head, about 5 kW at full speed. The same velocity field moves the animals and draws the close-up's arrows. It does not speed up the channel, and it does not move or free animals by itself.
-
-- **Modes.** Off, Auto, or a manual test run.
-- **When Auto starts.** Animals must be at the funnel and either the sweep or crowding must stay bad for 90 s. The sweep has to be below 0.06 m/s, read on the net ahead of the bar where the jets can't reach. Crowding means more than 1.2 t at the mouth.
-- **When Auto stops.** The condition has to be clear for 180 s, and the pump runs at least 300 s once started.
-- **Interlocks.** In either active mode, the pump is held off if the pocket is full, no lift is running, head is at 90 mm or more, or relief is open.
-
-`npm run study:assist` replays the Funnel assist scenario on five seeds with the assist Off and on Auto, through the app's own controller, and writes `src/data/assist.generated.ts`. In the model, Auto shortens mouth-to-throat time while the sweep is weak, from about 195 s to 155 s. It does not change what is collected or what reaches the screens.
-
 ## Studies
 
 ```bash
 npm run study
 ```
 
-Runs every case with and without SweepLine (`scripts/study-all.sh`, a few minutes) and writes `src/data/study.generated.ts`, which the app reads. `npm run study:assist` runs the sweep-assist comparison. `npm run study:drift` runs the release drift study on the recorded current and wind, and `npm run study:hindcast` the wave and current record.
+Runs every case with and without SweepLine (`scripts/study-all.sh`, a few minutes) and writes `src/data/study.generated.ts`, which the app reads. `npm run study:drift` runs the release drift study on the recorded current and wind, and `npm run study:hindcast` the wave and current record.
 
 ## The poster
 

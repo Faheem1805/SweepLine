@@ -1,5 +1,4 @@
 import { useApp } from '../app/store';
-import { FunnelCard, useFunnelCardShown } from '../components/panels/FunnelCard';
 import { Inspector } from '../components/panels/Inspector';
 import { EventLogMenu, LiveHeadline, MarginsCard, PipelineStrip, ProblemRail, WhatIfMenu } from '../components/panels/LivePanels';
 import { CompareOverlay, FlowLegend, TideCard, UnderwaterHud, ViewportToolbar } from '../components/viewport/Hud';
@@ -12,22 +11,15 @@ import { ViewportSlot } from '../components/viewport/ViewportSlot';
  */
 export function LiveSimulation() {
   const compare = useApp((s) => s.ui.compare);
-  const funnel = useFunnelCardShown();
   return (
     <div className="flex min-w-0 flex-1 p-3">
       <ViewportSlot className="min-h-[360px] flex-1 rounded-[16px] border border-line">
         <div data-live-hud className="pointer-events-none absolute inset-0 z-10">
           <div className="absolute top-4 left-4 flex flex-col items-start gap-2.5">
             <LiveHeadline />
-            {funnel ? (
-              <FunnelCard />
-            ) : (
-              <>
-                <MarginsCard />
-                <TideCard />
-              </>
-            )}
-            {!funnel && <FlowLegend />}
+            <MarginsCard />
+            <TideCard />
+            <FlowLegend />
           </div>
           <div className="absolute top-4 right-[372px]">
             <ViewportToolbar />

@@ -150,74 +150,10 @@ export const ASSUMPTIONS = {
   },
 
   collector: {
-    /** Biomass the pocket holds (kg): 1.6 × 2.5 m × 12 m of water at about 19 kg/m³, 2 % by volume. Past it the throat closes. To be set by a tank test. */
+    /** Biomass the pocket holds before animals back up along the net (kg per 1000 agents' worth is derived). */
     holdKg: 900,
-    /**
-     * Biomass the funnel holds (kg) before the mouth closes and animals back up along the net: the
-     * band within 1.4 m of the mesh, mouth to throat (9 m × 1.4 m × 12 m ≈ 150 m³), at the pocket's
-     * packing. To be set by a tank test.
-     */
-    funnelHoldKg: 2900,
-    /** Speed through the pocket to the suction while a lift runs (m/s): the lift's draw. */
+    /** Speed through the funnel (m/s). */
     funnelSpeed: 0.28,
-    /** An animal near the funnel moving slower than this along it (m/s), for this long (s), counts as stalled. */
-    stallSpeed: 0.02,
-    stallAfter: 30,
-    /** Approach zone watched ahead of the mouth, along the net (m). */
-    approachZone: 12,
-  },
-
-  /**
-   * Experimental sweep assist, OFF by default. A small variable-speed seawater pump feeds a submerged
-   * spray bar on the bloom face of the net just ahead of each funnel mouth. Its outlets push water
-   * along the mesh into the mouth. It has its own intake (screened, behind the net), separate from
-   * the screw lifts and the release line. None of it is tested: every number here is a design guess
-   * for a flume to settle.
-   */
-  assist: {
-    /** Outlets along the net's bloom face, this far ahead of the mouth (m). */
-    barLength: 8,
-    /** Water speed added along the mesh at the net face at full pump speed (m/s). Nothing adds more. */
-    addSpeed: 0.1,
-    /** Layer off the mesh the jets act on (m): the added speed falls off as exp(−distance / layer). */
-    layer: 1.0,
-    /** Decay length past the last outlet, into the funnel (m). */
-    decay: 6,
-    /**
-     * Pump sizing. Flow from a momentum balance: the jets' momentum flux, ρ·Q·jetSpeed, spread over
-     * the layer the full depth, ρ·addSpeed²·(layer × depth). Power = ρ·g·Q·head ÷ efficiency, and
-     * goes as speed³ below full speed. Head covers nozzles, manifold, intake screen and pipework.
-     */
-    jetSpeed: 2.0,
-    head: 5,
-    efficiency: 0.6,
-    /** Ramp from stop to full speed, and back (s): no step change in the flow at the mouth. */
-    rampUp: 60,
-    rampDown: 45,
-    /** Auto: animals present at the funnel (kg)… */
-    presentKg: 40,
-    /**
-     * …and the sweep slower than slowOn (m/s), or animals crowding the mouth past crowdOnKg (kg)…
-     * The sweep is read from animals on the net ahead of the spray bar, from sweepFrom to sweepTo
-     * metres ahead of the mouth, where the jets cannot reach: otherwise the pump would read its own
-     * effect and switch itself off. Crowding is set above the 300–400 kg a 25 t/h bloom keeps at the
-     * mouth in normal running, so only a surge or a blockage trips it.
-     */
-    sweepFrom: 20,
-    sweepTo: 9.5,
-    slowOn: 0.06,
-    slowOff: 0.09,
-    crowdOnKg: 1200,
-    crowdOffKg: 800,
-    /** …for onDelay (s) starts it. It stops once that has been clear for offDelay (s), and never before minRun (s). */
-    onDelay: 90,
-    offDelay: 180,
-    minRun: 300,
-    /** Interlocks: it stands down above this head across the net (m), and stays down this long after a cause clears (s). */
-    headLimit: 0.09,
-    interlockHold: 30,
-    /** Manual test speed, as a share of full. */
-    manualSpeed: 1,
   },
 
   transfer: {

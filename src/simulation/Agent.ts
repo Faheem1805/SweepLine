@@ -11,27 +11,22 @@ export const S_APPROACHING = 1;
 export const S_GUIDED = 2;
 /** Slipped past a net (through a tear, over a relief section, or through a joint). */
 export const S_PAST_NET = 3;
-/** In the pocket past the throat, collected, waiting for the lift. */
 export const S_TRANSFER_QUEUE = 4;
-/** In the release line. */
 export const S_TRANSFERRED = 5;
 export const S_RELEASED = 6;
 export const S_INTAKE_CONTACT = 7;
 export const S_FREE_DRIFT = 8;
-/** Past the funnel mouth, short of the throat: not collected yet. */
-export const S_FUNNEL = 9;
 
 export const STATE_NAMES = [
   'INACTIVE',
   'APPROACHING',
   'GUIDED',
   'PAST_NET',
-  'IN_POCKET',
-  'IN_THE_LINE',
+  'TRANSFER_QUEUE',
+  'TRANSFERRED',
   'RELEASED',
   'INTAKE_CONTACT',
   'FREE_DRIFT',
-  'IN_FUNNEL',
 ] as const;
 
 export type AgentStateName = (typeof STATE_NAMES)[number];
@@ -81,12 +76,8 @@ export class AgentPool {
   readonly contactStart: Float32Array;
   /** General-purpose countdown (transit time, impingement dwell, overtopping). */
   readonly timer: Float32Array;
-  /** Position in the pocket queue, or −1. */
+  /** Position in the throat queue, or −1. */
   readonly queueIndex: Int16Array;
-  /** Time spent moving slower than the stall speed near the funnel (s). */
-  readonly slow: Float32Array;
-  /** Sim time the animal crossed the funnel mouth, or −1. */
-  readonly mouthTime: Float32Array;
   /** Position at the start of the last step: the renderer draws between it and the current one. */
   readonly ox: Float32Array;
   readonly oy: Float32Array;
@@ -121,8 +112,6 @@ export class AgentPool {
     this.contactStart = new Float32Array(capacity);
     this.timer = new Float32Array(capacity);
     this.queueIndex = new Int16Array(capacity);
-    this.slow = new Float32Array(capacity);
-    this.mouthTime = new Float32Array(capacity);
     this.ox = new Float32Array(capacity);
     this.oy = new Float32Array(capacity);
     this.oz = new Float32Array(capacity);

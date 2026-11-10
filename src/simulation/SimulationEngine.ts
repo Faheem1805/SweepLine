@@ -20,11 +20,9 @@ import {
   S_RELEASED,
   S_TRANSFERRED,
   S_TRANSFER_QUEUE,
-  S_FUNNEL,
 } from './Agent';
-import { AssistUnit } from './assist';
 import { FlowField } from './flowField';
-import { FUNNELS, funnelWidth, NETS, pointOnNet, type Funnel } from './geometry';
+import { collectorPoint, NETS, pointOnNet, type NetLine } from './geometry';
 import { NetState } from './net';
 import { ScreenState } from './screens';
 import { fbm1, hash01, SeededRandom, valueNoise } from './seededRandom';
@@ -32,16 +30,8 @@ import { TRANSFER_TPH, TransferState } from './transfer';
 import type { EngineKind, NetIndex, SimParams } from './types';
 
 const N = ASSUMPTIONS.net;
-const K = ASSUMPTIONS.collector;
-const AS = ASSUMPTIONS.assist;
 /** Distance past the mouth, along the current, at which a bloom has clearly gone by (m). */
 const PASS_X = 420;
-/** West of this (m) nothing is near a funnel: a cheap test before the funnel geometry. */
-const FUNNEL_X0 = Math.min(FUNNELS[0].mouthIn.x, FUNNELS[1].mouthIn.x) - 2;
-/** Recent mouth-to-throat times kept for the readout. */
-const TRANSIT_WINDOW = 64;
-/** The lift draws an animal once it is this close to the wet-well entry, in plan (m). */
-export const SUCTION_REACH = 1.2;
 
 export interface Counters {
   spawned: number;
@@ -54,7 +44,7 @@ export interface Counters {
   entered: number;
   /** Agents that touched a net. */
   encountered: number;
-  /** Agents that went through a funnel's throat into its pocket: collected. */
+  /** Agents that reached a collection pocket. */
   diverted: number;
   /** Agents past each net without being collected there. */
   leaked: [number, number];
@@ -137,24 +127,8 @@ export class SimulationEngine {
   kgPerAgent: number = ASSUMPTIONS.agent.kgPerAgent;
   /** Agents on each net now. */
   readonly onNet = [0, 0];
-  /** Pocket capacity (agents): past it the throat closes. */
+  /** Pocket capacity (agents). */
   holdCapacity = 100;
-  /** Funnel capacity (agents): past it the mouth closes and animals back up along the net. */
-  funnelCapacity = 300;
-  /** Agents in each funnel (past the mouth, short of the throat) at the end of the last step. */
-  readonly inFunnel = [0, 0];
-  /** Agents stalled, and snagged, at each funnel and its approach zone, last step. */
-  readonly stalled = [0, 0];
-  readonly snagged = [0, 0];
-  /** Stalled and snagged biomass at the funnels, integrated over time (kg·s). */
-  stallKgS = 0;
-  snagKgS = 0;
-  /** Mouth-to-throat times (s): all of them, and the latest few. */
-  transitSum = 0;
-  transitCount = 0;
-  readonly transits: number[] = [];
-  /** Experimental sweep assist at each funnel mouth (SweepLine world only). */
-  assist: AssistUnit[] = [];
   /** Releases per second (EMA). */
   releaseEMA = 0;
   /** Agents arriving at a pocket per second (EMA). */
@@ -174,18 +148,9 @@ export class SimulationEngine {
   private entersThisStep = 0;
   private readonly tmp = { x: 0, z: 0 };
   private readonly tally: [Float32Array, Float32Array] = [new Float32Array(NETS[0].panels), new Float32Array(NETS[1].panels)];
-  /** Agents stopped on each net behind a full funnel, and in each funnel behind a full pocket. */
+  /** Agents stopped behind a full pocket on each net. */
   private readonly backed = [0, 0];
   private readonly backedNext = [0, 0];
-  private readonly fBacked = [0, 0];
-  private readonly fBackedNext = [0, 0];
-  private readonly funnelEntries = [0, 0];
-  private readonly inFunnelNext = [0, 0];
-  /** What the mouth sonar sees this step, per net: biomass present (kg), at the mouth (kg), speed along the net. */
-  private readonly zoneKg = [0, 0];
-  private readonly mouthKg = [0, 0];
-  private readonly speedSum = [0, 0];
-  private readonly speedN = [0, 0];
 
   constructor(kind: EngineKind, params: SimParams) {
     this.kind = kind;
@@ -213,16 +178,6 @@ export class SimulationEngine {
     this.surge = 1;
     this.onNet.fill(0);
     this.backed.fill(0);
-    this.fBacked.fill(0);
-    this.inFunnel.fill(0);
-    this.funnelEntries.fill(0);
-    this.stalled.fill(0);
-    this.snagged.fill(0);
-    this.stallKgS = 0;
-    this.snagKgS = 0;
-    this.transitSum = 0;
-    this.transitCount = 0;
-    this.transits.length = 0;
     this.releaseEMA = 0;
     this.collectEMA = 0;
     this.enterEMA = 0;
@@ -234,12 +189,9 @@ export class SimulationEngine {
     if (this.kind === 'sweepline') {
       this.nets = NETS.map((L) => new NetState(L));
       this.transfer = new TransferState();
-      this.assist = FUNNELS.map((F) => new AssistUnit(F));
-      for (const a of this.assist) a.reset(params.assistMode);
     } else {
       this.nets = [];
       this.transfer = null;
-      this.assist = [];
     }
     this.applyParams(params);
     if (fill === 'approach') this.initialFill();
@@ -251,9 +203,7 @@ export class SimulationEngine {
     this.flow.setCurrent(params.currentSpeed, params.currentBearing);
     this.flow.plantFlow = ASSUMPTIONS.plant.unitFlowM3s * params.unitsRunning;
     this.kgPerAgent = (ASSUMPTIONS.agent.kgPerAgent * ASSUMPTIONS.agent.referenceBudget) / params.agentBudget;
-    this.holdCapacity = Math.max(8, Math.round(K.holdKg / this.kgPerAgent));
-    this.funnelCapacity = Math.max(8, Math.round(K.funnelHoldKg / this.kgPerAgent));
-    for (const a of this.assist) a.setMode(params.assistMode);
+    this.holdCapacity = Math.max(8, Math.round(ASSUMPTIONS.collector.holdKg / this.kgPerAgent));
     for (const net of this.nets) net.setFouling(params.foulingWeeks);
     if (this.nets.length === 2) this.nets[1].active = params.secondNet;
     if (this.transfer) {
@@ -267,12 +217,6 @@ export class SimulationEngine {
     this.params.currentSpeed = speed;
     this.params.currentBearing = bearing;
     this.flow.setCurrent(speed, bearing);
-  }
-
-  /** Water velocity at (x, z): the flow field plus any sweep assist. Agents and the drawn arrows both read it. */
-  sampleWater(x: number, z: number, depth: number, out: { x: number; z: number }): void {
-    this.flow.sample(x, z, depth, out);
-    if (x > FUNNEL_X0 - ASSUMPTIONS.assist.barLength) for (const a of this.assist) a.addVelocity(x, z, out);
   }
 
   /** Bell area blocking the mesh, per kg, for this species. */
@@ -387,8 +331,6 @@ export class SimulationEngine {
     p.contactStart[slot] = -1;
     p.timer[slot] = 0;
     p.queueIndex[slot] = -1;
-    p.slow[slot] = 0;
-    p.mouthTime[slot] = -1;
     p.ox[slot] = x;
     p.oy[slot] = -pref;
     p.oz[slot] = z;
@@ -418,10 +360,7 @@ export class SimulationEngine {
     }
 
     this.updateAgents(dt);
-    if (this.transfer) {
-      this.processTransfer(dt);
-      this.updateAssist(dt);
-    }
+    if (this.transfer) this.processTransfer(dt);
     this.screens.update(dt);
 
     const r = 1 - Math.exp(-dt / 30);
@@ -432,7 +371,7 @@ export class SimulationEngine {
 
   private updateAgents(dt: number): void {
     const pool = this.pool;
-    const { state, flags, px, py, pz, vx, vy, vz, id, depthZ, swimSpeed, heading, stateTime, contactStart, timer, fade, lane, slow, mouthTime } = pool;
+    const { state, flags, px, py, pz, vx, vy, vz, id, depthZ, swimSpeed, heading, stateTime, contactStart, timer, fade, lane } = pool;
     const P = this.params;
     const A = ASSUMPTIONS.agent;
     const S = SPECIES[P.species];
@@ -468,19 +407,6 @@ export class SimulationEngine {
     this.onNet[1] = 0;
     this.backedNext[0] = 0;
     this.backedNext[1] = 0;
-    this.fBackedNext[0] = 0;
-    this.fBackedNext[1] = 0;
-    this.inFunnelNext[0] = 0;
-    this.inFunnelNext[1] = 0;
-    for (let ni = 0; ni < 2; ni++) {
-      this.zoneKg[ni] = 0;
-      this.mouthKg[ni] = 0;
-      this.speedSum[ni] = 0;
-      this.speedN[ni] = 0;
-      this.stalled[ni] = 0;
-      this.snagged[ni] = 0;
-    }
-    const assistOn = this.assist.some((a) => a.speed > 0);
 
     for (let i = 0; i < pool.capacity; i++) {
       const st = state[i];
@@ -500,7 +426,7 @@ export class SimulationEngine {
       }
       stateTime[i] += dt;
       if (st === S_TRANSFER_QUEUE) {
-        this.queueDynamics(i, dt, relax, FUNNELS[lane[i] as NetIndex]);
+        this.queueDynamics(i, dt, relax, NETS[lane[i] as NetIndex]);
         continue;
       }
 
@@ -511,7 +437,6 @@ export class SimulationEngine {
       const wasInside = Math.abs(x) < hw && z < mouth + 4;
 
       flow.sample(x, z, depth, tmp);
-      if (assistOn && x > FUNNEL_X0 - ASSUMPTIONS.assist.barLength) for (const a of this.assist) a.addVelocity(x, z, tmp);
       let dvx = tmp.x;
       let dvz = tmp.z;
 
@@ -551,10 +476,8 @@ export class SimulationEngine {
           const net = nets[ni];
           if (!net.active) continue;
           const L = net.line;
-          // In the funnel the net is still the inner side, whatever the distance from it.
-          const inF = st === S_FUNNEL && lane[i] === ni;
           const d = (x - L.ax) * L.nx + (z - L.az) * L.nz;
-          if (!inF && (d < -0.2 || d > N.guideDistance)) continue;
+          if (d < -0.2 || d > N.guideDistance) continue;
           const s = (x - L.ax) * L.tx + (z - L.az) * L.tz;
           if (s < 0 || s > L.length) continue;
           const k = Math.min(net.n - 1, Math.floor(s / L.panelLength));
@@ -581,9 +504,9 @@ export class SimulationEngine {
             counters.encountered++;
           }
           guided = true;
-          ns = inF ? S_FUNNEL : S_GUIDED;
+          ns = S_GUIDED;
           lane[i] = ni;
-          if (!inF) this.onNet[ni]++;
+          this.onNet[ni]++;
           this.tally[ni][k] += kg;
 
           // The net stops the part of the flow that would carry the animal through it, and the rest sweeps it along.
@@ -592,7 +515,7 @@ export class SimulationEngine {
           const press = d > N.standoff ? vn : Math.max(0, vn);
           let sweep = Math.max(vt, 0) * N.slide;
 
-          // A snagged animal stays put until the flow works it free. Nothing else frees it.
+          // A snagged animal stays put until the flow works it free.
           if (fl & F_SNAGGED) {
             timer[i] -= dt;
             if (timer[i] <= 0) fl &= ~F_SNAGGED;
@@ -605,15 +528,11 @@ export class SimulationEngine {
             }
           }
 
-          // Behind a full pocket the funnel stacks up from the throat; behind a full funnel, the net from the mouth.
+          // Behind a full pocket the animals stack up along the net.
           if (transfer) {
-            const F = FUNNELS[ni];
-            if (inF) {
-              if (transfer.queues[ni as NetIndex].length >= this.holdCapacity && s >= F.throatS - this.fBacked[ni] * stackSpacing) {
-                sweep = 0;
-                this.fBackedNext[ni]++;
-              }
-            } else if (this.inFunnel[ni] + this.funnelEntries[ni] >= this.funnelCapacity && s >= F.mouthS - this.backed[ni] * stackSpacing) {
+            const full = transfer.queues[ni as NetIndex].length >= this.holdCapacity;
+            const stop = L.pocketS - this.backed[ni] * stackSpacing;
+            if (full && s >= stop) {
               sweep = 0;
               this.backedNext[ni]++;
             }
@@ -632,14 +551,26 @@ export class SimulationEngine {
             fl |= ni === 0 ? F_LEAKED : F_LEAKED_B;
             ns = S_PAST_NET;
             guided = false;
-            if (!inF) this.onNet[ni]--;
+            this.onNet[ni]--;
             this.noteLeak(ni, x, depth, z);
             break;
           }
+
+          // Into the pocket.
+          if (transfer && s >= L.pocketS && transfer.queues[ni as NetIndex].length < this.holdCapacity) {
+            flags[i] = fl;
+            px[i] = x;
+            pz[i] = z;
+            py[i] = -depth;
+            this.enqueue(i, ni as NetIndex);
+            guided = false;
+            ns = S_TRANSFER_QUEUE;
+          }
           break;
         }
+        if (ns === S_TRANSFER_QUEUE) continue;
       }
-      if (!guided && (st === S_GUIDED || st === S_FUNNEL) && ns === st) ns = S_FREE_DRIFT;
+      if (!guided && st === S_GUIDED && ns === S_GUIDED) ns = S_FREE_DRIFT;
       if (st === S_PAST_NET && ns === S_PAST_NET && stateTime[i] > 40) ns = S_FREE_DRIFT;
 
       // ---------------------------------------------------- integrate
@@ -675,104 +606,6 @@ export class SimulationEngine {
         z = SITE.shore.toeZ - 1;
         if (vz[i] < 0) vz[i] = 0;
       }
-
-      // ---------------------------------------------------- funnel mouth, throat and pocket
-      if (transfer && x > FUNNEL_X0 && ns !== S_PAST_NET) {
-        let inside = false;
-        let pocketed = false;
-        for (let ni = 0; ni < nets.length; ni++) {
-          if (!nets[ni].active) continue;
-          const F = FUNNELS[ni];
-          const L = F.line;
-          const s1 = (x - L.ax) * L.tx + (z - L.az) * L.tz;
-          if (s1 < F.mouthS || s1 > L.length) continue;
-          const w1 = (x - L.ax) * L.nx + (z - L.az) * L.nz;
-          if (w1 < -0.2 || w1 > (hw - L.ax - L.tx * s1) / L.nx + 0.5) continue;
-          if (ns !== S_FUNNEL || lane[i] !== ni) {
-            if (this.inFunnel[ni] + this.funnelEntries[ni] < this.funnelCapacity) {
-              // Across the mouth: in the funnel, not collected yet.
-              ns = S_FUNNEL;
-              lane[i] = ni;
-              mouthTime[i] = t;
-              this.funnelEntries[ni]++;
-            } else {
-              // The mouth is closed by a full funnel: held on the net short of it.
-              const back = s1 - F.mouthS + 0.02;
-              x -= L.tx * back;
-              z -= L.tz * back;
-              const va = vx[i] * L.tx + vz[i] * L.tz;
-              if (va > 0) {
-                vx[i] -= L.tx * va;
-                vz[i] -= L.tz * va;
-              }
-              break;
-            }
-          }
-          inside = true;
-          if (s1 >= F.throatS) {
-            if (transfer.queues[ni as NetIndex].length < this.holdCapacity) {
-              // Through the throat into the pocket: collected.
-              this.noteTransit(t - mouthTime[i]);
-              px[i] = x;
-              pz[i] = z;
-              py[i] = -depth;
-              flags[i] = fl;
-              this.enqueue(i, ni as NetIndex);
-              pocketed = true;
-              break;
-            }
-            // The throat is closed by a full pocket: held short of it.
-            const back = s1 - F.throatS + 0.02;
-            x -= L.tx * back;
-            z -= L.tz * back;
-            const va = vx[i] * L.tx + vz[i] * L.tz;
-            if (va > 0) {
-              vx[i] -= L.tx * va;
-              vz[i] -= L.tz * va;
-            }
-          }
-          // Between the net and the wing.
-          const wmax = funnelWidth(F, Math.min(s1, F.throatS)) - 0.25;
-          if (w1 > wmax) {
-            x -= L.nx * (w1 - wmax);
-            z -= L.nz * (w1 - wmax);
-            const vw = vx[i] * L.nx + vz[i] * L.nz;
-            if (vw > 0) {
-              vx[i] -= L.nx * vw;
-              vz[i] -= L.nz * vw;
-            }
-          }
-          break;
-        }
-        if (pocketed) continue;
-        // Swept back out of the mouth: on the net again, and it has to cross the mouth again.
-        if (ns === S_FUNNEL && !inside) {
-          ns = guided ? S_GUIDED : S_FREE_DRIFT;
-          mouthTime[i] = -1;
-        }
-      }
-
-      // What the mouth sonar sees: the sweep ahead of the spray bar, who is at the funnel, and who is stalled or snagged there.
-      if (!transfer || (ns !== S_GUIDED && ns !== S_FUNNEL) || x <= FUNNEL_X0 - K.approachZone) slow[i] = 0;
-      else {
-        const ni = lane[i];
-        const F = FUNNELS[ni];
-        const L = F.line;
-        const s1 = (x - L.ax) * L.tx + (z - L.az) * L.tz;
-        const va = vx[i] * L.tx + vz[i] * L.tz;
-        if (ns === S_GUIDED && s1 >= F.mouthS - AS.sweepFrom && s1 < F.mouthS - AS.sweepTo) {
-          this.speedSum[ni] += va;
-          this.speedN[ni]++;
-        }
-        if (s1 >= F.mouthS - K.approachZone) {
-          slow[i] = va < K.stallSpeed ? slow[i] + dt : 0;
-          this.zoneKg[ni] += kg;
-          if (Math.abs(s1 - F.mouthS) < 4) this.mouthKg[ni] += kg;
-          if (fl & F_SNAGGED) this.snagged[ni]++;
-          else if (slow[i] >= K.stallAfter) this.stalled[ni]++;
-        } else slow[i] = 0;
-      }
-      if (ns === S_FUNNEL) this.inFunnelNext[lane[i]]++;
 
       // Screens.
       if (z < intake.mouthZ + 0.8) {
@@ -832,12 +665,7 @@ export class SimulationEngine {
     for (let ni = 0; ni < nets.length; ni++) {
       nets[ni].bioKg.set(this.tally[ni]);
       this.backed[ni] = this.backedNext[ni];
-      this.fBacked[ni] = this.fBackedNext[ni];
-      this.inFunnel[ni] = this.inFunnelNext[ni];
-      this.funnelEntries[ni] = 0;
     }
-    this.stallKgS += (this.stalled[0] + this.stalled[1]) * kg * dt;
-    this.snagKgS += (this.snagged[0] + this.snagged[1]) * kg * dt;
   }
 
   private noteLeak(net: number, x: number, depth: number, z: number): void {
@@ -864,47 +692,23 @@ export class SimulationEngine {
     this.collectsThisStep++;
   }
 
-  private noteTransit(seconds: number): void {
-    if (!(seconds >= 0)) return;
-    this.transitSum += seconds;
-    this.transitCount++;
-    this.transits.push(seconds);
-    if (this.transits.length > TRANSIT_WINDOW) this.transits.shift();
-  }
-
-  /** The assist controllers read the mouth sonar, the pocket, the lifts and the net, then set their pumps. */
-  private updateAssist(dt: number): void {
-    const tr = this.transfer!;
-    for (let ni = 0; ni < this.assist.length; ni++) {
-      const net = this.nets[ni];
-      const on = net.active;
-      this.assist[ni].update(dt, {
-        presentKg: on ? this.zoneKg[ni] : 0,
-        mouthKg: on ? this.mouthKg[ni] : 0,
-        speed: on && this.speedN[ni] > 0 ? this.speedSum[ni] / this.speedN[ni] : Number.NaN,
-        pocketFull: tr.queues[ni as NetIndex].length >= this.holdCapacity,
-        liftAvailable: tr.running && tr.poweredPathAvailable,
-        head: net.head,
-        relief: net.reliefFraction > 0,
-      });
-    }
-  }
-
-  /** In the pocket: each animal closes up toward the wet-well entry in its turn, while a lift draws. */
-  private queueDynamics(i: number, dt: number, relax: number, F: Funnel): void {
+  /** Motion through the pocket toward the suction: the funnel narrows, the animals close up and rise to it. */
+  private queueDynamics(i: number, dt: number, relax: number, L: NetLine): void {
     const p = this.pool;
     const aid = p.id[i];
-    const L = F.line;
-    const q = Math.min(1, p.queueIndex[i] / Math.max(1, this.holdCapacity));
-    const sT = F.entryS - 0.4 - q * (F.entryS - F.throatS - 0.6);
-    const wT = 0.25 + hash01(aid, 11) * (F.throatWidth - 0.5);
-    const tx = L.ax + L.tx * sT + L.nx * wT;
-    const tz = L.az + L.tz * sT + L.nz * wT;
+    const K = SITE.collector;
+    const end = collectorPoint(L);
+    const rx = p.px[i] - end.x;
+    const rz = p.pz[i] - end.z;
+    const q = Math.min(1, Math.hypot(rx, rz) / K.pocketLength);
+    const lat = (hash01(aid, 11) - 0.5) * 2 * (K.throatHalfWidth + (K.mouthHalfWidth - K.throatHalfWidth) * q) * 0.7;
+    const ahead = 1 + q * K.pocketLength * 0.5;
+    const tx = end.x - L.tx * ahead + L.nx * (lat + 2);
+    const tz = end.z - L.tz * ahead + L.nz * (lat + 2);
     const tdepth = 2.2 + hash01(aid, 13) * 4;
-    const tr = this.transfer!;
-    const vf = K.funnelSpeed * (tr.running && tr.poweredPathAvailable ? 1 : 0.2);
-    let dvx = (tx - p.px[i]) * 0.3;
-    let dvz = (tz - p.pz[i]) * 0.3;
+    const vf = ASSUMPTIONS.collector.funnelSpeed;
+    let dvx = (tx - p.px[i]) * 0.2 + L.tx * vf;
+    let dvz = (tz - p.pz[i]) * 0.2 + L.tz * vf;
     const m = Math.hypot(dvx, dvz);
     if (m > vf) {
       dvx *= vf / m;
@@ -914,8 +718,8 @@ export class SimulationEngine {
     let dvy = (depth - tdepth) * 0.3;
     if (dvy > 0.08) dvy = 0.08;
     else if (dvy < -0.08) dvy = -0.08;
-    dvx += (valueNoise(aid * 5 + 2, this.time * 0.3) - 0.5) * 0.01;
-    dvz += (valueNoise(aid * 5 + 3, this.time * 0.3) - 0.5) * 0.01;
+    dvx += (valueNoise(aid * 5 + 2, this.time * 0.3) - 0.5) * 0.03;
+    dvz += (valueNoise(aid * 5 + 3, this.time * 0.3) - 0.5) * 0.03;
     p.vx[i] += (dvx - p.vx[i]) * relax * 2;
     p.vy[i] += (dvy - p.vy[i]) * relax * 2;
     p.vz[i] += (dvz - p.vz[i]) * relax * 2;
@@ -924,7 +728,6 @@ export class SimulationEngine {
     p.py[i] += p.vy[i] * dt;
   }
 
-  /** The lift takes the animal at the head of each pocket, and only once it is at the wet-well entry. */
   private processTransfer(dt: number): void {
     const tr = this.transfer!;
     const p = this.pool;
@@ -934,11 +737,11 @@ export class SimulationEngine {
     for (const ni of [0, 1] as const) {
       const queue = tr.queues[ni];
       if (queue.length === 0) continue;
-      const end = FUNNELS[ni].entry;
+      const end = collectorPoint(NETS[ni]);
       let n = 0;
       while (tr.tokens >= 1 && queue.length > 0) {
         const i = queue[0];
-        if (Math.hypot(p.px[i] - end.x, p.pz[i] - end.z) > SUCTION_REACH) break;
+        if (Math.hypot(p.px[i] - end.x, p.pz[i] - end.z) > 9) break;
         queue.shift();
         tr.tokens -= 1;
         n++;

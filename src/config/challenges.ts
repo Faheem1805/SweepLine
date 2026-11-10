@@ -105,15 +105,6 @@ export const CHALLENGES: readonly Challenge[] = [
     engineering: true,
   },
   {
-    id: 'stall',
-    problem: 'They stall at the funnel',
-    trap: 'A collector that relies on the sweep alone slows down whenever the plant cuts its flow. Animals linger at the mouth, and nobody knows unless someone watches it.',
-    answer: 'A sonar watches the mouth. An experimental spray-bar assist, off by default, starts only when animals are there and the sweep stays weak, and stands down if the pocket is full, the lift is down, head is high or relief is open. It shortens the wait; it does not change what is caught.',
-    scenario: 'funnel',
-    camera: 'collector',
-    engineering: true,
-  },
-  {
     id: 'fouling',
     problem: 'Gulf fouling',
     trap: 'Anything left in warm Gulf water grows over within weeks. Fabric barriers have clogged in under a month.',

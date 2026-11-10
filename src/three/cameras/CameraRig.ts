@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { SITE, seabedDepth } from '../../config/site';
-import { FUNNELS, NETS, pointOnNet } from '../../simulation/geometry';
+import { NETS, pointOnNet } from '../../simulation/geometry';
 
 export type CameraPreset = 'aerial' | 'top' | 'mouth' | 'net' | 'underwater' | 'collector' | 'intake' | 'release' | 'compare' | 'free';
 
@@ -43,11 +43,8 @@ export function presetPose(key: Exclude<CameraPreset, 'free'>): CameraPose {
         target: v(p.x + L.tx * 14 + L.nx * 0.6, -3.6, p.z + L.tz * 14 + L.nz * 0.6),
       };
     }
-    case 'collector': {
-      // Close over net A's funnel from the bloom side: approach, mouth, wings, throat, pocket, then the lifts behind.
-      const F = FUNNELS[0];
-      return { pos: v(F.mouthIn.x - 11, 17, F.mouthIn.z + 11), target: v(F.mouthIn.x + 2.6, -1, F.mouthIn.z - 4.5) };
-    }
+    case 'collector':
+      return { pos: v(26, 19, 44), target: v(70, 2.5, 76) };
     case 'intake':
       return { pos: v(210, 36, -12), target: v(330, 2, -120) };
     case 'release': {

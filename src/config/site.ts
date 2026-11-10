@@ -100,22 +100,14 @@ export const SITE = {
     pileDiameter: 1.1,
   },
 
-  /**
-   * Funnel at the downstream end of each net, in the wedge between the net and the east wall. The
-   * net is its inner side; a perforated wing is its outer side. Positions are distances back from
-   * the net's end, along the net (m); widths are measured off the net face (m). The wall stands
-   * 0.36 m off the net per metre back from the end, so every width must fit inside that.
-   * See `src/simulation/geometry.ts` (FUNNELS): the engine and the 3D scene both draw from it.
-   */
+  /** Collection pocket at the downstream end of each net, against the east wall. */
   collector: {
-    /** Mouth: where an animal swept along the net enters the funnel. It spans net to wall (5.8 m here), so nothing drifting down the wedge gets round the wing. */
-    mouthBack: 16,
-    /** Throat: the narrowest point, where the funnel opens into the pocket. */
-    throatBack: 7,
-    throatWidth: 1.6,
-    /** Wet-well entry: the end of the pocket, where the screw lift draws. */
-    entryBack: 4.5,
-    /** Clear gap of the bar rack across the funnel mouth (m). Smaller than a 30–45 cm Blue Blubber bell: see `rackCheck`. Unvalidated. */
+    /** Length of the funnel ahead of the suction, along the net (m). */
+    pocketLength: 16,
+    /** Half-width of the funnel mouth, and of the suction it narrows to (m). */
+    mouthHalfWidth: 8,
+    throatHalfWidth: 1.4,
+    /** Clear gap of the bar rack across the funnel mouth (m): passes Gulf bells, stops turtles and large debris. */
     rackGap: 0.2,
     /** Pump platform position (on piles, against the wall) relative to the net's end. */
     platformHalfWidth: 7,

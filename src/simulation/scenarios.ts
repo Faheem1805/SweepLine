@@ -126,21 +126,6 @@ export const SCENARIOS: Scenario[] = [
     tone: 'failure',
   },
   {
-    id: 'funnel',
-    name: 'Funnel assist',
-    tagline: 'Three units off, the sweep goes weak',
-    question: 'What if the sweep is too weak to clear the funnel?',
-    description: 'Three of the four units come off line, so the channel flow and the sweep along the net drop to a quarter. Animals slow at the funnel mouth. With the experimental assist on Auto, a spray bar ahead of the mouth starts after the slow sweep has lasted 90 s, and goes back to idle once the units return. Replay with the assist Off to compare on the same seed.',
-    params: { assistMode: 'auto' },
-    start: 'steady',
-    preRoll: 4000,
-    script: [
-      { at: 30, action: { kind: 'params', params: { unitsRunning: 1 }, message: 'Three units off line: channel flow and the sweep along the net drop to a quarter' } },
-      { at: 630, action: { kind: 'params', params: { unitsRunning: 4 }, message: 'All four units back: full sweep along the net' } },
-    ],
-    tone: 'stress',
-  },
-  {
     id: 'tear',
     name: 'Panel tears out',
     tagline: 'A hole in net A',
