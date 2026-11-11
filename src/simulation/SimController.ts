@@ -120,7 +120,7 @@ export interface SimSnapshot {
     /** Jet purge: panels firing now, bursts and animals freed this run, the last burst. */
     jets: { firing: number; bursts: number; freed: number; energyKWh: number; last: string | null };
     /** Fish and turtles (illustrative): turned back at a net, swum out of the mouth, lifted and sent to sea alive; elevator pauses for a turtle. */
-    bycatch: { turnedBack: number; swamOut: number; lifted: number; turtlePauses: number };
+    bycatch: { turnedBack: number; swamOut: number; lifted: number; turtlePauses: number; keptOut: number };
   };
   channel: { flow: number; speed: number; waveAtNet: number; captureBand: number };
   sonar: { on: boolean; inRangeT: number; arrivalTph: number };
@@ -815,7 +815,7 @@ export class SimController {
       hold: s.liftHold,
       sievedKg: s.sieved[0] * kg,
       jets: { firing, bursts: J.bursts, freed: J.freed, energyKWh: J.energyKWh, last: J.lastNet >= 0 ? `Net ${J.lastNet === 0 ? 'A' : 'B'}, panel ${J.lastPanel + 1}` : null },
-      bycatch: { turnedBack: s.bycatch?.turnedBack ?? 0, swamOut: s.bycatch?.swamOut ?? 0, lifted: s.bycatch?.lifted ?? 0, turtlePauses: s.bycatch?.turtlePauses ?? 0 },
+      bycatch: { turnedBack: s.bycatch?.turnedBack ?? 0, swamOut: s.bycatch?.swamOut ?? 0, lifted: s.bycatch?.lifted ?? 0, turtlePauses: s.bycatch?.turtlePauses ?? 0, keptOut: s.bycatch?.keptOut ?? 0 },
     };
   }
 

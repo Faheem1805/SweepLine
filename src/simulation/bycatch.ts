@@ -2,10 +2,16 @@ import { ASSUMPTIONS } from '../config/assumptions';
 import { SITE, seabedDepthFast } from '../config/site';
 import type { FlowField } from './flowField';
 import { NETS } from './geometry';
-import { HOPPER, TAIL } from './lift';
+import { HOPPER, MOUTH, TAIL } from './lift';
 import { hash01, SeededRandom, valueNoise } from './seededRandom';
 
 const B = ASSUMPTIONS.bycatch;
+/** Just up-channel of the middle of net A's open panel, where its catch streams through. */
+const GAP = (() => {
+  const A = NETS[0];
+  const sm = (A.openFrom + A.length) / 2;
+  return { x: A.ax + A.tx * sm + A.nx * 5, z: A.az + A.tz * sm + A.nz * 5 };
+})();
 
 /**
  * Other animals in the channel with the bloom: fish and sea turtles. Illustrative, not calibrated.
@@ -36,7 +42,13 @@ export class BycatchState {
   swamOut = 0;
   lifted = 0;
   turtlePauses = 0;
+  /** Turtles turned away by the bar screen at the hopper's mouth. */
+  keptOut = 0;
   private readonly met = new Uint8Array(this.n);
+  /** A turtle is at the bars now (counted once per visit). */
+  private readonly atBars = new Uint8Array(this.n);
+  /** Seconds a turned-back turtle keeps swimming away before the bloom draws it back. */
+  private readonly away = new Float32Array(this.n);
   private readonly rng: SeededRandom;
   private readonly tmp = { x: 0, z: 0 };
   private holding = false;
@@ -101,11 +113,20 @@ export class BycatchState {
         const L = NETS[ni];
         const d = (x - L.ax) * L.nx + (z - L.az) * L.nz;
         const s = (x - L.ax) * L.tx + (z - L.az) * L.tz;
-        if (s < 0 || s > L.length) continue;
+        // Net B's end is the hopper's open mouth (barred): handled below.
+        if (s < 0 || s > (ni === 1 ? L.drawTo : L.length)) continue;
         // Small fish slip through net A's coarse mesh either way; nothing slips through net B.
         if (ni === 0 && !turtle && hash01(i, 9) < B.smallShare) continue;
         if (d > -0.5 && d < B.senseRange) {
           near = true;
+          // At net A's open panel the bar screen is what turns a turtle back.
+          if (turtle && ni === 0 && s > L.openFrom - 2) {
+            if (!this.atBars[i]) {
+              this.keptOut++;
+              this.away[i] = 240;
+            }
+            this.atBars[i] = 1;
+          }
           sx = L.nx * cruise + L.tx * cruise * 0.15;
           sz = L.nz * cruise + Math.abs(L.tz) * cruise * 0.3;
           if (d < 0.6) {
@@ -116,17 +137,24 @@ export class BycatchState {
           this.met[i] |= 1 << ni;
         }
       }
-      // Turtles go where the jellyfish are thickest: the funnel.
-      if (turtle && !near) {
-        const fx = TAIL.x - x;
-        const fz = HOPPER.z1 + 6 - z;
+      // Turtles go where the jellyfish are thickest: where net A sends its catch through its open panel.
+      // One the bars have turned back swims off up the channel for a while first.
+      if (turtle && this.away[i] > 0) {
+        this.away[i] -= dt;
+        if (!near) {
+          sx = (valueNoise(i * 17 + 3, t * 0.02) - 0.5) * cruise * 0.6;
+          sz = cruise * 0.9;
+        }
+      } else if (turtle && !near) {
+        const fx = GAP.x - x;
+        const fz = GAP.z - z;
         const fd = Math.hypot(fx, fz) || 1;
-        const pull = valueNoise(i * 13 + 5, t * 0.01) > 0.55 ? 0.6 : 0.1;
+        const pull = valueNoise(i * 13 + 5, t * 0.01) > 0.45 ? 0.7 : 0.2;
         sx = sx * (1 - pull) + (fx / fd) * cruise * pull;
         sz = sz * (1 - pull) + (fz / fd) * cruise * pull;
       }
       // Once headed upstream, keep going: fish swim against the current (rheotaxis).
-      if (!near && this.met[i]) sz += cruise * 0.6;
+      if (!near && this.met[i] && !turtle) sz += cruise * 0.6;
       const vx = tmp.x + sx;
       const vz = tmp.z + sz;
       this.vx[i] = vx;
@@ -138,10 +166,18 @@ export class BycatchState {
       if (x > lim) x = lim;
       if (x < -lim) x = -lim;
       // In the hopper: a turtle holds the elevator; a fish next to the scoop may be lifted with the water.
+      // The bar screen across the hopper's mouth: a turtle is too big to pass; it turns back up the funnel.
+      const atMouth = x > MOUTH.x0 - 0.5 && x < MOUTH.x1 + 0.5 && z < MOUTH.z + 0.8 && z > MOUTH.z - 3;
+      if (turtle && atMouth) {
+        z = MOUTH.z + 0.8;
+        this.heading[i] = Math.PI / 2;
+        if (!this.atBars[i]) this.keptOut++;
+        this.atBars[i] = 1;
+      } else if (turtle && z > MOUTH.z + 8 && Math.hypot(x - GAP.x, z - GAP.z) > 15) this.atBars[i] = 0;
       const inHopper = x > HOPPER.x0 && x < HOPPER.x1 && z > HOPPER.z0 && z < HOPPER.z1;
       if (inHopper && turtle) {
+        // Only a turtle small enough to slip the bars gets here: the hopper camera holds the elevator until it has swum out.
         hold = true;
-        // It turns round and swims back out of the open funnel.
         this.heading[i] = Math.PI / 2;
         z += B.turtleSpeed * dt;
       } else if (inHopper && liftTurning && Math.hypot(x - TAIL.x, z - TAIL.z) < 1.5 && hash01(i, Math.floor(t / dt)) < B.scoopPerSecond * dt) {
@@ -149,6 +185,17 @@ export class BycatchState {
         this.timer[i] = ASSUMPTIONS.transfer.length / ASSUMPTIONS.transfer.pipeVelocity;
         this.lifted++;
         continue;
+      } else if (inHopper) {
+        // A fish in the hopper heads back out of the open mouth against the inflow, kept inside the screens.
+        const ex = MOUTH.x - x;
+        const ez = MOUTH.z + 2 - z;
+        const ed = Math.hypot(ex, ez) || 1;
+        x += (ex / ed) * cruise * 0.8 * dt;
+        z += (ez / ed) * cruise * 0.8 * dt;
+        x = Math.min(HOPPER.x1 - 0.3, Math.max(HOPPER.x0 + 0.3, x));
+        z = Math.max(HOPPER.z0 + 0.3, z);
+        if (z >= HOPPER.z1 && (x < MOUTH.x0 || x > MOUTH.x1)) z = HOPPER.z1 - 0.3;
+        this.met[i] |= 2;
       }
       // Out of the mouth: gone to sea; another one comes in later.
       if (z > C.mouthZ + 30) {

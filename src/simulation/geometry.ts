@@ -29,6 +29,8 @@ export interface NetLine {
    * along its face goes through the gap and on down the wall into net B's funnel.
    */
   openFrom: number;
+  /** Arc length to which the mesh is drawn: net A to its open panel, net B to the hopper's mouth (the hopper's screens take over past it). */
+  drawTo: number;
 }
 
 const DEG = Math.PI / 180;
@@ -59,6 +61,7 @@ function makeNet(index: NetIndex): NetLine {
     panelLength: length / panels,
     pocketS: length - SITE.collector.pocketLength,
     openFrom: index === 0 ? length - length / panels : length,
+    drawTo: index === 0 ? length - length / panels : length - SITE.collector.mouthBack,
   };
 }
 

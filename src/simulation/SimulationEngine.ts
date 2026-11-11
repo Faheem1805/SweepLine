@@ -808,6 +808,9 @@ export class SimulationEngine {
     p.px[i] += p.vx[i] * dt;
     p.pz[i] += p.vz[i] * dt;
     p.py[i] += p.vy[i] * dt;
+    // The wall bounds the funnel and the hopper.
+    const wall = SITE.channel.halfWidth - 0.8;
+    if (p.px[i] > wall) p.px[i] = wall;
   }
 
   private clearLiftCounts(): void {

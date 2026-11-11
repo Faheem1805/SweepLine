@@ -40,6 +40,8 @@ const STATUS: Record<ModuleStatus, number> = {
 
 const K = ASSUMPTIONS.lift;
 const BK = K.bucket;
+/** Blur copies per bucket at fast time-lapse. */
+const GHOSTS = 3;
 
 function box(mat: THREE.Material, w: number, h: number, d: number, x: number, y: number, z: number): THREE.Mesh {
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
@@ -64,6 +66,25 @@ function beam(mat: THREE.Material, a: Vec3, b: Vec3, size: number): THREE.Mesh {
   m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), B.sub(A).normalize());
   m.castShadow = true;
   return m;
+}
+
+/** A screen of net B's mesh for the hopper's sides: a fine diamond grid, see-through. */
+function screenMaterial(): THREE.MeshStandardMaterial {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const x = c.getContext('2d')!;
+  x.strokeStyle = 'rgba(200, 214, 196, 0.9)';
+  x.lineWidth = 3;
+  x.beginPath();
+  x.moveTo(0, 0);
+  x.lineTo(64, 64);
+  x.moveTo(64, 0);
+  x.lineTo(0, 64);
+  x.stroke();
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  return mediumMaterial({ map: t, transparent: true, alphaTest: 0.05, side: THREE.DoubleSide, roughness: 0.8, depthWrite: false });
 }
 
 /** A pipe along a polyline, with an additive pulse tube inside it that shows the flow. */
@@ -135,6 +156,8 @@ export class CollectorSystem {
   private readonly waterMat: THREE.ShaderMaterial;
   private readonly buckets: THREE.InstancedMesh;
   private readonly bucketSides: THREE.InstancedMesh;
+  /** Faint copies of the buckets along their path, for motion blur at fast time-lapse. */
+  private readonly ghosts: THREE.InstancedMesh;
   private readonly bucketWater: THREE.InstancedMesh;
   private readonly sprockets: THREE.Mesh[] = [];
   private readonly lamps: THREE.MeshBasicMaterial[] = [];
@@ -218,17 +241,48 @@ export class CollectorSystem {
 
     // Sheet-pile face along the west breakwater, from below the hopper to the funnel's mouth: the funnel's outer side.
     g.add(block(concrete, hw, hw + 0.6, -SITE.channel.depth - 1.5, wallTop - 0.2, SHEET_PILE_Z[0], SHEET_PILE_Z[1]));
-    // Hopper: an open box against the wall, its mouth toward the funnel.
-    const t = 0.35;
+    // Hopper, in the corner of net B and the wall. Net B runs into its mouth, inside the funnel and
+    // facing the flow; its other sides are screens of net B's mesh, so the water carries on through
+    // and the current carries the bloom in. A concrete floor, steel frame and cap beams.
+    const screen = screenMaterial();
+    const wall = (x0: number, z0: number, x1: number, z1: number) => {
+      const len = Math.hypot(x1 - x0, z1 - z0);
+      const geo = new THREE.PlaneGeometry(len, wallTop - H.floor);
+      // One diamond of mesh every 0.3 m, as on net B.
+      const uv = geo.attributes.uv as THREE.BufferAttribute;
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) * len) / 0.3, (uv.getY(i) * (wallTop - H.floor)) / 0.3);
+      const m = new THREE.Mesh(geo, screen);
+      m.position.set((x0 + x1) / 2, (wallTop + H.floor) / 2, (z0 + z1) / 2);
+      m.rotation.y = -Math.atan2(z1 - z0, x1 - x0);
+      m.renderOrder = 6;
+      g.add(m);
+      g.add(beam(steel, { x: x0, y: wallTop + 0.08, z: z0 }, { x: x1, y: wallTop + 0.08, z: z1 }, 0.22));
+      for (let d = 0; d <= len + 0.01; d += len / Math.max(1, Math.round(len / 4))) {
+        const f = d / len;
+        const x = x0 + (x1 - x0) * f;
+        const z = z0 + (z1 - z0) * f;
+        g.add(block(steel, x - 0.12, x + 0.12, H.floor, wallTop, z - 0.12, z + 0.12));
+      }
+    };
     g.add(block(concrete, H.x0, H.x1, H.floor - 0.4, H.floor, H.z0, H.z1));
-    g.add(block(concrete, H.x0, H.x0 + t, H.floor, wallTop, H.z0, H.z1));
-    g.add(block(concrete, H.x0, H.x1, H.floor, wallTop, H.z0, H.z0 + t));
-    g.add(block(concrete, H.x0, MOUTH.x - 1.8, H.floor, wallTop, H.z1 - t, H.z1));
-    g.add(block(concrete, MOUTH.x - 1.8, H.x1, -0.6, wallTop, H.z1 - t, H.z1));
+    wall(H.x0, H.z0, H.x0, H.z1);
+    wall(H.x0, H.z0, H.x1, H.z0);
+    wall(H.x0, H.z1, MOUTH.x0, H.z1);
+    // The mouth: open from where net B meets it to the wall, with a bar screen that passes every
+    // target bell and keeps turtles and big fish out.
+    const bars = Math.round((MOUTH.x1 - MOUTH.x0) / (SITE.collector.barGap + 0.1));
+    const barGeo = new THREE.CylinderGeometry(0.05, 0.05, wallTop - H.floor, 8);
+    const barMesh = new THREE.InstancedMesh(barGeo, steel, bars);
+    for (let i = 0; i < bars; i++) {
+      const x = MOUTH.x0 + ((i + 0.5) * (MOUTH.x1 - MOUTH.x0)) / bars;
+      barMesh.setMatrixAt(i, this.m.makeTranslation(x, (wallTop + H.floor) / 2, MOUTH.z));
+    }
+    g.add(barMesh);
+    g.add(block(steel, MOUTH.x0, MOUTH.x1, wallTop, wallTop + 0.16, MOUTH.z - 0.11, MOUTH.z + 0.11));
     g.add(block(steel, H.x0 - 0.9, H.x0, wallTop, wallTop + 0.12, H.z0, H.z1));
 
-    // Funnel sensor: an imaging sonar on a post at the funnel's mouth, looking down the funnel into the hopper.
-    const s0 = pointOnNet(L, L.length - SITE.collector.pocketLength + 1);
+    // Funnel sensor: an imaging sonar on a post against the wall just up the funnel, looking into the hopper's mouth.
+    const s0 = { z: MOUTH.z + 5 };
     const head = new THREE.Vector3(hw - 0.8, -2.2, s0.z);
     g.add(block(steel, hw - 1.0, hw - 0.6, -2, 1.8, s0.z - 0.2, s0.z + 0.2));
     g.add(box(yellow, 0.7, 0.55, 0.7, head.x, head.y, head.z));
@@ -317,6 +371,10 @@ export class CollectorSystem {
     this.buckets.frustumCulled = false;
     g.add(this.buckets);
     const sideMat = new THREE.MeshStandardMaterial({ color: 0xdfeef3, roughness: 0.1, metalness: 0.2, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.FrontSide });
+    this.ghosts = new THREE.InstancedMesh(bucketGeometry(), new THREE.MeshStandardMaterial({ color: 0xd8dee0, roughness: 0.4, metalness: 0.5, transparent: true, opacity: 0.22, depthWrite: false }), BUCKETS * GHOSTS);
+    this.ghosts.frustumCulled = false;
+    this.ghosts.count = 0;
+    g.add(this.ghosts);
     this.bucketSides = new THREE.InstancedMesh(bucketSidesGeometry(), sideMat, BUCKETS);
     this.bucketSides.frustumCulled = false;
     this.bucketSides.renderOrder = 9;
@@ -397,31 +455,39 @@ export class CollectorSystem {
     this.group.add(line);
 
     this.anchor.set(HEAD.x, HEAD.y + 6, zc);
-    const f = pointOnNet(L, L.length - 9);
+    const f = pointOnNet(L, L.length - SITE.collector.mouthBack - 6);
     this.sections.funnel.set(f.x + 1.5, 0.6, f.z);
     this.sections.hopper.set((H.x0 + H.x1) / 2, 1.2, (H.z0 + H.z1) / 2);
     pivotAt(K.length * 0.55, this.p);
     this.sections.screw.set(this.p.x, this.p.y + 1.2, zc);
     this.sections.launder.set(HEAD.x + 1.2, HEAD.y + 1.6, zc);
     this.sections.tank.set(T.x, tankTop + 1.4, T.z);
-    this.placeBuckets(0, false);
+    this.placeBuckets(0, false, 0);
   }
 
   /** Buckets round the chain loop at `chain` metres of travel. */
-  private placeBuckets(chain: number, wet: boolean): void {
+  /** Matrix of the bucket at chain coordinate `s`: hanging level below its pivot, swung over when tipped. */
+  private bucketMatrix(s: number): THREE.Matrix4 {
+    pivotAt(s, this.p);
+    this.q.setFromAxisAngle(this.zAxis, -tipAt(s));
+    this.v.set(0, -HANG, 0).applyQuaternion(this.q);
+    this.v.x += this.p.x;
+    this.v.y += this.p.y;
+    this.v.z = this.p.z;
+    return this.m.compose(this.v, this.q, this.sc);
+  }
+
+  /**
+   * Buckets round the chain loop at `chain` metres of travel. `step` is how far the chain moved since
+   * the last frame: when that is a good part of a bucket's spacing (fast time-lapse), faint copies
+   * along the way blur the motion instead of letting identical buckets strobe.
+   */
+  private placeBuckets(chain: number, wet: boolean, step: number): void {
     const off = ((chain % PITCH) + PITCH) % PITCH;
     let w = 0;
     for (let k = 0; k < BUCKETS; k++) {
       const s = off + k * PITCH;
-      pivotAt(s, this.p);
-      const tip = -tipAt(s);
-      this.q.setFromAxisAngle(this.zAxis, tip);
-      // The bucket hangs below its pivot and swings about it when tipped.
-      this.v.set(0, -HANG, 0).applyQuaternion(this.q);
-      this.v.x += this.p.x;
-      this.v.y += this.p.y;
-      this.v.z = this.p.z;
-      this.m.compose(this.v, this.q, this.sc);
+      this.bucketMatrix(s);
       this.buckets.setMatrixAt(k, this.m);
       this.bucketSides.setMatrixAt(k, this.m);
       if (wet && s < TIP_AT - 0.05) this.bucketWater.setMatrixAt(w++, this.m);
@@ -430,16 +496,28 @@ export class CollectorSystem {
     this.bucketSides.instanceMatrix.needsUpdate = true;
     this.bucketWater.count = w;
     this.bucketWater.instanceMatrix.needsUpdate = true;
+    let g = 0;
+    const blur = Math.min(Math.abs(step), PITCH * 0.9);
+    if (blur > PITCH * 0.15) {
+      const dir = Math.sign(step);
+      for (let k = 0; k < BUCKETS; k++) {
+        for (let j = 1; j <= GHOSTS; j++) this.ghosts.setMatrixAt(g++, this.bucketMatrix(off + k * PITCH - (dir * blur * j) / (GHOSTS + 1)));
+      }
+    }
+    this.ghosts.count = g;
+    this.ghosts.instanceMatrix.needsUpdate = true;
   }
 
-  update(tr: TransferState, flow: number, time: number): void {
+  /** `alpha`: how far between the last two simulation steps to draw (as the jellyfish are drawn). */
+  update(tr: TransferState, flow: number, time: number, alpha = 1): void {
     this.pulseMat.uniforms.uFlow.value = flow;
     const st = tr.lift;
     this.waterMat.uniforms.uFlow.value = st.speed;
-    const chain = st.phase * PITCH;
-    this.placeBuckets(chain, st.phase > 0);
+    const chain = (st.prevPhase + (st.phase - st.prevPhase) * alpha) * PITCH;
+    const step = chain - this.lastChain;
+    this.placeBuckets(chain, st.phase > 0, Math.abs(step) < LOOP / 2 ? step : 0);
     // Sprockets turn with the chain.
-    const da = (chain - this.lastChain) / K.sprocketRadius;
+    const da = step / K.sprocketRadius;
     this.lastChain = chain;
     for (const s of this.sprockets) s.rotation.z -= da;
     const status: ModuleStatus[] = [tr.primaryStatus, tr.standbyStatus];

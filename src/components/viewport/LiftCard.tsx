@@ -77,7 +77,9 @@ export function LiftCard() {
       <div className="mt-1.5 border-t border-line pt-1.5 text-[10.5px] leading-snug text-ink-2">
         Jets: {lift.jets.bursts} burst{lift.jets.bursts === 1 ? '' : 's'}, {lift.jets.freed} stuck bells freed{lift.jets.firing > 0 ? ' · firing now' : ''}
         <br />
-        Fish turned back at the nets: {lift.bycatch.turnedBack} · lifted to sea alive: {lift.bycatch.lifted} · waits for a turtle: {lift.bycatch.turtlePauses}
+        Fish turned back at the nets: {lift.bycatch.turnedBack} · lifted to sea alive: {lift.bycatch.lifted}
+        <br />
+        Turtle visits turned back by the 50 cm bars: {lift.bycatch.keptOut} · elevator waits for a turtle: {lift.bycatch.turtlePauses}
       </div>
       <button
         type="button"

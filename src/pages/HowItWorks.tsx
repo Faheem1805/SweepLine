@@ -89,7 +89,7 @@ const liftKW = Math.round(LINE.kW / 10) * 10;
 const STEPS = [
   { title: 'Warning', value: '30 min', text: 'Offshore detection gives hours. In the model, sonar at the mouth sees a bloom at least 30 minutes before it reaches the net, day or night, and arms the elevator.' },
   { title: 'Net', value: `${net.through.toFixed(2)} m/s`, text: `Water passes through ${ASSUMPTIONS.net.mesh[0] * 1000} mm mesh, then ${ASSUMPTIONS.net.mesh[1] * 1000} mm. Jellyfish are held back, and the flow sweeps them along the face.` },
-  { title: 'Funnel', value: `${Math.round(net.rideMin)} min ride`, text: 'Net A is coarse and its last panel is open, so what it guides goes on down the wall to net B. Net B is fine and catches the small ones too. Both end up in one funnel at net B’s end.' },
+  { title: 'Funnel', value: `${Math.round(net.rideMin)} min ride`, text: 'Net A is coarse and its last panel is open, so what it guides goes on down the wall to net B. Net B is fine and catches the small ones too. Net B runs straight into the collector’s mouth, inside its funnel, so the current carries both catches in.' },
   { title: 'Bucket elevator', value: `≈ ${liftKW} kW`, text: `One elevator, like an escalator of buckets. Each bucket scoops water with the jellyfish in it and lifts them ${LINE.lift.toFixed(1)} m to a head tank. It runs only while a sensor sees jellyfish in the funnel. Twin drives, duty and standby.` },
   { title: 'Release', value: `${LINE.transitMin.toFixed(0)} min`, text: `A ${ASSUMPTIONS.transfer.pipeBore} m line over the breakwater and ${ASSUMPTIONS.transfer.length / 1000} km along the bed, with no air, to the sea down-drift.` },
 ];
@@ -109,7 +109,7 @@ const QUESTIONS: Array<{ q: string; a: string }> = [
   },
   {
     q: 'What about fish and turtles?',
-    a: 'The mesh runs at fish-screen speed, so a fish that meets it can turn and swim back out of the channel against a current it easily beats; taut mesh is not a gill net, and small fish slip through net A’s coarse mesh. A fish that does end up in the hopper rides up in a bucket of water and goes out to sea alive with the bloom, not onto the plant’s screens. Turtles follow jellyfish into the funnel: the hopper camera sees one and the elevator waits until it swims back out. The twin shows all three. That is a design argument, not a test: bycatch is watched in the panel test at sea.',
+    a: 'The answer for other animals has four layers. The mesh runs at fish-screen speed, so a fish that meets a net turns and swims back out of the channel against a current it easily beats; small fish slip through net A’s coarse mesh. Both openings, net A’s open panel and the hopper’s mouth, have bar screens with 50 cm gaps: every target bell passes, turtles and big fish do not. A small fish that swims into the hopper heads back out of its open mouth; one that is scooped rides up in a bucket of water and goes out to sea alive, not onto the plant’s screens. A turtle small enough to slip the bars is seen by the hopper camera, and the elevator waits until it has swum out. The twin shows all of it, illustratively; bycatch is watched in the panel test at sea.',
   },
   {
     q: 'What if jellyfish get stuck on the net?',

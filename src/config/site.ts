@@ -109,8 +109,20 @@ export const SITE = {
 
   /** Collection funnel at net B's end, against the west breakwater (net A's end is open and feeds it). */
   collector: {
-    /** Length of the funnel ahead of the suction, along the net (m). */
-    pocketLength: 16,
+    /** Length of the funnel along net B, from where the bloom is taken into the collector's care to the net's end (m). */
+    pocketLength: 22,
+    /**
+     * Where net B opens into the collector: the hopper's mouth, this far back along net B from its
+     * end (m). The hopper sits in the corner of net B and the wall, its mouth inside net B's funnel
+     * facing the flow, so the current carries the bloom straight in; its other sides are screens of
+     * net B's mesh, so the water carries on through.
+     */
+    mouthBack: 11.3,
+    /**
+     * Clear gap of the bar screens across both openings, net A's open panel and the hopper's mouth
+     * (m): wider than the largest target bell (45 cm), narrower than a turtle or a big fish.
+     */
+    barGap: 0.5,
     /** Half-width of the funnel mouth, and of the suction it narrows to (m). */
     mouthHalfWidth: 8,
     throatHalfWidth: 1.4,
@@ -121,9 +133,9 @@ export const SITE = {
 
   /** Release line: from the head tank on the west breakwater's crest, down its seaward side, then along the seabed to the outlet. */
   pipeRoute: [
-    [88, 31.4],
-    [104, 33],
-    [132, 42],
+    [88, 38.5],
+    [104, 40],
+    [132, 47],
     [620, 150],
     [2040, 300],
   ] as ReadonlyArray<readonly [number, number]>,

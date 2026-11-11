@@ -49,6 +49,14 @@ const _p = new THREE.Vector3();
 const _s = new THREE.Vector3();
 const _a = new THREE.Vector3(1, 0, 0);
 const _b = new THREE.Vector3();
+const _pq = new THREE.Quaternion();
+const _rm = new THREE.Matrix4();
+const _bx = new THREE.Vector3();
+const _by = new THREE.Vector3();
+const _bz = new THREE.Vector3();
+/** Box-section pile: width along the net, depth across it (m). */
+const PILE_W = 0.7;
+const PILE_D = 0.6;
 const _jq = new THREE.Quaternion();
 const _jn = new THREE.Vector3();
 const _down = new THREE.Vector3(0, -1, 0);
@@ -102,10 +110,12 @@ export class NetSystem {
     const pileMat = mediumMaterial({ color: 0x6d7a81, roughness: 0.6, metalness: 0.5 });
     const capMat = mediumMaterial({ color: 0xe8b23a, roughness: 0.5, metalness: 0.2 }, false);
 
-    const pileGeo = new THREE.CylinderGeometry(SITE.net.pileDiameter / 2, SITE.net.pileDiameter / 2, 1, 14);
-    const capGeo = new THREE.CylinderGeometry(SITE.net.pileDiameter * 0.62, SITE.net.pileDiameter * 0.62, 0.6, 14);
-    // Piles sit behind the mesh (downstream), so the face the bloom slides along has no bump.
-    const behind = SITE.net.pileDiameter / 2 + 0.12;
+    // Box-section piles at each joint, their upstream face flush with the mesh, so the face the bloom
+    // slides along has no bump; each panel runs in guides on the pile's sides, so it reads as one wall.
+    const pileGeo = new THREE.BoxGeometry(PILE_W, 1, PILE_D).translate(0, 0, -PILE_D / 2);
+    const capGeo = new THREE.BoxGeometry(PILE_W + 0.2, 0.5, PILE_D + 0.2).translate(0, 0, -PILE_D / 2);
+    const behind = PILE_D / 2;
+    const barMat = mediumMaterial({ color: 0x4a5a63, roughness: 0.5, metalness: 0.6 });
     const manifoldMat = mediumMaterial({ color: 0x3b4a52, roughness: 0.55, metalness: 0.5 });
     this.jetMat = new THREE.ShaderMaterial({
       uniforms: { uTime: { value: 0 } },
@@ -144,14 +154,37 @@ export class NetSystem {
       const piles = new THREE.InstancedMesh(pileGeo, pileMat, count);
       const caps = new THREE.InstancedMesh(capGeo, capMat, count);
       const top = 4.8;
+      // Box axes: x along the net, z across it (the box is built back from its upstream face).
+      _pq.setFromRotationMatrix(_rm.makeBasis(_bx.set(L.tx, 0, L.tz), _by.set(0, 1, 0), _bz.set(L.nx, 0, L.nz)));
       for (let i = 0; i < count; i++) {
         const s = i * L.panelLength;
-        const x = L.ax + L.tx * s - L.nx * behind;
-        const z = L.az + L.tz * s - L.nz * behind;
-        _m.compose(_p.set(x, (top - DEPTH - 1) / 2, z), _q.identity(), _s.set(1, top + DEPTH + 1, 1));
+        const x = L.ax + L.tx * s;
+        const z = L.az + L.tz * s;
+        // Inside the hopper there is no pile: the hopper's frame takes the net's end.
+        const hide = s > L.drawTo + 0.01 && L.index === 1;
+        _m.compose(_p.set(x, (top - DEPTH - 1) / 2, z), _pq, _s.set(hide ? 0 : 1, top + DEPTH + 1, hide ? 0 : 1));
         piles.setMatrixAt(i, _m);
-        _m.compose(_p.set(x, top, z), _q.identity(), _s.set(1, 1, 1));
+        _m.compose(_p.set(x, top, z), _pq, _s.set(hide ? 0 : 1, 1, hide ? 0 : 1));
         caps.setMatrixAt(i, _m);
+      }
+      // Bar screen across net A's open panel: passes every target bell, keeps turtles and big fish out.
+      if (L.openFrom < L.length - 0.01) {
+        const span = L.length - L.openFrom - PILE_W / 2;
+        const n = Math.round(span / (SITE.collector.barGap + 0.1));
+        const bars = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.06, 0.06, top + DEPTH + 1, 8), barMat, n);
+        for (let i = 0; i < n; i++) {
+          const sb = L.openFrom + PILE_W / 2 + ((i + 0.5) * span) / n;
+          bars.setMatrixAt(i, _m.makeTranslation(L.ax + L.tx * sb, (top - DEPTH - 1) / 2, L.az + L.tz * sb));
+        }
+        bars.castShadow = true;
+        bars.userData.pick = 'net';
+        this.group.add(bars);
+        // A walkway along the top of the bar screen.
+        const deck = new THREE.Mesh(new THREE.BoxGeometry(span, 0.2, 1.0), capMat);
+        const sm = L.openFrom + PILE_W / 2 + span / 2;
+        deck.position.set(L.ax + L.tx * sm, top - 0.4, L.az + L.tz * sm);
+        deck.quaternion.copy(_pq);
+        this.group.add(deck);
       }
       piles.castShadow = true;
       piles.receiveShadow = true;
@@ -203,7 +236,8 @@ export class NetSystem {
       const lamps = new THREE.InstancedMesh(new THREE.SphereGeometry(0.34, 10, 8), new THREE.MeshBasicMaterial({ toneMapped: false }), count);
       for (let i = 0; i < count; i++) {
         const s = i * L.panelLength;
-        _m.makeTranslation(L.ax + L.tx * s - L.nx * behind, 5.4, L.az + L.tz * s - L.nz * behind);
+        const hide = s > L.drawTo + 0.01 && L.index === 1;
+        _m.makeTranslation(L.ax + L.tx * s - L.nx * behind, hide ? -60 : 5.4, L.az + L.tz * s - L.nz * behind);
         lamps.setMatrixAt(i, _m);
         lamps.setColorAt(i, OK);
       }
@@ -314,8 +348,12 @@ export class NetSystem {
       const load = net.head / N.reliefHead;
       for (let k = 0; k < net.n; k++) {
         const drop = net.drop[k];
-        // Net A's last panel is left out: the gap passes what A has guided on down the wall to net B.
-        const open = (k + 1) * L.panelLength > L.openFrom + 0.01;
+        // Net A's last panel is left out (the gap passes what A has guided on down the wall to net B);
+        // net B stops where it meets the hopper's mouth. Each panel runs between the piles' sides.
+        const s0 = k * L.panelLength + PILE_W / 2;
+        const atPile = (k + 1) * L.panelLength <= L.drawTo + 0.01;
+        const s1 = Math.min((k + 1) * L.panelLength - (atPile ? PILE_W / 2 : 0), L.drawTo);
+        const open = s1 <= s0 + 0.01;
         const torn = net.torn[k] === 1 || open;
         const lift = (1 - drop) * (DEPTH + TOP + 3);
         const dip = net.relief[k] * N.reliefDip;
@@ -326,7 +364,7 @@ export class NetSystem {
         const base = k * (COLS + 1) * 2;
         for (let c = 0; c <= COLS; c++) {
           const f = c / COLS;
-          const s = (k + f) * L.panelLength;
+          const s = open ? (k + f) * L.panelLength : s0 + f * (s1 - s0);
           const belly = 4 * f * (1 - f);
           const off = -belly * bowBase * (1 + onPanel * 0.6);
           const x = L.ax + L.tx * s + L.nx * off;
@@ -338,8 +376,8 @@ export class NetSystem {
           col.set([_c.r, _c.g, _c.b, _c.r, _c.g, _c.b], (base + c * 2) * 3);
         }
 
-        // Float segment for this panel.
-        const s = (k + 0.5) * L.panelLength;
+        // Float segment for this panel, between the piles.
+        const s = (s0 + s1) / 2;
         const x = L.ax + L.tx * s;
         const z = L.az + L.tz * s;
         const eta = waveElevation(x, z, time, hs * waveExposure(x, z));
@@ -347,7 +385,7 @@ export class NetSystem {
         _p.set(x, y, z);
         _b.set(L.tx, 0, L.tz);
         _q.setFromUnitVectors(_a, _b);
-        _m.compose(_p, _q, _s.set(open ? 0 : L.panelLength, open ? 0 : 1, open ? 0 : 1));
+        _m.compose(_p, _q, _s.set(open ? 0 : s1 - s0, open ? 0 : 1, open ? 0 : 1));
         P.floats.setMatrixAt(k, _m);
         // Jets firing on this panel: a short cone of spray from each nozzle, out through the mesh.
         const f = firing?.[ni]?.[k] ?? 0;
@@ -359,7 +397,7 @@ export class NetSystem {
           for (const y of JET_ROWS) {
             for (let c = 0; c < JET_COLS; c++) {
               const sj = (k + (c + 0.5) / JET_COLS) * L.panelLength;
-              if (on) _m.compose(_p.set(L.ax + L.tx * sj - L.nx * 0.35, y, L.az + L.tz * sj - L.nz * 0.35), _jq, _s.set(1, 1, 1));
+              if (on && sj < L.drawTo) _m.compose(_p.set(L.ax + L.tx * sj - L.nx * 0.35, y, L.az + L.tz * sj - L.nz * 0.35), _jq, _s.set(1, 1, 1));
               else _m.makeScale(0, 0, 0);
               P.jets.setMatrixAt(i++, _m);
             }

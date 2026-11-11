@@ -30,7 +30,7 @@ export const FAILURE_MODES: readonly FailureMode[] = [
   { key: 'deep', failure: 'A deep-living species', response: 'The nets run to the seabed', run: 'deep' },
   { key: 'duty', failure: 'The elevator’s duty drive stops', response: 'The standby drive on the same shaft takes over in 12 seconds; the buckets just pause' },
   { key: 'stuck', failure: 'Bells held against the mesh', response: 'That panel’s jets fire and push them back into the sweep' },
-  { key: 'turtle', failure: 'A turtle follows the bloom into the funnel', response: 'The hopper camera sees it; the elevator waits until it swims back out' },
+  { key: 'turtle', failure: 'A turtle follows the bloom into the funnel', response: 'The 50 cm bars at the hopper’s mouth keep it out; if a small one slips in, the hopper camera holds the elevator until it swims out' },
   { key: 'power', failure: 'Site power is lost', response: 'The nets need none. They hold the bloom until the elevator is back' },
   { key: 'sonar', failure: 'Sonar is lost', response: 'Warning only. The net works without it' },
 ];

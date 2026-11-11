@@ -25,8 +25,18 @@ export interface Vec3 {
 
 const L = NETS[1];
 const hw = SITE.channel.halfWidth;
-/** Plane the elevator runs in (z): across the hopper, just downstream of net B's end. */
-export const ELEVATOR_Z = L.bz - 4;
+/** Where net B meets the hopper's mouth. */
+const M = { x: L.bx - L.tx * SITE.collector.mouthBack, z: L.bz - L.tz * SITE.collector.mouthBack };
+/**
+ * Hopper in plan (m) and its floor: in the corner of net B and the wall. Its north face is its
+ * mouth, from where net B meets it to the wall, inside net B's funnel and facing the flow; its other
+ * sides are screens of net B's mesh.
+ */
+export const HOPPER = { x0: hw - 10.7, x1: hw - 0.2, z0: L.bz - 4.4, z1: M.z, floor: -7 };
+/** The mouth: from where net B meets the hopper to the wall, along its north face. */
+export const MOUTH = { x0: M.x, x1: hw - 0.2, z: M.z, x: (M.x + hw - 0.2) / 2 };
+/** Plane the elevator runs in (z): across the middle of the hopper. */
+export const ELEVATOR_Z = (HOPPER.z0 + HOPPER.z1) / 2;
 const ci = Math.cos(K.incline * DEG);
 const si = Math.sin(K.incline * DEG);
 /** Unit vector up the incline, and its normal (up and back), in the x-y plane. */
@@ -48,11 +58,8 @@ export const HANG = 0.1 + K.bucket.depth / 2;
 /** Water depth in a full bucket (m). */
 export const BUCKET_FILL = K.bucketWater / (K.bucket.width * K.bucket.length);
 
-/** Hopper in plan (m), its floor, and its mouth: the funnel's end, at net B's end against the wall. */
-export const HOPPER = { x0: TAIL.x - 2.3, x1: hw - 0.2, z0: L.bz - 8.2, z1: L.bz + 0.2, floor: -7 };
-export const MOUTH = { x: L.bx - 1.4, z: L.bz + 0.6 };
 /** Short sheet-pile cell in the west breakwater round the hopper and the funnel (z range, m). */
-export const SHEET_PILE_Z: readonly [number, number] = [HOPPER.z0 - 9, L.bz + SITE.collector.pocketLength * Math.abs(L.tz) + 5.5];
+export const SHEET_PILE_Z: readonly [number, number] = [HOPPER.z0 - 9, HOPPER.z1 + 10];
 /** Head tank on the breakwater crest, past the head. */
 export const HEAD_TANK = { x: HEAD.x + 3.6, z: ELEVATOR_Z, r: 1.9 };
 /** Platform on the crest that carries the head, the tank, the drives and the feed pump. */

@@ -4,7 +4,7 @@
  * Short runs only: the full results come from `npm run study`.
  */
 import { readFileSync } from 'node:fs';
-import { ASSUMPTIONS } from '../src/config/assumptions';
+import { ASSUMPTIONS, SPECIES } from '../src/config/assumptions';
 import { CHALLENGES } from '../src/config/challenges';
 import { capexAllIn, runningTotal } from '../src/config/costs';
 import { SITE, seabedDepth, seabedDepthFast } from '../src/config/site';
@@ -72,6 +72,12 @@ const two = tear(true);
 const one = tear(false);
 check('a second net catches a torn panel', two < 0.5 && one > two * 10, `${two.toFixed(2)} t vs ${one.toFixed(1)} t`);
 
+// The bar screens at both openings pass every target bell (and keep turtles out).
+{
+  const biggest = Math.max(...Object.values(SPECIES).map((sp) => sp.bellMax));
+  check('every target bell fits through the bar screens', biggest < SITE.collector.barGap, `${(biggest * 100).toFixed(0)} cm bell, ${(SITE.collector.barGap * 100).toFixed(0)} cm gap`);
+}
+
 // One bucket elevator for both nets: idle until its funnel sensor sees jellyfish, every collected
 // animal rides up in a bucket that is never over its limit, it stops once there is nothing left to
 // carry, small bells that work through net A are caught by net B, and stuck bells get freed.
@@ -102,7 +108,7 @@ check('a second net catches a torn panel', two < 0.5 && one > two * 10, `${two.t
   check('net A has no funnel: its catch goes on to net B', s.transfer!.queues[0].length === 0 && s.counters.diverted > 0);
   check('small bells work through net A and net B catches them', s.sieved[0] > 0 && s.sieved[1] === 0 && lr.s.screensT < 0.1, `${s.sieved[0]} through A, ${s.sieved[1]} through B`);
   check('the jets free stuck bells', s.jets.bursts > 0 && s.jets.freed > 0, `${s.jets.bursts} bursts, ${s.jets.freed} freed`);
-  check('fish turn back at the nets', (s.bycatch?.turnedBack ?? 0) > 0, `${s.bycatch?.turnedBack} fish`);
+  check('fish turn back at the nets', (s.bycatch?.turnedBack ?? 0) > 0, `${s.bycatch?.turnedBack} fish, ${s.bycatch?.keptOut} turtle visits kept out by the bars`);
   check('the elevator changes nothing at the screens', lr.s.screensT < 0.1 && lr.s.balance.closes, `${lr.s.screensT.toFixed(3)} t`);
 
   // The bloom ends: once the funnel is clear and the line has flushed, the elevator stops.

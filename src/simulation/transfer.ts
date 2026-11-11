@@ -18,6 +18,8 @@ export type TransferPath = 'PRIMARY' | 'STANDBY' | 'NONE';
 export class LiftStation {
   /** Buckets that have passed the scoop so far: sets where every bucket is (one per `PITCH` of chain). */
   phase = 0;
+  /** `phase` at the start of the last step, for drawing between steps. */
+  prevPhase = 0;
   /** Chain speed as a share of full. */
   speed = 0;
   /** What the funnel sensor saw at its last reading (kg), and how long anything seen has waited for a start (s). */
@@ -192,6 +194,7 @@ export class TransferState {
     const step = failed || hold ? dt / 1.5 : dt / LIFT.rampTime;
     st.speed = st.speed < target ? Math.min(target, st.speed + step) : Math.max(target, st.speed - step);
     const buckets = st.speed * BUCKET_RATE * dt;
+    st.prevPhase = st.phase;
     st.phase += buckets;
     st.credit = Math.min(st.credit + buckets * perBucket, perBucket * 2);
     st.energyKWh += (LIFT_KW * st.speed * dt) / 3600;

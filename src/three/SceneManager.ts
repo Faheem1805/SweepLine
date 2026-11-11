@@ -343,7 +343,7 @@ export class SceneManager {
     this.liftWasTurning = turningNow;
     const kg = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1)} t` : `${Math.round(v)} kg`);
     const on = turningNow;
-    this.labels.setContent('lift-funnel', '1 · Funnel', `${kg(a.funnelKg)} here, from both nets · sensor ${a.seen ? 'sees jellyfish' : 'sees none'}`, a.seen ? 'teal' : 'default');
+    this.labels.setContent('lift-funnel', '1 · Funnel and mouth', `${kg(a.funnelKg)} here, from both nets · 50 cm bars keep turtles out · sensor ${a.seen ? 'sees jellyfish' : 'sees none'}`, a.seen ? 'teal' : 'default');
     this.labels.setContent('lift-hopper', '2 · Hopper', a.hold ? 'Turtle in the hopper: elevator waits' : on || a.hopperKg > 0 ? `${kg(a.hopperKg)} drawn to the scoop` : 'Waiting: elevator idle', a.hold ? 'amber' : on ? 'teal' : 'default');
     this.labels.setContent(
       'lift-screw',
@@ -527,7 +527,7 @@ export class SceneManager {
 
     this.nets.update(sw.nets, this.realTime, hs, this.ui.flowView, this.camera, sw.jets.firing);
     const flowFraction = Math.min(1, tr.lineFlow() * (0.35 + (tr.processedEMA / Math.max(tr.capacityRate(), 1e-3)) * 4));
-    this.collector.update(tr, flowFraction, this.realTime);
+    this.collector.update(tr, flowFraction, this.realTime, ctrl.alpha);
     this.fish.update(sw.bycatch, ctrl.alpha, this.realTime);
     this.release.update(sw.releaseEMA, tr.armed, this.realTime, this.realTime, hs);
     this.sonar.update((this.ui.flowView || params.night) && !ctrl.failures.sonarLoss, dt);
