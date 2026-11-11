@@ -23,9 +23,9 @@ import {
   S_TRANSFER_QUEUE,
 } from './Agent';
 import { FlowField } from './flowField';
-import { collectorPoint, NETS, pointOnNet, type NetLine } from './geometry';
+import { collectorPoint, NETS, netDistance, pointOnNet, type NetLine } from './geometry';
 import { BycatchState } from './bycatch';
-import { BUCKET_FILL, CHUTE_LENGTH, chutePoint, HANG, PITCH, pivotAt, TAIL, TIP_AT, type Vec3 } from './lift';
+import { BUCKET_FILL, CHUTE_LENGTH, chutePoint, HANG, PITCH, pivotLocalAt, TAIL, TIP_AT, toWorld, type Vec3 } from './lift';
 import { NetState } from './net';
 import { ScreenState } from './screens';
 import { fbm1, hash01, SeededRandom, valueNoise } from './seededRandom';
@@ -175,6 +175,7 @@ export class SimulationEngine {
   private entersThisStep = 0;
   private readonly tmp = { x: 0, z: 0 };
   private readonly tmp3: Vec3 = { x: 0, y: 0, z: 0 };
+  private readonly chuteSide = { x: 0, z: 0 };
   private transfersThisStep = 0;
   private readonly tally: [Float32Array, Float32Array] = [new Float32Array(NETS[0].panels), new Float32Array(NETS[1].panels)];
   /** Agents stopped behind a full pocket on each net. */
@@ -785,8 +786,13 @@ export class SimulationEngine {
     const q = Math.min(1, Math.hypot(rx, rz) / K.pocketLength);
     const lat = (hash01(aid, 11) - 0.5) * 2 * (K.throatHalfWidth + (K.mouthHalfWidth - K.throatHalfWidth) * q) * 0.7;
     const ahead = 1 + q * K.pocketLength * 0.5;
-    const tx = end.x - L.tx * ahead + L.nx * (lat + 2);
-    const tz = end.z - L.tz * ahead + L.nz * (lat + 2);
+    // Stay inside the funnel: off net B's face and clear of the wall.
+    const ex = end.x - L.tx * ahead;
+    const ez = end.z - L.tz * ahead;
+    const room = (SITE.channel.halfWidth - ex) / Math.max(0.2, L.nx) - 0.8;
+    const off = Math.min(Math.max(lat + 2, 0.6), Math.max(0.6, room));
+    const tx = ex + L.nx * off;
+    const tz = ez + L.nz * off;
     const tdepth = 2.2 + hash01(aid, 13) * 4;
     const vf = ASSUMPTIONS.collector.funnelSpeed;
     let dvx = (tx - p.px[i]) * 0.2 + L.tx * vf;
@@ -808,9 +814,14 @@ export class SimulationEngine {
     p.px[i] += p.vx[i] * dt;
     p.pz[i] += p.vz[i] * dt;
     p.py[i] += p.vy[i] * dt;
-    // The wall bounds the funnel and the hopper.
+    // The wall and net B bound the funnel and the hopper.
     const wall = SITE.channel.halfWidth - 0.8;
     if (p.px[i] > wall) p.px[i] = wall;
+    const dn = netDistance(L, p.px[i], p.pz[i]);
+    if (dn < 0.3) {
+      p.px[i] += L.nx * (0.3 - dn);
+      p.pz[i] += L.nz * (0.3 - dn);
+    }
   }
 
   private clearLiftCounts(): void {
@@ -895,13 +906,11 @@ export class SimulationEngine {
     const out = this.tmp3;
     const section = p.queueIndex[i];
     if (section === 0) {
-      // Drawn across the hopper to the tail, where the buckets come round full of water.
-      const tx = TAIL.x - 0.4 + (hash01(aid, 41) - 0.5) * 0.8;
-      const ty = TAIL.y - 0.2;
-      const tz = TAIL.z + (hash01(aid, 42) - 0.5) * 1.0;
-      const dx = tx - p.px[i];
-      const dy = ty - p.py[i];
-      const dz = tz - p.pz[i];
+      // Drawn down the hopper to the tail, where the buckets come round full of water.
+      const tgt = toWorld(-0.4 + (hash01(aid, 41) - 0.5) * 0.8, TAIL.y - 0.2, (hash01(aid, 42) - 0.5) * 1.0, out);
+      const dx = tgt.x - p.px[i];
+      const dy = tgt.y - p.py[i];
+      const dz = tgt.z - p.pz[i];
       const d = Math.hypot(dx, dy, dz);
       const bucket = Math.floor(st.phase);
       if (bucket !== st.fillBucket) {
@@ -945,10 +954,11 @@ export class SimulationEngine {
       this.transfersThisStep++;
       return;
     }
-    chutePoint(p.timer[i], out);
-    p.px[i] = out.x;
+    chutePoint(p.timer[i], out, this.chuteSide);
+    const spread = (hash01(aid, 47) - 0.5) * 0.5;
+    p.px[i] = out.x + this.chuteSide.x * spread;
     p.py[i] = out.y + 0.15;
-    p.pz[i] = out.z + (hash01(aid, 47) - 0.5) * 0.5;
+    p.pz[i] = out.z + this.chuteSide.z * spread;
     p.vx[i] = p.vy[i] = p.vz[i] = 0;
     this.lift.chute++;
   }
@@ -956,11 +966,17 @@ export class SimulationEngine {
   /** Where an animal riding a bucket is: in the water in the bottom of its bucket, a little to one side. */
   private placeInBucket(i: number): void {
     const p = this.pool;
-    const out = pivotAt(p.timer[i], this.tmp3);
+    const loc = pivotLocalAt(p.timer[i], this.tmp3);
     const B = ASSUMPTIONS.lift.bucket;
-    p.px[i] = out.x + (hash01(p.id[i], 44) - 0.5) * (B.length - 0.35);
-    p.py[i] = out.y - HANG - B.depth / 2 + BUCKET_FILL * 0.55;
-    p.pz[i] = out.z + (hash01(p.id[i], 45) - 0.5) * (B.width - 0.45);
+    const out = toWorld(
+      loc.x + (hash01(p.id[i], 44) - 0.5) * (B.length - 0.35),
+      loc.y - HANG - B.depth / 2 + BUCKET_FILL * 0.55,
+      (hash01(p.id[i], 45) - 0.5) * (B.width - 0.45),
+      this.tmp3,
+    );
+    p.px[i] = out.x;
+    p.py[i] = out.y;
+    p.pz[i] = out.z;
     p.vx[i] = p.vy[i] = p.vz[i] = 0;
   }
 

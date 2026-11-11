@@ -29,7 +29,7 @@ export interface NetLine {
    * along its face goes through the gap and on down the wall into net B's funnel.
    */
   openFrom: number;
-  /** Arc length to which the mesh is drawn: net A to its open panel, net B to the hopper's mouth (the hopper's screens take over past it). */
+  /** Arc length to which the mesh is drawn: net A to its open panel, net B all the way to the wall (past the mouth it is the hopper's west side). */
   drawTo: number;
 }
 
@@ -61,7 +61,7 @@ function makeNet(index: NetIndex): NetLine {
     panelLength: length / panels,
     pocketS: length - SITE.collector.pocketLength,
     openFrom: index === 0 ? length - length / panels : length,
-    drawTo: index === 0 ? length - length / panels : length - SITE.collector.mouthBack,
+    drawTo: index === 0 ? length - length / panels : length,
   };
 }
 
@@ -82,7 +82,10 @@ export function netArc(L: NetLine, x: number, z: number): number {
   return (x - L.ax) * L.tx + (z - L.az) * L.tz;
 }
 
-/** Where a net's funnel draws the animals in (near its end, against the west breakwater). */
+/**
+ * Where a net's funnel draws the animals in: just inside the hopper's mouth, near the wall, where
+ * the elevator's tail waits (against the west breakwater).
+ */
 export function collectorPoint(L: NetLine): { x: number; z: number } {
-  return pointOnNet(L, L.length - 3);
+  return pointOnNet(L, L.length - SITE.collector.mouthBack + 1.5);
 }

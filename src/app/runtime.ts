@@ -1,6 +1,7 @@
 import { controller } from '../simulation/SimController';
 import { SceneManager } from '../three/SceneManager';
 import { kioskRequested, startKiosk, stopKiosk } from './kiosk';
+import { story } from './story';
 import { useApp } from './store';
 
 let scene: SceneManager | null = null;
@@ -24,6 +25,7 @@ export function startRuntime(): void {
     (snap) => useApp.setState({ snap, historyVersion: controller.historyVersion }),
     (loading) => useApp.setState({ loading }),
   );
+  story.attach(controller);
   const sm = getScene();
   let last = performance.now();
   const loop = (now: number) => {
@@ -125,6 +127,7 @@ function installDevHooks(sm: SceneManager): void {
 
   (window as unknown as Record<string, unknown>).__sl = {
     controller,
+    story,
     startKiosk,
     stopKiosk,
     scene: sm,

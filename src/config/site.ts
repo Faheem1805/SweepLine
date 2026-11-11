@@ -112,12 +112,12 @@ export const SITE = {
     /** Length of the funnel along net B, from where the bloom is taken into the collector's care to the net's end (m). */
     pocketLength: 22,
     /**
-     * Where net B opens into the collector: the hopper's mouth, this far back along net B from its
-     * end (m). The hopper sits in the corner of net B and the wall, its mouth inside net B's funnel
-     * facing the flow, so the current carries the bloom straight in; its other sides are screens of
-     * net B's mesh, so the water carries on through.
+     * Where the funnel narrows into the hopper: the barred mouth across it, from net B to the wall,
+     * this far back along net B from its end (m). The hopper is the funnel's tip past the mouth, net B
+     * on one side and the wall on the other, so the water carries on through net B and the current
+     * carries the bloom straight in. The elevator stands in it, along the wall.
      */
-    mouthBack: 11.3,
+    mouthBack: 19,
     /**
      * Clear gap of the bar screens across both openings, net A's open panel and the hopper's mouth
      * (m): wider than the largest target bell (45 cm), narrower than a turtle or a big fish.

@@ -2,7 +2,7 @@ import { ASSUMPTIONS } from '../config/assumptions';
 import { SITE, seabedDepthFast } from '../config/site';
 import type { FlowField } from './flowField';
 import { NETS } from './geometry';
-import { HOPPER, MOUTH, TAIL } from './lift';
+import { HOPPER, hopperWestX, inHopper as inHopperAt, MOUTH, TAIL } from './lift';
 import { hash01, SeededRandom, valueNoise } from './seededRandom';
 
 const B = ASSUMPTIONS.bycatch;
@@ -174,7 +174,7 @@ export class BycatchState {
         if (!this.atBars[i]) this.keptOut++;
         this.atBars[i] = 1;
       } else if (turtle && z > MOUTH.z + 8 && Math.hypot(x - GAP.x, z - GAP.z) > 15) this.atBars[i] = 0;
-      const inHopper = x > HOPPER.x0 && x < HOPPER.x1 && z > HOPPER.z0 && z < HOPPER.z1;
+      const inHopper = inHopperAt(x, z);
       if (inHopper && turtle) {
         // Only a turtle small enough to slip the bars gets here: the hopper camera holds the elevator until it has swum out.
         hold = true;
@@ -192,8 +192,8 @@ export class BycatchState {
         const ed = Math.hypot(ex, ez) || 1;
         x += (ex / ed) * cruise * 0.8 * dt;
         z += (ez / ed) * cruise * 0.8 * dt;
-        x = Math.min(HOPPER.x1 - 0.3, Math.max(HOPPER.x0 + 0.3, x));
         z = Math.max(HOPPER.z0 + 0.3, z);
+        x = Math.min(HOPPER.x1 - 0.3, Math.max(hopperWestX(z) + 0.3, x));
         if (z >= HOPPER.z1 && (x < MOUTH.x0 || x > MOUTH.x1)) z = HOPPER.z1 - 0.3;
         this.met[i] |= 2;
       }

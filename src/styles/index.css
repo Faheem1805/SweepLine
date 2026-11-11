@@ -45,6 +45,23 @@
       transform: none;
     }
   }
+  @keyframes story-shimmer {
+    from {
+      opacity: 0.15;
+    }
+    50% {
+      opacity: 0.6;
+    }
+    to {
+      opacity: 0.15;
+    }
+  }
+}
+
+/* The story timeline's edge of the recording: a soft pulse where the run is still being recorded ahead. */
+.story-shimmer {
+  background: linear-gradient(90deg, rgba(45, 212, 191, 0.55), rgba(45, 212, 191, 0));
+  animation: story-shimmer 1.6s ease-in-out infinite;
 }
 
 @layer base {

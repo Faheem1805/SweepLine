@@ -1,17 +1,5 @@
 import * as THREE from 'three';
-import {
-  BloomEffect,
-  DepthOfFieldEffect,
-  EffectComposer,
-  EffectPass,
-  KernelSize,
-  LUT3DEffect,
-  RenderPass,
-  SMAAEffect,
-  SMAAPreset,
-  TiltShiftEffect,
-  VignetteEffect,
-} from 'postprocessing';
+import { BloomEffect, EffectComposer, EffectPass, LUT3DEffect, RenderPass, SMAAEffect, SMAAPreset, VignetteEffect } from 'postprocessing';
 import { N8AOPostPass } from 'n8ao';
 import { GradeEffect } from './GradeEffect';
 import { createLookLUT } from './lookLut';
@@ -33,28 +21,27 @@ export interface ViewState {
   targetDistance: number;
   /** Angle of the view direction below the horizon (degrees). */
   pitchDeg: number;
-  /** World point the underwater depth of field focuses on. */
+  /** World point the underwater view looks at. */
   focus: THREE.Vector3;
 }
 
 /**
- * Pixels rendered per frame before the internal resolution is scaled down. Keeps the GPU cost of
- * the scene and post chain bounded on large high-DPI windows (about 12 ms on a laptop RTX 3050).
+ * Pixels rendered per frame on very large high-DPI screens before the extra device pixels are given
+ * up. The view is never drawn below one pixel per CSS pixel, so it is never upscaled and never soft:
+ * this only trims the extra density of a 4K or Retina panel.
  */
-const PIXEL_BUDGET = 2.4e6;
-
-const smooth = (a: number, b: number, v: number) => {
-  const t = Math.min(1, Math.max(0, (v - a) / (b - a)));
-  return t * t * (3 - 2 * t);
-};
+const PIXEL_BUDGET = 8.3e6;
 
 /**
  * Post-processing for the 3D view (pmndrs/postprocessing + N8AO):
  *
- *   scene (HDR, 4× MSAA) → ambient occlusion → sanitize (no NaN / ∞)
- *     → [above water] tilt-shift · bloom · grade · LUT · vignette
- *     → [underwater]  light shafts + wobble → depth of field · bloom · grade · LUT · vignette
+ *   scene (HDR, 2× MSAA) → ambient occlusion → sanitize (no NaN / ∞)
+ *     → [above water] bloom · grade · LUT · vignette
+ *     → [underwater]  light shafts + wobble → bloom · grade · LUT · vignette
  *     → SMAA → canvas
+ *
+ * Nothing in the chain blurs the picture: no tilt-shift, no depth of field, and the internal
+ * resolution never drops below the canvas's CSS size.
  *
  * Each view (the single view, or each half of Compare) runs the whole chain at its own size into
  * its own viewport, so depth-based effects always see the projection they were rendered with.
@@ -63,8 +50,6 @@ const smooth = (a: number, b: number, v: number) => {
 export class PostPipeline {
   readonly composer: EffectComposer;
   readonly ao: N8AOPostPass;
-  readonly tiltShift: TiltShiftEffect;
-  readonly dof: DepthOfFieldEffect;
   readonly underwater: UnderwaterEffect;
   private readonly abovePass: EffectPass;
   private readonly shaftPass: EffectPass;
@@ -100,25 +85,21 @@ export class PostPipeline {
     this.composer.addPass(new EffectPass(camera, new SanitizeEffect()));
 
     const bloom = () =>
-      new BloomEffect({ mipmapBlur: true, luminanceThreshold: 1.0, luminanceSmoothing: 0.35, intensity: 0.55, radius: 0.72 });
+      new BloomEffect({ mipmapBlur: true, luminanceThreshold: 0.95, luminanceSmoothing: 0.35, intensity: 0.7, radius: 0.72 });
     const look = createLookLUT();
     const lut = () => new LUT3DEffect(look, { tetrahedralInterpolation: true });
     const vignette = () => new VignetteEffect({ offset: 0.32, darkness: 0.42 });
 
-    // Miniature look for high oblique views: sharp band through the subject, soft foreground and horizon.
-    // The band sits a little low so the bloom in the foreground stays sharp; mostly the far coast softens.
-    this.tiltShift = new TiltShiftEffect({ offset: -0.14, focusArea: 0.82, feather: 0.36, kernelSize: KernelSize.SMALL, resolutionScale: 0.5 });
-    this.abovePass = new EffectPass(camera, this.tiltShift, bloom(), new GradeEffect(), lut(), vignette());
+    this.abovePass = new EffectPass(camera, bloom(), new GradeEffect(), lut(), vignette());
     this.abovePass.dithering = true;
     this.composer.addPass(this.abovePass);
 
-    // Underwater: light shafts and wobble first, so the depth of field softens distant shafts too.
+    // Underwater: light shafts and wobble first, then the same look as above water.
     this.underwater = new UnderwaterEffect(camera, sun);
     this.shaftPass = new EffectPass(camera, this.underwater);
     this.shaftPass.enabled = false;
     this.composer.addPass(this.shaftPass);
-    this.dof = new DepthOfFieldEffect(camera, { focusDistance: 12, focusRange: 14, bokehScale: 1.4, resolutionScale: 0.5 });
-    this.underPass = new EffectPass(camera, this.dof, bloom(), new GradeEffect(), lut(), vignette());
+    this.underPass = new EffectPass(camera, bloom(), new GradeEffect(), lut(), vignette());
     this.underPass.dithering = true;
     this.underPass.enabled = false;
     this.composer.addPass(this.underPass);
@@ -132,8 +113,9 @@ export class PostPipeline {
   }
 
   /**
-   * Resolution scale (0.5..1) that SceneManager lowers when frames run long on a slower GPU and
-   * raises again when there is headroom. The final pass upsamples to the canvas.
+   * Share of the extra high-DPI density drawn (0..1): 1 draws every device pixel, 0 one pixel per
+   * CSS pixel. SceneManager lowers it when frames run long on a slower GPU and raises it again when
+   * there is headroom. It never goes below one pixel per CSS pixel, so the view never turns soft.
    */
   renderScale = 1;
 
@@ -156,10 +138,12 @@ export class PostPipeline {
    */
   viewSize(rect: ViewRect, share = 1): [number, number] {
     const pr = this.renderer.getPixelRatio();
-    const w = rect.width * pr;
-    const h = rect.height * pr;
-    const s = Math.min(1, Math.sqrt((PIXEL_BUDGET * this.renderScale * this.renderScale * share) / Math.max(1, w * h)));
-    return [Math.max(1, Math.round(w * s)), Math.max(1, Math.round(h * s))];
+    // Density drawn: between one pixel per CSS pixel and the full device ratio.
+    let k = 1 + (pr - 1) * Math.min(1, Math.max(0, this.renderScale));
+    // A very large high-DPI view gives up density above the budget, never below 1.
+    const css = Math.max(1, rect.width * rect.height);
+    k = Math.max(1, Math.min(k, Math.sqrt((PIXEL_BUDGET * share) / css)));
+    return [Math.max(1, Math.round(rect.width * k)), Math.max(1, Math.round(rect.height * k))];
   }
 
   /** Steer the camera-dependent effects for the view about to be rendered. */
@@ -169,10 +153,6 @@ export class PostPipeline {
     this.underPass.enabled = view.underwater;
     // AO radius follows the viewing scale: tight contact shadows up close, broader from the air.
     this.ao.configuration.aoRadius = Math.min(6, Math.max(0.6, view.targetDistance * 0.022));
-    // Tilt-shift only for high oblique views (not top-down, not close-ups).
-    const tilt = smooth(70, 170, view.targetDistance) * (1 - smooth(52, 74, view.pitchDeg));
-    this.tiltShift.blendMode.opacity.value = tilt * 0.25;
-    this.dof.target = view.focus;
   }
 
   /** Render the scene through the chain into one viewport of the canvas. */

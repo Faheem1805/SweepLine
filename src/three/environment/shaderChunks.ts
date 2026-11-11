@@ -32,9 +32,9 @@ export const SHARED = {
   uSunRefr: { value: refractedSun(SUN_DIR) },
   uSunColor: { value: new THREE.Color(1.0, 0.93, 0.8) },
   /** Per-channel extinction of Gulf seawater (1/m) — red is absorbed fastest. */
-  uWaterExtinction: { value: new THREE.Vector3(0.3, 0.085, 0.068) },
+  uWaterExtinction: { value: new THREE.Vector3(0.25, 0.066, 0.052) },
   /** In-scattered water colour (linear). */
-  uWaterScatter: { value: new THREE.Color(0.006, 0.088, 0.118) },
+  uWaterScatter: { value: new THREE.Color(0.005, 0.092, 0.118) },
   uHazeColor: { value: new THREE.Color(0.45, 0.63, 0.8) },
   uHazeDensity: { value: 0.00046 },
   uCaustics: { value: 0.85 },

@@ -3,6 +3,7 @@ import { OPERATING_ENVELOPE as E } from '../config/operatingEnvelope';
 import { computeEngineMetrics, type EngineMetrics } from './metrics';
 import { getScenario, type Scenario, type ScenarioStep } from './scenarios';
 import { SimulationEngine, type AgentInfo } from './SimulationEngine';
+import { capture, restore, type Snap } from './snapshot';
 import { hoursToNextTurn, tideCurrent, tideCurrentVector, tideDate } from './tide';
 import { TRANSFER_TPH } from './transfer';
 import {
@@ -17,6 +18,54 @@ import {
 } from './types';
 
 export type StageKey = 'install' | 'warning' | 'sonar' | 'net' | 'collect' | 'release';
+
+/** A recorded moment of a run: the controller's run state and both engines, as standalone copies. */
+export interface RunState {
+  t: number;
+  ctrl: Record<string, Snap>;
+  base: Snap;
+  sweep: Snap;
+}
+
+/** The story timeline: how far the run has been recorded, where it ends, and when each stage comes. */
+export interface StoryInfo {
+  /** Run time at which the timeline starts (s). */
+  start: number;
+  /** Where it ends: an estimate until the recording gets there (s). */
+  end: number;
+  /** Recorded up to here: anywhere before it can be jumped to at once (s). */
+  buffered: number;
+  /** The recording has reached the end. */
+  done: boolean;
+  /** When each stage comes in the recorded run (s), or null if not yet known. */
+  stages: Record<StageKey, number | null>;
+}
+
+/** Controller fields that make up a moment of the run (the engines are copied separately). */
+const RUN_FIELDS = [
+  'params',
+  'failures',
+  'events',
+  'timeline',
+  'history',
+  'constraints',
+  'eventId',
+  'historyTimer',
+  'safetyTimer',
+  'savedParams',
+  'script',
+  'runStart',
+  'opening',
+  'prevRelief',
+  'prevPocketFull',
+  'prevLiftOn',
+  'prevBursts',
+  'prevHold',
+  'prevBaseStatus',
+  'prevSweepStatus',
+  'prevPrimary',
+  'prevStandby',
+] as const;
 
 export interface TimelineStage {
   key: StageKey;
@@ -126,6 +175,8 @@ export interface SimSnapshot {
   sonar: { on: boolean; inRangeT: number; arrivalTph: number };
   constraints: Constraint[];
   timeline: TimelineStage[];
+  /** The story timeline (null until the recorder has started). */
+  story: StoryInfo | null;
   stage: StageKey;
   events: SimEvent[];
   failures: Record<FailureKey, boolean>;
@@ -242,11 +293,86 @@ export class SimController {
   private prevSweepStatus = 'CLEAR';
   private prevPrimary: ModuleStatus = 'STANDBY';
   private prevStandby: ModuleStatus = 'STANDBY';
+  /** A scenario's own script is acting: its changes are part of the run, not the viewer's. */
+  private scripting = false;
+
+  /** Called once a run is ready (after any pre-roll): the story recorder starts recording it. */
+  onRestart: ((ctrl: SimController) => void) | null = null;
+  /** Called when the viewer changes the run while it plays: what was recorded past now no longer holds. */
+  onDiverge: ((ctrl: SimController) => void) | null = null;
+  /** The story timeline's state, shown with the stage strip (set by the recorder). */
+  story: StoryInfo | null = null;
 
   constructor() {
     this.baseline = new SimulationEngine('baseline', this.params);
     this.sweepline = new SimulationEngine('sweepline', this.params);
     this.constraints = this.evaluate();
+  }
+
+  // ------------------------------------------------------------------ recorded moments
+
+  /** Copy of everything needed to come back to this moment of the run. */
+  captureState(): RunState {
+    const ctrl: Record<string, Snap> = {};
+    const self = this as unknown as Record<string, unknown>;
+    for (const k of RUN_FIELDS) ctrl[k] = capture(self[k]);
+    return { t: this.sweepline.time, ctrl, base: capture(this.baseline), sweep: capture(this.sweepline) };
+  }
+
+  /** Go to a recorded moment: the run carries on from there. */
+  restoreState(st: RunState): void {
+    restore(this.baseline, st.base);
+    restore(this.sweepline, st.sweep);
+    const self = this as unknown as Record<string, unknown>;
+    for (const k of RUN_FIELDS) self[k] = restore(self[k], st.ctrl[k]);
+    this.historyVersion++;
+    this.acc = 0;
+    this.alpha = 1;
+    if (this.opening && !this.userSpeed) this.speed = ASSUMPTIONS.sequence.openingSpeed;
+    else if (!this.opening && !this.userSpeed) this.speed = ASSUMPTIONS.sequence.runSpeed;
+    this.selection = null;
+    this.constraints = this.evaluate();
+    this.publish(true);
+  }
+
+  /**
+   * Take over a moment recorded elsewhere (the story worker): build engines for its parameters, then
+   * restore it. Skips the pre-roll a restart would run.
+   */
+  adopt(st: RunState, scenario: Scenario | null): void {
+    this.runToken++;
+    this.scenario = scenario;
+    this.params = { ...(st.ctrl.params as SimParams) };
+    this.baseline.reset(this.params, 'approach');
+    this.sweepline.reset(this.params, 'approach');
+    this.restoreState(st);
+    this.ready = true;
+  }
+
+  /**
+   * One step of the run as the live view would take it, without a clock: the same step sizes, the
+   * panels going in, the approach time-lapse. Used to record the story ahead of the live view.
+   */
+  advance(): void {
+    const approach = !this.opening && this.sweepline.counters.encountered === 0;
+    this.stepAll(approach ? ASSUMPTIONS.sequence.preRollStep : ASSUMPTIONS.timeStep);
+    if (this.opening && this.armed()) this.opening = false;
+  }
+
+  /** The panels are all in: the season starts (once) and the elevator is armed. */
+  private armed(): boolean {
+    if (!this.sweepline.nets.every((n) => !n.arming)) return false;
+    if (this.timeline[0].at === null) {
+      this.stage('install');
+      this.log('ok', 'Both nets in place');
+      this.startPumps();
+    }
+    return true;
+  }
+
+  /** The viewer changed the run (not the scenario's script). */
+  private diverged(): void {
+    if (!this.scripting && this.ready) this.onDiverge?.(this);
   }
 
   setPublisher(p: Publisher, loading: LoadingPublisher): void {
@@ -325,7 +451,18 @@ export class SimController {
     this.script = scenario?.script ? [...scenario.script].sort((a, b) => a.at - b.at) : [];
     this.ready = true;
     this.loadingPublisher?.({ active: false, progress: 1, label: '' });
+    this.onRestart?.(this);
     this.publish(true);
+  }
+
+  /** How the run was started: the story worker starts the same run. */
+  get startMode(): 'sequence' | 'steady' {
+    return this.scenario?.start ?? 'sequence';
+  }
+
+  /** Run time at which this run's watched part began (after any pre-roll). */
+  get runStartTime(): number {
+    return this.runStart;
   }
 
   /** Restart the current run the way it started. */
@@ -376,6 +513,7 @@ export class SimController {
     if (partial.unitsRunning !== undefined && partial.unitsRunning !== prev.unitsRunning) this.log('info', `${partial.unitsRunning} of ${ASSUMPTIONS.plant.units} units running — channel flow ${(this.sweepline.flow.plantFlow).toFixed(0)} m³/s`);
     if (partial.foulingWeeks !== undefined && partial.foulingWeeks !== prev.foulingWeeks) this.log('info', partial.foulingWeeks === 0 ? 'Clean panels in the water' : `Panels ${partial.foulingWeeks} weeks in the water`);
     if (partial.secondNet !== undefined && partial.secondNet !== prev.secondNet) this.log(partial.secondNet ? 'info' : 'warn', partial.secondNet ? 'Net B in place' : 'Net B out of the water');
+    this.diverged();
     this.publish(true);
   }
 
@@ -388,6 +526,7 @@ export class SimController {
     this.baseline.bloomActive = false;
     this.sweepline.bloomActive = false;
     this.log('info', 'Bloom passing — no new arrivals upstream');
+    this.diverged();
     this.publish(true);
   }
 
@@ -439,6 +578,7 @@ export class SimController {
     }
     this.failures = { ...this.failures, [key]: true };
     this.log(key === 'pumpPrimary' || key === 'pumpStandby' || key === 'panelTear' ? 'alarm' : 'warn', FAILURE_LABELS[key]);
+    this.diverged();
     this.publish(true);
   }
 
@@ -474,6 +614,7 @@ export class SimController {
     }
     this.failures = { ...this.failures, [key]: false };
     this.log('ok', `Cleared: ${FAILURE_LABELS[key]}`);
+    this.diverged();
     this.publish(true);
   }
 
@@ -521,13 +662,7 @@ export class SimController {
   }
 
   private updateOpening(dtReal: number): void {
-    const armed = this.sweepline.nets.every((n) => !n.arming);
-    if (!armed) return;
-    if (this.timeline[0].at === null) {
-      this.stage('install');
-      this.log('ok', 'Both nets in place');
-      this.startPumps();
-    }
+    if (!this.armed()) return;
     const target: number = ASSUMPTIONS.sequence.runSpeed;
     this.speed = Math.min(target, this.speed + (target / 3) * Math.min(dtReal, 0.1));
     if (this.speed >= target) this.opening = false;
@@ -552,11 +687,16 @@ export class SimController {
     while (this.ready && this.script.length > 0 && this.script[0].at <= t) {
       const step = this.script.shift()!;
       const a = step.action;
-      if (a.kind === 'fail') this.injectFailure(a.failure);
-      else if (a.kind === 'clear') this.clearFailure(a.failure);
-      else {
-        this.log('warn', a.message);
-        this.setParams(a.params);
+      this.scripting = true;
+      try {
+        if (a.kind === 'fail') this.injectFailure(a.failure);
+        else if (a.kind === 'clear') this.clearFailure(a.failure);
+        else {
+          this.log('warn', a.message);
+          this.setParams(a.params);
+        }
+      } finally {
+        this.scripting = false;
       }
     }
   }
@@ -778,6 +918,7 @@ export class SimController {
       sonar: { on: !this.failures.sonarLoss, inRangeT: this.failures.sonarLoss ? 0 : s.sonarKg / 1000, arrivalTph: (s.enterEMA * kg * 3600) / 1000 },
       constraints: this.constraints,
       timeline: this.timeline,
+      story: this.story,
       stage: this.currentStage(),
       events: this.events,
       failures: { ...this.failures },

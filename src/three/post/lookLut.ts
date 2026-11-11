@@ -3,7 +3,7 @@ import { LookupTexture } from 'postprocessing';
 /** Strength of the look. 0 = neutral LUT. */
 export const LOOK = {
   /** Luminance S-curve amount (0..1). */
-  contrast: 0.16,
+  contrast: 0.22,
   /** Teal push into the shadows, warm sand into the highlights (sRGB units). */
   shadowTint: [-0.012, 0.004, 0.018] as const,
   highlightTint: [0.018, 0.008, -0.014] as const,

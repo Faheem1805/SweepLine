@@ -104,7 +104,7 @@ export class SceneManager {
     this.container.className = 'sl-viewport-root';
     // No canvas MSAA: the scene is drawn into the post-processing buffers (2× MSAA, then SMAA) and only a full-screen pass reaches the canvas.
     this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', stencil: false, preserveDrawingBuffer: false });
-    this.pixelRatio = Math.min(window.devicePixelRatio || 1, 1.75);
+    this.pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
     this.renderer.setPixelRatio(this.pixelRatio);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = true;
@@ -674,9 +674,9 @@ export class SceneManager {
   }
 
   /**
-   * Keep the frame rate up on a slower GPU: when the 3D view takes too long for a while, draw it at
-   * a lower internal resolution (down to half); when there is headroom again, step back up. Reads
-   * the GPU timer where there is one, so loading and other CPU work never blur the picture.
+   * Keep the frame rate up on a slower GPU: when the 3D view takes too long for a while, give up
+   * some of a high-DPI screen's extra density (never below one pixel per CSS pixel, so it stays
+   * sharp); when there is headroom again, step back up. Reads the GPU timer where there is one.
    */
   private adaptResolution(dtReal: number, ready: boolean): void {
     if (!ready || dtReal <= 0 || dtReal > 0.5) {
@@ -693,15 +693,15 @@ export class SceneManager {
     if (slow) {
       this.slowFor += dtReal;
       this.fastFor = 0;
-      if (this.slowFor > 0.8 && post.renderScale > 0.5) {
-        post.renderScale = Math.max(0.5, post.renderScale * 0.88);
+      if (this.slowFor > 0.8 && post.renderScale > 0) {
+        post.renderScale = Math.max(0, post.renderScale - 0.2);
         this.slowFor = 0;
       }
     } else if (fast) {
       this.fastFor += dtReal;
       this.slowFor = 0;
       if (this.fastFor > 1.5 && post.renderScale < 1) {
-        post.renderScale = Math.min(1, post.renderScale * 1.1);
+        post.renderScale = Math.min(1, post.renderScale + 0.1);
         this.fastFor = 0;
       }
     } else {

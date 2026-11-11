@@ -8,6 +8,7 @@ import type { FailureKey } from '../../simulation/types';
 import { cn, mmss } from '../../utils/format';
 import { useOutsideClose } from '../layout/TopBar';
 import { Segmented, Slider, Toggle } from '../ui/Controls';
+import { StoryTimeline } from './StoryTimeline';
 
 const tones = {
   ok: 'text-teal',
@@ -260,8 +261,6 @@ export function PipelineStrip() {
   const s = useApp((st) => st.snap);
   if (!s) return null;
   const w = s.sweepline;
-  const stages = s.timeline;
-  const cur = stages.findIndex((x) => x.key === s.stage);
   const cells: Array<{ label: string; value: string; tone: string }> = [
     { label: 'Sonar, in range', value: s.sonar.on ? `${s.sonar.inRangeT.toFixed(1)} t` : 'offline', tone: s.sonar.on ? 'text-white' : 'text-amber' },
     { label: 'Coming in', value: `${s.sonar.arrivalTph.toFixed(1)} t/h`, tone: 'text-white' },
@@ -270,16 +269,8 @@ export function PipelineStrip() {
     { label: 'Released', value: `${w.releasedT.toFixed(1)} t`, tone: 'text-teal' },
   ];
   return (
-    <div data-hud className="glass pointer-events-auto !rounded-2xl px-4 py-2.5">
-      <div className="flex items-center gap-1">
-        {stages.map((st, i) => (
-          <div key={st.key} className="flex min-w-0 flex-1 items-center gap-1.5">
-            <span className={cn('h-2 w-2 shrink-0 rounded-full', st.at !== null ? (i === cur ? 'bg-amber shadow-[0_0_8px_rgba(245,185,76,0.8)]' : 'bg-teal') : 'bg-dim')} />
-            <span className={cn('truncate text-[11.5px]', i === cur ? 'font-semibold text-white' : st.at !== null ? 'text-ink-2' : 'text-dim')}>{st.label}</span>
-            {i < stages.length - 1 && <span className={cn('h-px min-w-3 flex-1', st.at !== null && stages[i + 1].at !== null ? 'bg-teal/60' : 'bg-line-strong')} />}
-          </div>
-        ))}
-      </div>
+    <div data-hud className="glass pointer-events-auto !rounded-2xl px-4 pt-2 pb-2.5">
+      <StoryTimeline />
       <div className="mt-2 grid grid-cols-5 gap-3 border-t border-line pt-2">
         {cells.map((c) => (
           <div key={c.label} className="min-w-0">

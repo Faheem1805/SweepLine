@@ -46,6 +46,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss(), snapshotPlugin()],
   define: { __BUNDLED_MODELS__: JSON.stringify(bundledModels()) },
   server: { port: 5173 },
+  worker: { format: 'es' },
   build: {
     target: 'es2022',
     chunkSizeWarningLimit: 2500,

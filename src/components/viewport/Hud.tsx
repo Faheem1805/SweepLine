@@ -322,7 +322,7 @@ export function LoadingOverlay() {
   const intro = useApp((s) => s.intro);
   if (!loading.active || intro) return null;
   return (
-    <div className="absolute inset-0 z-40 flex items-center justify-center bg-base/70 backdrop-blur-sm">
+    <div className="absolute inset-0 z-40 flex items-center justify-center bg-base/45">
       <div className="glass w-[380px] px-5 py-4">
         <div className="eyebrow">SweepLine digital twin</div>
         <div className="mt-1 text-[14px] text-ink">{loading.label || 'Initialising'}</div>

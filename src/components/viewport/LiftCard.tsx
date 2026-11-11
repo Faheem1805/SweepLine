@@ -29,8 +29,8 @@ function followOne(): boolean {
   if (best < 0) best = e.transfer?.queues[1][0] ?? -1;
   if (best < 0) return false;
   const at = new THREE.Vector3(p.px[best], p.py[best], p.pz[best]);
-  // Side-on to the elevator from downstream, a little above.
-  getScene().rig.flyTo({ pos: at.clone().add(new THREE.Vector3(1.5, 5.0, -10.5)), target: at }, 1.2);
+  // Side-on to the elevator from the channel side, a little above and upstream, so the bucket climbs away along the wall.
+  getScene().rig.flyTo({ pos: at.clone().add(new THREE.Vector3(-10.5, 5.0, 2.5)), target: at }, 1.2);
   useApp.getState().setUI({ selection: { kind: 'jelly', engine: 'sweepline', agentId: p.id[best] }, follow: true });
   if (controller.speed > 1) controller.setSpeed(1);
   return true;

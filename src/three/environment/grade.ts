@@ -1,5 +1,5 @@
 /** Strength of the vibrance lift applied after the filmic curve. */
-const VIBRANCE = 0.34;
+const VIBRANCE = 0.42;
 
 /**
  * The scene grade as GLSL: the ACES filmic curve (three.js's fit, input already scaled by

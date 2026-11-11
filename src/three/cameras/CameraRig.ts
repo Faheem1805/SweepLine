@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { basinX, SITE, seabedDepth } from '../../config/site';
 import { NETS, pointOnNet } from '../../simulation/geometry';
-import { ELEVATOR_Z, TAIL } from '../../simulation/lift';
+import { HEAD, TAIL } from '../../simulation/lift';
 
 export type CameraPreset = 'aerial' | 'top' | 'mouth' | 'net' | 'underwater' | 'collector' | 'lift' | 'intake' | 'release' | 'compare' | 'free';
 
@@ -46,10 +46,12 @@ export function presetPose(key: Exclude<CameraPreset, 'free'>): CameraPose {
       };
     }
     case 'collector':
-      return { pos: v(TAIL.x - 30, 26, ELEVATOR_Z + 52), target: v(TAIL.x + 6, 1.5, ELEVATOR_Z + 6) };
+      // From up the funnel, looking down it along the wall: net B on the left, the bloom's path in at
+      // the mouth, and the elevator climbing away toward the head tank.
+      return { pos: v(TAIL.x - 26, 24, TAIL.z + 40), target: v(TAIL.x - 1, 2, TAIL.z - 9) };
     case 'lift':
-      // The elevator side-on from downstream, so no net is in the way: hopper on the right with the funnel behind it, buckets climbing left over the crest.
-      return { pos: v(TAIL.x + 6.5, 10.5, ELEVATOR_Z - 25), target: v(TAIL.x + 8.5, 2.8, ELEVATOR_Z) };
+      // The elevator three-quarter on from the channel side: the hopper and its tail on the right, buckets climbing left to the head and the tank.
+      return { pos: v(TAIL.x - 19, 8.5, TAIL.z + 3), target: v(HEAD.x + 1, 3.2, (TAIL.z + HEAD.z) / 2 - 1) };
     case 'intake':
       return { pos: v(basinX(210), 36, -12), target: v(basinX(330), 2, -120) };
     case 'release': {

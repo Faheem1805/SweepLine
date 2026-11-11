@@ -171,6 +171,10 @@ export function jellyShader(map: THREE.Texture | null): THREE.ShaderMaterial {
         // Underwater: sunlight from above rim-lights the bell; applied before the water fog so distance still hides it.
         float under = 1.0 - step(0.0, cameraPosition.y);
         col += under * (vPart < 0.6 ? 0.24 : 0.12) * rim * vec3(0.7, 0.9, 1.0);
+        // A soft luminous edge where the bell's margin catches the light, strongest underwater, so each
+        // animal reads as a glowing translucent body against the blue.
+        float edgeGlow = vPart < 0.6 ? pow(rim, 1.6) * (0.55 + 0.45 * smoothstep(0.55, 0.95, vT)) : rim * 0.35;
+        col += edgeGlow * mix(bellC, vec3(0.62, 0.92, 1.0), 0.55) * (0.32 + 0.5 * under);
         alpha = mix(alpha, min(1.0, alpha * 1.25 + 0.06), under);
         col = slMedium(col, vWorld);
         // Legibility at aerial distances: agents are already enlarged; give them a soft
