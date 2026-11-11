@@ -214,6 +214,34 @@ export class CollectorSystem {
     const pipe = mediumMaterial({ color: 0x23323a, roughness: 0.5, metalness: 0.25 });
     const concrete = mediumMaterial({ color: 0x9aa39f, roughness: 0.9 });
     const bucketMat = mediumMaterial({ color: 0xe3e8ea, roughness: 0.3, metalness: 0.75, side: THREE.DoubleSide });
+    // Clear glass: nearly invisible face-on, a bright edge where it turns away (Fresnel), so the
+    // enclosure reads as glass and everything inside it stays in view.
+    const glass = new THREE.ShaderMaterial({
+      vertexShader: /* glsl */ `
+        varying vec3 vN;
+        varying vec3 vV;
+        void main() {
+          vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          vV = -mv.xyz;
+          vN = normalMatrix * normal;
+          gl_Position = projectionMatrix * mv;
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        varying vec3 vN;
+        varying vec3 vV;
+        void main() {
+          vec3 n = normalize(vN);
+          if (!gl_FrontFacing) n = -n;
+          float f = pow(1.0 - clamp(abs(dot(n, normalize(vV))), 0.0, 1.0), 2.6);
+          vec3 c = mix(vec3(0.5, 0.82, 0.92), vec3(0.85, 1.0, 1.0), f);
+          gl_FragColor = vec4(c * (0.4 + 0.9 * f), 0.06 + 0.42 * f);
+        }
+      `,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
     this.pulseMat = new THREE.ShaderMaterial({
       uniforms: { uTime: SHARED.uTime, uFlow: { value: 0 } },
       vertexShader: /* glsl */ `
@@ -448,6 +476,34 @@ export class CollectorSystem {
     lift.traverse((o) => {
       if ((o as THREE.Mesh).isMesh && o !== this.ghosts && o !== this.bucketSides && o !== this.bucketWater) o.castShadow = true;
     });
+    // A clear enclosure round the whole lift: nothing can fall out of a bucket over the side, and
+    // the buckets and the animals in them stay in view. An elliptical glass tunnel along the run,
+    // ribbed every few metres, and a glass box over the head.
+    {
+      const s0 = -0.9;
+      const s1 = K.length + 0.9;
+      const len = s1 - s0;
+      const mid = (s0 + s1) / 2;
+      const tunnel = new THREE.Group();
+      tunnel.position.set(TAIL_L.x + UP_L.x * mid - NORMAL_L.x * 0.25, TAIL_L.y + UP_L.y * mid - NORMAL_L.y * 0.25, 0);
+      tunnel.rotation.z = -(Math.PI / 2 - (K.incline * Math.PI) / 180);
+      const tube = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, len, 48, 1, true), glass);
+      tube.scale.set(1.4, 1, 1.18);
+      tube.renderOrder = 12;
+      tunnel.add(tube);
+      const ringGeo = new THREE.TorusGeometry(1, 0.035, 6, 48).rotateX(Math.PI / 2);
+      for (let y = -len / 2 + 0.2; y <= len / 2; y += 3) {
+        const ring = new THREE.Mesh(ringGeo, accent);
+        ring.scale.set(1.4, 1, 1.18);
+        ring.position.y = y;
+        tunnel.add(ring);
+      }
+      lift.add(tunnel);
+      const hood = new THREE.Mesh(new THREE.BoxGeometry(2.7, 2.6, 2.5), glass);
+      hood.position.set(HEAD_L.x + 0.15, HEAD_L.y - 0.05, 0);
+      hood.renderOrder = 12;
+      lift.add(hood);
+    }
     g.add(lift);
 
     // Supports: portal frames under the run, on piles to the hopper floor or the seabed, cross-braced,
@@ -491,6 +547,11 @@ export class CollectorSystem {
       w.position.y = -0.12;
       w.renderOrder = 3;
       trough.add(w);
+      // The chute runs inside a clear tube too, all the way into the tank.
+      const cover = new THREE.Mesh(new THREE.CylinderGeometry(0.78, 0.78, len + 0.6, 32, 1, true).rotateZ(Math.PI / 2), glass);
+      cover.position.y = 0.02;
+      cover.renderOrder = 12;
+      trough.add(cover);
       g.add(trough);
     }
 
@@ -525,6 +586,12 @@ export class CollectorSystem {
     const glowRim = new THREE.Mesh(new THREE.TorusGeometry(T.r + 0.02, 0.035, 6, 64).rotateX(Math.PI / 2), accent);
     glowRim.position.set(T.x, tankTop + 0.1, T.z);
     g.add(glowRim);
+    // A clear dome closes the tank where the chute comes in.
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(T.r + 0.08, 40, 16, 0, Math.PI * 2, 0, Math.PI / 2), glass);
+    dome.scale.y = 0.55;
+    dome.position.set(T.x, tankTop + 0.05, T.z);
+    dome.renderOrder = 12;
+    g.add(dome);
     // Feed pump: clean water from behind both nets, to carry the animals down the line.
     const fp = { x: T.x + 4.2, z: D.z0 + 1.6 };
     g.add(block(drive, fp.x - 0.8, fp.x + 0.8, D.top, D.top + 1.1, fp.z - 0.6, fp.z + 0.6));
