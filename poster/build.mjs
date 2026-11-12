@@ -57,13 +57,13 @@ function heroOverlay() {
   return `<svg viewBox="0 0 ${HERO_W} ${HERO_H}" class="over" font-family="Inter Variable">
     <polyline points="${route}" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-opacity="0.9"/>
     <polyline points="${route}" fill="none" stroke="${TEAL}" stroke-width="2.6" stroke-linecap="round"/>
-    ${callout(1, [158, 346], 44, 400, 'A bloom drifts in on the tide')}
-    ${callout(2, 'mouth', 742, 384, 'The plant’s own flow draws it in')}
-    ${callout(3, 'netA', 118, 352, 'Net A sweeps it along')}
-    ${callout(4, 'netB', 118, 308, 'Net B catches what gets past')}
-    ${callout(6, 'intake', 118, 264, 'Every intake untouched')}
-    ${callout(5, 'collector', 690, 264, 'Screw lift, no impeller')}
-    ${callout(7, [H.points.r3[0] * HERO_W + 60, H.points.r3[1] * HERO_H - 1.6], 1156, 306, 'Released 2 km along the coast', { end: true })}
+    ${callout(1, [1002, 372], 1156, 334, 'A bloom drifts in on the tide', { end: true })}
+    ${callout(2, 'mouth', 44, 380, 'The plant’s own flow draws it in')}
+    ${callout(3, 'netA', 44, 334, 'Net A sweeps it along')}
+    ${callout(4, 'netB', 44, 290, 'Net B catches what gets past')}
+    ${callout(6, 'intake', 44, 246, 'All four intakes untouched')}
+    ${callout(5, 'collector', 700, 252, 'Bucket elevator, no pump')}
+    ${callout(7, [H.points.r3[0] * HERO_W + 60, H.points.r3[1] * HERO_H - 1.6], 1156, 290, 'Released 2 km along the coast', { end: true })}
   </svg>`;
 }
 
@@ -228,33 +228,40 @@ function speedDiagram() {
 
 /** Plan of the system, to scale, drawn for print. */
 function planSvg() {
+  // The reference layout as the twin builds it (src/config/site.ts): the channel, the side basin along
+  // the plant wall with its four intakes, the east breakwater curving round it, the nets, the elevator
+  // at net B's end and the release line over the west breakwater.
   const W = 262;
   const H2 = 112;
-  const k = 0.104;
-  const px = (x) => 30 + x * k;
+  const k = 0.08;
+  const px = (x) => 12 + (x + 930) * k;
   const py = (z) => 90 - z * k;
-  const ch = 70;
-  const land = py(-62);
+  const P = (x, z) => `${px(x).toFixed(1)},${py(z).toFixed(1)}`;
+  const shore = py(-62);
   const [A, B] = F.nets;
-  const route = [[76, 88], [100, 89], [132, 94], [620, 150], [2040, 300]].map(([x, z]) => `${px(x).toFixed(1)},${py(z).toFixed(1)}`).join(' ');
-  const units = [0, 1, 2, 3].map((i) => `<rect x="${px(-60 + i * 30) + 0.25}" y="${py(-30)}" width="${30 * k - 0.5}" height="5" fill="${INK}"/>`).join('');
+  const route = [[88, 38.5], [104, 40], [132, 47], [620, 150], [2040, 300]].map(([x, z]) => P(x, z)).join(' ');
+  const units = [220, 390, 560, 730].map((d) => `<rect x="${(px(-d) - 2.4).toFixed(1)}" y="${py(-120).toFixed(1)}" width="4.8" height="3" fill="${INK}"/>`).join('');
+  const east = `M${P(-75, 548)} L${P(-75, 72)} Q${P(-75, 36)} ${P(-111, 36)} L${P(-810, 36)} Q${P(-900, 36)} ${P(-900, -62)}`;
   return `<svg viewBox="0 0 ${W} ${H2}" preserveAspectRatio="xMidYMid slice" class="ph" font-family="Inter Variable">
     <rect width="${W}" height="${H2}" fill="#BCE9F2"/>
-    <rect y="${land}" width="${W}" height="${H2 - land}" fill="#F3E7CC"/>
-    <circle cx="${px(0)}" cy="${py(540)}" r="${300 * k}" fill="${RED}" fill-opacity="0.1" stroke="${RED}" stroke-width="0.5" stroke-dasharray="2 1.5"/>
-    <rect x="${px(-ch - 9)}" y="${py(548)}" width="9" height="${land - py(548)}" fill="#7C7A70"/>
-    <rect x="${px(ch)}" y="${py(548)}" width="9" height="${land - py(548)}" fill="#7C7A70"/>
-    <rect x="${px(-ch)}" y="${py(548)}" width="${2 * ch * k}" height="${land - py(548)}" fill="#8FD8E8"/>
+    <rect y="${shore}" width="${W}" height="${H2 - shore}" fill="#F3E7CC"/>
+    <rect x="${px(-900)}" y="${py(36)}" width="${px(70) - px(-900)}" height="${py(-120) - py(36)}" fill="#8FD8E8"/>
+    <rect x="${px(-70)}" y="${py(548)}" width="${140 * k}" height="${py(-120) - py(548)}" fill="#8FD8E8"/>
+    <line x1="${px(-930)}" y1="${py(-120)}" x2="${px(80)}" y2="${py(-120)}" stroke="${INK}" stroke-width="0.8"/>
     ${units}
-    <line x1="${px(A.ax)}" y1="${py(A.az)}" x2="${px(A.bx)}" y2="${py(A.bz)}" stroke="${AMBER}" stroke-width="1.5"/>
-    <line x1="${px(B.ax)}" y1="${py(B.az)}" x2="${px(B.bx)}" y2="${py(B.bz)}" stroke="${AMBER}" stroke-width="1.5" stroke-dasharray="2.4 1.2"/>
+    <circle cx="${px(0)}" cy="${py(540)}" r="${300 * k}" fill="${RED}" fill-opacity="0.1" stroke="${RED}" stroke-width="0.5" stroke-dasharray="2 1.5"/>
+    <path d="${east}" fill="none" stroke="#7C7A70" stroke-width="4.4" stroke-linejoin="round"/>
+    <line x1="${px(75)}" y1="${py(548)}" x2="${px(75)}" y2="${shore}" stroke="#7C7A70" stroke-width="4.4"/>
+    <line x1="${px(A.ax)}" y1="${py(A.az)}" x2="${px(A.bx)}" y2="${py(A.bz)}" stroke="${AMBER}" stroke-width="1.4"/>
+    <line x1="${px(B.ax)}" y1="${py(B.az)}" x2="${px(B.bx)}" y2="${py(B.bz)}" stroke="${AMBER}" stroke-width="1.4" stroke-dasharray="2.4 1.2"/>
     <polyline points="${route}" fill="none" stroke="${TEAL}" stroke-width="1.5"/>
+    <circle cx="${px(68)}" cy="${py(42)}" r="1.7" fill="${TEAL}" stroke="#fff" stroke-width="0.5"/>
     <circle cx="${px(2040)}" cy="${py(300)}" r="3" fill="${TEAL}"/>
     <text x="${px(2040) + 3}" y="${py(300) - 6}" font-size="10.5" font-weight="800" fill="${TEAL}" text-anchor="end">Release, 2 km along</text>
-    <text x="${px(1150)}" y="${py(190) + 18}" font-size="10.5" font-weight="700" fill="${TEAL}" text-anchor="middle">1 m line over the breakwater</text>
-    <text x="${px(0) + 300 * k + 4}" y="${py(640)}" font-size="10.5" font-weight="700" fill="${RED}">Water the plant draws in</text>
-    <text x="${px(ch + 20)}" y="${land + 13}" font-size="10.5" font-weight="700" fill="${INK}">Intakes</text>
-    <line x1="${W - 62}" y1="17" x2="${W - 62 + 500 * k}" y2="17" stroke="${INK}" stroke-width="1.2"/><text x="${W - 62 + 250 * k}" y="12" font-size="10" fill="${INK}" text-anchor="middle">500 m</text>
+    <text x="${px(2040) + 3}" y="${py(300) + 24}" font-size="10.5" font-weight="700" fill="${TEAL}" text-anchor="end">1 m line over the breakwater</text>
+    <text x="${px(0) + 300 * k + 3}" y="${py(700)}" font-size="10.5" font-weight="700" fill="${RED}">Water the plant draws in</text>
+    <text x="${px(-475)}" y="${H2 - 2.2}" font-size="10" font-weight="800" fill="${INK}" text-anchor="middle">Four intakes</text>
+    <line x1="${W - 54}" y1="14" x2="${W - 54 + 500 * k}" y2="14" stroke="${INK}" stroke-width="1.2"/><text x="${W - 54 + 250 * k}" y="10" font-size="9.5" fill="${INK}" text-anchor="middle">500 m</text>
   </svg>`;
 }
 
@@ -269,6 +276,7 @@ const ICON = {
   dark: 'M20 14A8 8 0 1 1 10 4a7 7 0 0 0 10 10z',
   foul: 'M4 12a8 8 0 0 1 14-5l2 2M20 12a8 8 0 0 1-14 5l-2-2M20 4v5h-5M4 20v-5h5',
   screw: 'M12 2v20M6 6c4-3 8-2 12 0M6 11c4-3 8-2 12 0M6 16c4-3 8-2 12 0M6 21c4-3 8-2 12 0',
+  bucket: 'M4 20 20 4M3 13h6v3a3 3 0 0 1-6 0zM15 3h6v3a3 3 0 0 1-6 0zM9 7h6v3a3 3 0 0 1-6 0z',
   species: 'M12 3a8 8 0 0 0-8 8v1h16v-1a8 8 0 0 0-8-8zM7 12c0 4-1 6-2 8M12 12v9M17 12c0 4 1 6 2 8',
   fish: 'M2 12c3-5 9-7 14-4 2 1 3 3 4 4-1 1-2 3-4 4-5 3-11 1-14-4zM20 12l2-3v6l-2-3M15 11v.1',
   alert: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7.500v6M12 16.800v.1',
@@ -305,7 +313,7 @@ body{font-family:'Inter Variable',sans-serif;color:${INK};font-size:13.2mm;line-
 .decor{position:absolute;inset:0;width:100%;height:100%}
 .over{position:absolute;left:0;top:${HERO_TOP}mm;width:1200mm;height:${HERO_H}mm}
 .flow{position:absolute;inset:0;display:flex;flex-direction:column}
-.cap{position:absolute;right:44mm;top:${HERO_TOP + 420}mm;background:rgba(6,44,69,.86);border-radius:8mm;padding:2.4mm 8mm;font-size:11.4mm;font-weight:600;color:#fff}
+.cap{position:absolute;right:44mm;top:${HERO_TOP + 412}mm;background:rgba(6,44,69,.86);border-radius:8mm;padding:2.4mm 8mm;font-size:11.4mm;font-weight:600;color:#fff}
 header{display:flex;align-items:center;justify-content:space-between;gap:24mm;padding:20mm 44mm 0}
 .brand h1{font-size:118mm;font-weight:850;letter-spacing:-5mm;line-height:.94;color:${DEEP}}
 .brand p{font-size:26mm;font-weight:700;font-style:italic;color:${INK};letter-spacing:-.5mm;margin-top:9mm}
@@ -379,7 +387,7 @@ ${heroOverlay()}
   </div>
   <div class="tiles">
     ${tile(photo('net.jpg'), 'At the nets', 'The bloom on the face of net A')}
-    ${tile(photo('collector.jpg'), 'Screw lift', 'Duty and standby, over the breakwater')}
+    ${tile(photo('collector.jpg'), 'Bucket elevator', 'Twin drives, animals stay in water')}
     ${tile(planSvg(), 'Where it sits', 'Reference layout. Drift model: 2 % come back')}
     ${tile(photo('under.jpg'), 'Under water', 'Mesh from surface to seabed')}
   </div>

@@ -46,7 +46,7 @@ const b = out.blooms;
 out.stats = [
   { value: `${b.baseLow.toFixed(0)}–${b.baseHigh.toFixed(0)} t → under 0.1 t`, color: '#05796F', label: `at the screens in 3 h, no nets vs nets. ${b.n} simulated blooms` },
   { value: '0.11 m/s', color: '#C96F00', label: 'through the mesh. Limit: 0.12' },
-  { value: '217 t/h', color: '#0A73A5', label: 'collector capacity, 5,000+ t a day' },
+  { value: '217 t/h', color: '#0A73A5', label: 'lift and line capacity, calculated' },
   { value: '≈ 130 kW', color: '#062C45', label: 'only while collecting' },
 ];
 
@@ -66,7 +66,7 @@ const fouled = load('fouled');
 const single = (r) => (r ? r.sScreens.toFixed(0) : '?');
 row('Panel tears out', `Net B catches what comes through. With one net, ${single(tearSingle)} t would reach the screens`, tear);
 row('Mesh leaks 10× more', 'Net B catches nearly all of it', leak);
-row('Both screw lifts stop', `Bloom stacks on the net, ${pumps ? Math.floor(pumps.peakOnNetT / 10) * 10 : '?'} t or more held over the ${pumps ? pumps.hours : 5} h run`, pumps);
+row('The elevator stops', `Bloom stacks on the net, ${pumps ? Math.floor(pumps.peakOnNetT / 10) * 10 : '?'} t or more held over the ${pumps ? pumps.hours : 5} h run`, pumps);
 row('Panels 10 weeks old', `Head ${fouled ? (fouled.maxHead / ref.maxHead).toFixed(0) : ''}× higher, still far below relief`, fouled);
 row('Moon jellyfish', 'Softer, so more leak past net A; net B catches it', moon);
 row('Deep-living species', 'Nets run to the seabed', deep);
@@ -74,7 +74,7 @@ row('Deep-living species', 'Nets run to the seabed', deep);
 out.captions = {
   bloom: 'Tonnes at the screens. Model, every jellyfish accounted for.',
   tide: 'Current, m/s. Copernicus record, 5,856 h checked.',
-  failures: 'Tonnes at the screens, 3 h (lifts 5 h).',
+  failures: 'Tonnes at the screens, 3 h (elevator-down case 5 h).',
 };
 
 writeFileSync(resolve(here, 'data/results.json'), JSON.stringify(out, null, 1));

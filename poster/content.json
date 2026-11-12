@@ -14,13 +14,13 @@
     "question": "How might we advance the sustainable management of seasonal jellyfish blooms in coastal environments?",
     "context": "Early warning already exists. The challenge starts after it: manage large, continuous swarms with less manual effort, less specialised equipment and less field support, with no harm to marine life and no redesign of plant systems."
   },
-  "solution": "Two full-depth nets stand across the intake channel at 20°, ahead of every intake. Water passes through. Jellyfish are held back, so the plant’s own flow sweeps them along the net to a collector. A slow screw lift sends them over the breakwater and 2 km down the coast. No boats chasing the bloom: crews only swap panels. Plant systems unchanged.",
+  "solution": "Two full-depth nets stand across the intake channel at 20°, ahead of every intake. Water passes through. Jellyfish are held back, so the plant’s own flow sweeps them along the nets into one funnel. A bucket elevator lifts them in water over the breakwater, and gravity carries them 2 km down the coast. No boats chasing the bloom: crews only swap panels. Plant systems unchanged.",
   "technical": "2 million m³/h through a 140 × 12 m channel runs at 0.33 m/s. A 20° net splits that: 0.11 m/s through the mesh, inside the 0.12 m/s limit used for fish screens, and 0.31 m/s along it, so animals should slide, not pin. Any channel needs at least flow ÷ (depth × 0.12 m/s) of net. At 0.12 m of head the float line dips: cooling comes first.",
   "features": [
     [
       "fish",
       "Fish and turtles",
-      "Fish-screen speed, a camera at each lift. Bycatch untested."
+      "Fish-screen speed. 50 cm bars keep turtles out. Bycatch untested."
     ],
     [
       "under",
@@ -40,7 +40,7 @@
     [
       "power",
       "Power fails",
-      "Nets need none. Model: 90 t held for 5 h."
+      "Nets need none. Model: 96 t held for 5 h."
     ],
     [
       "waves",
@@ -58,14 +58,14 @@
       "Load cells flag swaps, about every 4 weeks. Out off-season."
     ],
     [
-      "screw",
+      "bucket",
       "Pumps can injure",
-      "A slow screw has no impeller. Survival test planned."
+      "No pump at all: a bucket elevator lifts them in water. Survival test planned."
     ],
     [
       "species",
       "A new species",
-      "Mesh sized for Blue Blubber, moon and Crambionella."
+      "80 mm net A, then 30 mm net B for small and soft bells."
     ]
   ],
   "future": [
@@ -96,5 +96,5 @@
     "missing": "Live jellyfish tests, the real channel, a safety review of nets at an intake."
   },
   "footnote": "Schematic reference site, no real plant. Jellyfish drawn enlarged.",
-  "heroCaption": "Live render from the SweepLine digital twin: minute 72 of a simulated 25 t/h bloom"
+  "heroCaption": "Live render from the SweepLine digital twin: minute 45 of a simulated 25 t/h bloom"
 }
