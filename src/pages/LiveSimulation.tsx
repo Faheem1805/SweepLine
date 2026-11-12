@@ -1,6 +1,6 @@
 import { useApp } from '../app/store';
 import { Inspector } from '../components/panels/Inspector';
-import { EventLogMenu, LiveHeadline, MarginsCard, PipelineStrip, ProblemMenu, WhatIfMenu } from '../components/panels/LivePanels';
+import { LiveHeadline, MarginsCard, PipelineStrip, ProblemMenu, WhatIfMenu } from '../components/panels/LivePanels';
 import { CompareOverlay, FlowLegend, TideCard, UnderwaterHud, ViewportToolbar } from '../components/viewport/Hud';
 import { LiftCard } from '../components/viewport/LiftCard';
 import { ViewportSlot } from '../components/viewport/ViewportSlot';
@@ -34,7 +34,6 @@ export function LiveSimulation() {
           <CompareOverlay />
           <div className="absolute right-4 bottom-4 left-4 flex flex-col gap-2">
             <div className="flex items-end justify-end gap-2">
-              <EventLogMenu />
               <WhatIfMenu />
             </div>
             {!compare && <PipelineStrip />}
